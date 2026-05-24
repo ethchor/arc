@@ -66,6 +66,12 @@ importers:
         specifier: ^0.3.20
         version: 0.3.30(pg@8.21.0)(sql.js@1.14.1)
     devDependencies:
+      '@arc-vault/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@arc-vault/sdk':
+        specifier: workspace:*
+        version: link:../../packages/vault-sdk
       '@nestjs/testing':
         specifier: ^11.0.0
         version: 11.1.23(@nestjs/common@11.1.23(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.23)(@nestjs/platform-express@11.1.23)
@@ -97,6 +103,22 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  apps/cli:
+    dependencies:
+      '@arc-vault/sdk':
+        specifier: workspace:*
+        version: link:../../packages/vault-sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.19
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   packages/vault-crypto:
     dependencies:
       '@noble/ciphers':
@@ -108,6 +130,22 @@ importers:
       '@noble/hashes':
         specifier: ^1.7.1
         version: 1.8.0
+    devDependencies:
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)
+
+  packages/vault-sdk:
+    dependencies:
+      '@arc-vault/crypto':
+        specifier: workspace:*
+        version: link:../vault-crypto
     devDependencies:
       tsup:
         specifier: ^8.3.5

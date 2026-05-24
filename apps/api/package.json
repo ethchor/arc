@@ -28,6 +28,8 @@
     "typeorm": "^0.3.20"
   },
   "devDependencies": {
+    "@arc-vault/cli": "workspace:*",
+    "@arc-vault/sdk": "workspace:*",
     "@nestjs/testing": "^11.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.2",

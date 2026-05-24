@@ -6,9 +6,11 @@ module.exports = {
   testMatch: ["<rootDir>/test/**/*.e2e-spec.ts", "<rootDir>/src/**/*.spec.ts"],
   moduleFileExtensions: ["ts", "js", "json"],
   moduleNameMapper: {
-    // Resolve the workspace crypto package to its TS source so ts-jest transforms it
+    // Resolve workspace packages to their TS source so ts-jest transforms them
     // (avoids ESM/CJS friction with the built dist).
     "^@arc-vault/crypto$": "<rootDir>/../../packages/vault-crypto/src/index.ts",
+    "^@arc-vault/sdk$": "<rootDir>/../../packages/vault-sdk/src/index.ts",
+    "^@arc-vault/cli$": "<rootDir>/../../apps/cli/src/index.ts",
   },
   transform: {
     "^.+\\.ts$": ["ts-jest", { tsconfig: "<rootDir>/tsconfig.json", isolatedModules: true }],
