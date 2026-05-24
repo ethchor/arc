@@ -4,6 +4,7 @@ import {
   type ArgonProfileName,
   deriveAuthHash,
   deriveMasterKey,
+  derivePasskeyWrapKey,
   deriveRecoveryWrapKey,
   splitMasterKey,
 } from "./kdf";
@@ -178,6 +179,35 @@ export function recoverIdentityPriv(recoveryKeyEncoded: string, keyset: Keyset):
     recoveryWrap,
     keyset.encIdentityPrivRecovery,
     privAad("identity-priv", keyset.keyVersion, "recovery"),
+  );
+}
+
+/**
+ * Passkey unlock (docs/13): wrap the identity private key under a key derived from a
+ * WebAuthn PRF output. Additive — it never replaces the master-password or recovery wraps.
+ * One wrap is stored per registered passkey credential (PRF output is per-credential).
+ */
+export function wrapIdentityForPasskey(
+  identityPriv: Uint8Array,
+  prfOutput: Uint8Array,
+  keyVersion = 1,
+): Envelope {
+  return aeadSeal(
+    derivePasskeyWrapKey(prfOutput),
+    identityPriv,
+    privAad("identity-priv", keyVersion, "passkey"),
+  );
+}
+
+export function unwrapIdentityFromPasskey(
+  encIdentityPrivPasskey: Envelope,
+  prfOutput: Uint8Array,
+  keyVersion = 1,
+): Uint8Array {
+  return aeadOpen(
+    derivePasskeyWrapKey(prfOutput),
+    encIdentityPrivPasskey,
+    privAad("identity-priv", keyVersion, "passkey"),
   );
 }
 

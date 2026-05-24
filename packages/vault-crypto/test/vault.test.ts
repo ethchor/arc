@@ -7,9 +7,12 @@ import {
   enroll,
   type ItemRef,
   openVaultKeyGrant,
+  randomBytes,
   recoverIdentityPriv,
   toHex,
   unlock,
+  unwrapIdentityFromPasskey,
+  wrapIdentityForPasskey,
   wrapVaultKeyFor,
 } from "../src";
 
@@ -64,6 +67,16 @@ describe("items", () => {
     const enc = encryptItem(vk, ref, { a: "b" });
     expect(() => decryptItem(vk, { ...ref, itemId: "i2" }, enc)).toThrow();
     expect(() => decryptItem(vk, { ...ref, version: 2 }, enc)).toThrow();
+  });
+});
+
+describe("passkey unlock (PRF-wrapped identity key)", () => {
+  it("unwraps the identity key with the same PRF output and rejects a different one", () => {
+    const e = enroll(PW, { profile });
+    const prf = randomBytes(32); // simulated WebAuthn PRF output
+    const wrapped = wrapIdentityForPasskey(e.session.identityPriv, prf);
+    expect(toHex(unwrapIdentityFromPasskey(wrapped, prf))).toBe(toHex(e.session.identityPriv));
+    expect(() => unwrapIdentityFromPasskey(wrapped, randomBytes(32))).toThrow();
   });
 });
 

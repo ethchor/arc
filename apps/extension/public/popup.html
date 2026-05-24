@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>arc-vault</title>
+    <style>
+      body { font: 13px system-ui, sans-serif; width: 260px; padding: 12px; }
+      input { width: 100%; margin: 4px 0; padding: 6px; box-sizing: border-box; }
+      button { margin: 6px 6px 0 0; padding: 6px 10px; }
+      #status { margin-top: 8px; color: #555; }
+    </style>
+  </head>
+  <body>
+    <input id="baseUrl" value="http://localhost:3001" placeholder="API base URL" />
+    <input id="email" placeholder="account email" />
+    <input id="pw" type="password" placeholder="master password" />
+    <button id="unlock">Unlock</button>
+    <button id="fill">Fill this page</button>
+    <div id="status"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

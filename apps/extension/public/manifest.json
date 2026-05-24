@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "arc-vault",
+  "version": "0.0.0",
+  "description": "arc-vault zero-knowledge autofill.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "arc-vault"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["storage", "activeTab", "tabs", "scripting"],
+  "host_permissions": ["https://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'self'"
+  }
+}
