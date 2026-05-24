@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.turbo/
+coverage/
+*.tsbuildinfo
+.next/
+out/
+build/
+target/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.idea/
+.vscode/
