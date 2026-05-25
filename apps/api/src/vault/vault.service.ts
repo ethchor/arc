@@ -311,6 +311,45 @@ export class VaultService {
     });
   }
 
+  /** Rotate the vault key (docs/07 §7.5): bump version, add new grants, re-point IKs. */
+  async rotateKey(userId: number, vaultId: string, dto: RotateKeyDto) {
+    await this.requireRole(vaultId, userId, "admin");
+    return this.dataSource.transaction(async (mgr) => {
+      const vault = await mgr.findOne(VaultEntity, { where: { id: vaultId } });
+      if (!vault) throw new NotFoundException("vault not found");
+      vault.currentKeyVersion = dto.newKeyVersion;
+
+      for (const g of dto.grants) {
+        await mgr.save(
+          mgr.create(VaultKeyGrantEntity, {
+            vaultId,
+            keyVersion: dto.newKeyVersion,
+            granteeUserId: g.granteeUserId,
+            wrappedVaultKey: g.wrappedVaultKey,
+            wrappedByUserId: userId,
+            signature: g.signature ?? null,
+          }),
+        );
+      }
+
+      for (const r of dto.rewrappedItemKeys) {
+        const item = await mgr.findOne(VaultItemEntity, { where: { id: r.itemId, vaultId } });
+        if (!item) continue;
+        // Re-wrap only changes the wrapped IK + its VK version. The payload (and its item
+        // version, which its AAD binds) is untouched. Bump seq so the change syncs.
+        vault.seqCounter += 1;
+        item.wrappedItemKey = r.wrappedItemKey;
+        item.vaultKeyVersion = dto.newKeyVersion;
+        item.seq = vault.seqCounter;
+        await mgr.save(item);
+      }
+
+      await mgr.save(vault);
+      await this.writeAudit(vaultId, userId, "vault_key_rotated", String(dto.newKeyVersion));
+      return { ok: true, keyVersion: dto.newKeyVersion };
+    });
+  }
+
   // --- signed vault-head (docs/10 §10.5) ---
 
   async getHead(userId: number, vaultId: string) {

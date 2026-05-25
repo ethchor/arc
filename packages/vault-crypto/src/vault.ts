@@ -247,21 +247,42 @@ export interface EncryptedItem {
   wrappedItemKey: Envelope;
 }
 
-const itemAad = (r: ItemRef) =>
+// Payload AAD binds the ITEM version (not the VK keyVersion) so a VK rotation that only
+// re-wraps the IK does not invalidate the payload ciphertext — the cheap-rotation property
+// of the IK layer (docs/03 §12).
+const itemAad = (r: { vaultId: string; itemId: string; version: number }) =>
   buildAad([
     ["vaultId", r.vaultId],
     ["itemId", r.itemId],
     ["version", String(r.version)],
-    ["keyVersion", String(r.keyVersion)],
   ]);
 
-const ikAad = (r: ItemRef) =>
+// IK-wrap AAD binds the VK keyVersion (this is what changes on rotation).
+const ikAad = (r: { vaultId: string; itemId: string; keyVersion: number }) =>
   buildAad([
     ["vaultId", r.vaultId],
     ["itemId", r.itemId],
     ["scope", "ik"],
     ["keyVersion", String(r.keyVersion)],
   ]);
+
+/**
+ * Re-wrap an item's IK from one VK version to the next, without touching the payload
+ * (docs/07 §7.5). Used by VK rotation on member revocation.
+ */
+export function rewrapItemKey(
+  oldVk: Uint8Array,
+  newVk: Uint8Array,
+  ref: { vaultId: string; itemId: string; oldKeyVersion: number; newKeyVersion: number },
+  oldWrappedItemKey: Envelope,
+): Envelope {
+  const ik = aeadOpen(oldVk, oldWrappedItemKey, ikAad({ ...ref, keyVersion: ref.oldKeyVersion }));
+  const out = aeadSeal(newVk, ik, ikAad({ ...ref, keyVersion: ref.newKeyVersion }), {
+    kv: ref.newKeyVersion,
+  });
+  wipe(ik);
+  return out;
+}
 
 /** Encrypt an item: random IK encrypts the payload, VK wraps the IK (docs/03 §3.6). */
 export function encryptItem(vk: Uint8Array, ref: ItemRef, item: JsonValue): EncryptedItem {

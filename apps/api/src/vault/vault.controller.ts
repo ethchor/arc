@@ -20,6 +20,7 @@ import {
   EnrollDto,
   PutHeadDto,
   RegisterDeviceDto,
+  RotateKeyDto,
   UnlockDto,
   UpsertItemDto,
 } from "./dto";
@@ -62,6 +63,11 @@ export class VaultController {
   @Post("vaults/:id/members")
   addMember(@CurrentUser() u: CurrentUserData, @Param("id") id: string, @Body() dto: AddMemberDto) {
     return this.vault.addMember(u.userId, id, dto);
+  }
+
+  @Post("vaults/:id/rotate-key")
+  rotateKey(@CurrentUser() u: CurrentUserData, @Param("id") id: string, @Body() dto: RotateKeyDto) {
+    return this.vault.rotateKey(u.userId, id, dto);
   }
 
   @Get("vaults/:id/items")

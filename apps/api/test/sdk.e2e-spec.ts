@@ -74,4 +74,40 @@ describe("vault SDK e2e (consumer + service account)", () => {
     const secrets = await machine.pull(vault.id, 0);
     expect(secrets.items[0]!.data).toMatchObject({ key: "API_KEY", value: "sk-live-xyz" });
   });
+
+  it("VK rotation revokes a removed member's access to the new key version", async () => {
+    const owner = new VaultClient({ baseUrl, profile: "test" });
+    const o = await owner.devLogin("rot-owner@example.com");
+    await owner.enroll("owner-pw");
+    const vault = await owner.createVault("team");
+    await owner.putItem(vault.id, { type: "secret", key: "K", value: "v1-secret" }, { type: "secret" });
+
+    // add member B at key version 1
+    const B = new VaultClient({ baseUrl, profile: "test" });
+    const b = await B.devLogin("rot-b@example.com");
+    await B.enroll("b-pw");
+    await owner.listVaults();
+    const bKey = await owner.getUserIdentityKey(b.userId);
+    await owner.addMember(vault.id, b.userId, "viewer", bKey.identityPublicKey);
+
+    // B reads at v1
+    await B.listVaults();
+    expect((await B.pull(vault.id, 0)).items[0]!.data).toMatchObject({ value: "v1-secret" });
+
+    // owner rotates the VK, granting only itself (B excluded)
+    await owner.listVaults();
+    await owner.rotateKey(vault.id, [{ userId: o.userId, identityPubB64: owner.identityPublicKeyB64! }]);
+
+    // owner still reads the same payload (IK re-wrapped, not re-encrypted)
+    await owner.listVaults();
+    expect((await owner.pull(vault.id, 0)).items[0]!.data).toMatchObject({ value: "v1-secret" });
+
+    // B (fresh client) is still a member but has no current-version grant -> cannot derive VK
+    const B2 = new VaultClient({ baseUrl, profile: "test" });
+    await B2.devLogin("rot-b@example.com");
+    await B2.unlock("b-pw");
+    const seen = await B2.listVaults();
+    expect(seen.find((v) => v.id === vault.id)).toBeTruthy();
+    await expect(B2.pull(vault.id, 0)).rejects.toThrow();
+  });
 });

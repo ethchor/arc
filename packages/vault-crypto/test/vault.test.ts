@@ -9,6 +9,7 @@ import {
   openVaultKeyGrant,
   randomBytes,
   recoverIdentityPriv,
+  rewrapItemKey,
   toHex,
   unlock,
   unwrapIdentityFromPasskey,
@@ -77,6 +78,41 @@ describe("passkey unlock (PRF-wrapped identity key)", () => {
     const wrapped = wrapIdentityForPasskey(e.session.identityPriv, prf);
     expect(toHex(unwrapIdentityFromPasskey(wrapped, prf))).toBe(toHex(e.session.identityPriv));
     expect(() => unwrapIdentityFromPasskey(wrapped, randomBytes(32))).toThrow();
+  });
+});
+
+describe("VK rotation (IK re-wrap, payload untouched)", () => {
+  it("re-wraps the IK to a new VK version and decrypts without re-encrypting the payload", () => {
+    const oldVk = createVaultKey(1);
+    const newVk = createVaultKey(2);
+    const ref = { vaultId: "v1", itemId: "i1", version: 1, keyVersion: 1 };
+    const item = { type: "secret", key: "API_KEY", value: "sk-live" };
+    const enc = encryptItem(oldVk.vk, ref, item);
+
+    const rewrapped = rewrapItemKey(
+      oldVk.vk,
+      newVk.vk,
+      { vaultId: "v1", itemId: "i1", oldKeyVersion: 1, newKeyVersion: 2 },
+      enc.wrappedItemKey,
+    );
+
+    // new VK + new keyVersion decrypts the SAME payload ciphertext
+    expect(
+      decryptItem(
+        newVk.vk,
+        { vaultId: "v1", itemId: "i1", version: 1, keyVersion: 2 },
+        { ciphertext: enc.ciphertext, wrappedItemKey: rewrapped },
+      ),
+    ).toEqual(item);
+
+    // the old VK can no longer open the re-wrapped IK
+    expect(() =>
+      decryptItem(
+        oldVk.vk,
+        { vaultId: "v1", itemId: "i1", version: 1, keyVersion: 2 },
+        { ciphertext: enc.ciphertext, wrappedItemKey: rewrapped },
+      ),
+    ).toThrow();
   });
 });
 

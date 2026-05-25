@@ -10,6 +10,7 @@ import {
   type JsonValue,
   type Keyset,
   openVaultKeyGrant,
+  rewrapItemKey,
   toB64u,
   unlock as cryptoUnlock,
   wrapVaultKeyFor,
@@ -247,6 +248,54 @@ export class VaultClient {
 
   async deleteItem(vaultId: string, id: string): Promise<{ ok: boolean }> {
     return this.http("DELETE", `/vaults/${vaultId}/items/${id}`);
+  }
+
+  private async rawItems(vaultId: string): Promise<ItemRow[]> {
+    const res = await this.http<{ items: ItemRow[]; cursor: number }>(
+      "GET",
+      `/vaults/${vaultId}/items?since=0`,
+    );
+    return res.items;
+  }
+
+  /**
+   * Rotate the vault key for secure member revocation (docs/07 §7.5). Generates a new VK,
+   * re-wraps every item's IK to it (payloads untouched), and grants the new VK only to the
+   * supplied remaining members. Any member not listed gets no new-version grant and is
+   * cryptographically denied future reads.
+   */
+  async rotateKey(
+    vaultId: string,
+    remainingMembers: Array<{ userId: number; identityPubB64: string }>,
+  ): Promise<{ keyVersion: number }> {
+    const current = this.requireVk(vaultId);
+    const newKeyVersion = current.keyVersion + 1;
+    const newVk = createVaultKey(newKeyVersion).vk;
+
+    const rewrappedItemKeys = (await this.rawItems(vaultId))
+      .filter((r) => !r.deletedAt)
+      .map((r) => ({
+        itemId: r.id,
+        wrappedItemKey: rewrapItemKey(
+          current.vk,
+          newVk,
+          { vaultId, itemId: r.id, oldKeyVersion: r.vaultKeyVersion, newKeyVersion },
+          r.wrappedItemKey,
+        ),
+      }));
+
+    const grants = remainingMembers.map((m) => ({
+      granteeUserId: m.userId,
+      wrappedVaultKey: wrapVaultKeyFor(newVk, fromB64u(m.identityPubB64)),
+    }));
+
+    await this.http("POST", `/vaults/${vaultId}/rotate-key`, {
+      newKeyVersion,
+      grants,
+      rewrappedItemKeys,
+    });
+    this.vkCache.set(vaultId, { vk: newVk, keyVersion: newKeyVersion });
+    return { keyVersion: newKeyVersion };
   }
 
   private requireVk(vaultId: string): { vk: Uint8Array; keyVersion: number } {
