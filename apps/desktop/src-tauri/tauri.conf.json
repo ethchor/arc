@@ -5,7 +5,9 @@
   "identifier": "app.arcvault.desktop",
   "build": {
     "frontendDist": "../../web/out",
-    "devUrl": "http://localhost:3000"
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "pnpm --filter @arc-vault/web dev",
+    "beforeBuildCommand": "pnpm --filter @arc-vault/web build:desktop"
   },
   "app": {
     "windows": [

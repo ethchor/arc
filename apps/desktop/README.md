@@ -32,13 +32,20 @@ tested in `crates/desktop-core`). To build locally you need the Tauri v2 prerequ
 
 ```bash
 # from apps/desktop
-pnpm dlx @tauri-apps/cli@^2 dev      # dev (loads devUrl http://localhost:3000)
-pnpm dlx @tauri-apps/cli@^2 build    # production bundle
+pnpm dlx @tauri-apps/cli@^2 dev      # dev: runs `web dev` (http://localhost:3000)
+pnpm dlx @tauri-apps/cli@^2 build    # prod: runs `web build:desktop` -> ../../web/out
 ```
 
-`tauri.conf.json` points `frontendDist` at `../../web/out`; to produce it, configure the
-Next.js app for static export (`output: "export"` in `apps/web/next.config.mjs`) and run its
-build, or use `devUrl` during development.
+The frontend is wired in `tauri.conf.json`:
+
+- `beforeDevCommand` → `pnpm --filter @arc-vault/web dev`, loaded from `devUrl`.
+- `beforeBuildCommand` → `pnpm --filter @arc-vault/web build:desktop`, which runs Next.js
+  with `NEXT_OUTPUT=export` to emit the static `apps/web/out` that `frontendDist` points at.
+  In export mode the web app serves no response headers; the desktop CSP comes from
+  `tauri.conf.json` `app.security.csp`.
+
+Bundling also needs app icons — generate them once with
+`pnpm dlx @tauri-apps/cli@^2 icon path/to/icon.png`.
 
 ## At-rest encryption
 
