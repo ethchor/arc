@@ -72,7 +72,9 @@ export class VaultClient {
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly opts: VaultClientOptions) {
-    this.fetchImpl = opts.fetchImpl ?? fetch;
+    // Bind to globalThis: native fetch throws "Illegal invocation" if called with a
+    // non-global `this` (which happens when stored as an instance property).
+    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   setToken(token: string): void {
