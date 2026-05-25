@@ -13,6 +13,7 @@ import {
   edSign,
   edPubFromPriv,
   toHex,
+  toB64u,
   fromHex,
   utf8,
 } from "../dist/index.js";
@@ -58,6 +59,21 @@ const vectors = {
     aad: aeadAad,
     plaintextHex: aeadPlainHex,
     ciphertextHex: toHex(aeadCt),
+  },
+  aeadEnvelope: {
+    keyHex: aeadKeyHex,
+    aad: aeadAad,
+    plaintextHex: aeadPlainHex,
+    envelope: {
+      v: 1,
+      alg: "XC20P",
+      kdf: null,
+      kv: null,
+      aad: aeadAad,
+      n: toB64u(fromHex(aeadNonceHex)),
+      ct: toB64u(aeadCt),
+      pad: 0,
+    },
   },
   ed25519: {
     privHex: edPrivHex,

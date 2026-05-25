@@ -1,0 +1,20 @@
+[package]
+name = "arc-vault-desktop-core"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Webkit-free desktop runtime for arc-vault: in-memory session (auto-lock), device keychain, encrypted local cache. Wrapped by the Tauri shell in apps/desktop."
+
+[dependencies]
+arc-vault-crypto = { path = "../vault-crypto-rs" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = "1"
+keyring = { version = "3", optional = true }
+
+[features]
+default = []
+# Real OS keychain backend (Secret Service / macOS Keychain / Windows Credential Manager).
+# Off by default so tests/CI don't require a running secret service.
+os-keychain = ["dep:keyring"]

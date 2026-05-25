@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core invoke handlers for the vault commands. Deliberately no broad fs/shell/http grants — the vault_* commands are core handlers (docs/06 §6, docs/12 §12.2).",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -28,8 +28,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Rust parity tests
+      - name: Rust crypto parity tests
         run: cargo test --manifest-path crates/vault-crypto-rs/Cargo.toml
+      - name: Desktop-core tests
+        run: cargo test --manifest-path crates/desktop-core/Cargo.toml
       - name: cargo audit (non-blocking)
         run: |
           cargo install cargo-audit --locked || true

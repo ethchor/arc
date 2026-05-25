@@ -137,6 +137,10 @@ pub fn x25519_keypair() -> ([u8; 32], [u8; 32]) {
     (sk.to_bytes(), pk.to_bytes())
 }
 
+pub fn x25519_public_from_secret(secret: &[u8; 32]) -> [u8; 32] {
+    PublicKey::from(&StaticSecret::from(*secret)).to_bytes()
+}
+
 pub struct Sealed {
     pub eph_pub: [u8; 32],
     pub nonce: [u8; 24],
@@ -165,4 +169,188 @@ pub fn seal_open(
     let shared = sk.diffie_hellman(&PublicKey::from(*eph_pub));
     let key = seal_key(shared.as_bytes(), eph_pub, recipient_pub);
     aead_decrypt(&key, nonce, ct, b"")
+}
+
+// --- versioned envelope (mirrors packages/vault-crypto/src/envelope.ts) ---
+
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
+use serde::{Deserialize, Serialize};
+
+fn b64u_encode(b: &[u8]) -> String {
+    URL_SAFE_NO_PAD.encode(b)
+}
+fn b64u_decode(s: &str) -> Result<Vec<u8>, ()> {
+    URL_SAFE_NO_PAD.decode(s).map_err(|_| ())
+}
+
+pub fn random32() -> [u8; 32] {
+    let mut b = [0u8; 32];
+    OsRng.fill_bytes(&mut b);
+    b
+}
+
+const BUCKETS: [usize; 7] = [64, 256, 1024, 4096, 16384, 65536, 262144];
+fn pad_target(len: usize) -> usize {
+    for b in BUCKETS {
+        if len <= b {
+            return b;
+        }
+    }
+    len.div_ceil(262144) * 262144
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Envelope {
+    pub v: u32,
+    pub alg: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kdf: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kv: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aad: Option<String>,
+    pub n: String,
+    pub ct: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ep: Option<String>,
+    #[serde(default)]
+    pub pad: u32,
+}
+
+pub fn aead_seal_envelope(
+    key: &[u8; 32],
+    plaintext: &[u8],
+    aad: &str,
+    kv: Option<u32>,
+    do_pad: bool,
+) -> Envelope {
+    let (buf, pad) = if do_pad {
+        let t = pad_target(plaintext.len());
+        let mut v = vec![0u8; t];
+        v[..plaintext.len()].copy_from_slice(plaintext);
+        (v, (t - plaintext.len()) as u32)
+    } else {
+        (plaintext.to_vec(), 0)
+    };
+    let mut nonce = [0u8; 24];
+    OsRng.fill_bytes(&mut nonce);
+    let ct = aead_encrypt(key, &nonce, &buf, aad.as_bytes());
+    Envelope {
+        v: 1,
+        alg: "XC20P".into(),
+        kdf: None,
+        kv,
+        aad: Some(aad.to_string()),
+        n: b64u_encode(&nonce),
+        ct: b64u_encode(&ct),
+        ep: None,
+        pad,
+    }
+}
+
+pub fn aead_open_envelope(key: &[u8; 32], env: &Envelope, expected_aad: &str) -> Result<Vec<u8>, ()> {
+    if env.v != 1 || env.alg != "XC20P" {
+        return Err(());
+    }
+    if let Some(a) = &env.aad {
+        if a != expected_aad {
+            return Err(());
+        }
+    }
+    let nonce: [u8; 24] = b64u_decode(&env.n)?.try_into().map_err(|_| ())?;
+    let ct = b64u_decode(&env.ct)?;
+    let buf = aead_decrypt(key, &nonce, &ct, expected_aad.as_bytes())?;
+    let pad = env.pad as usize;
+    if pad > buf.len() {
+        return Err(());
+    }
+    Ok(buf[..buf.len() - pad].to_vec())
+}
+
+pub fn seal_to_envelope(recipient_pub: &[u8; 32], plaintext: &[u8]) -> Envelope {
+    let s = seal(recipient_pub, plaintext);
+    Envelope {
+        v: 1,
+        alg: "seal-x25519-hkdf-xc20p".into(),
+        kdf: None,
+        kv: None,
+        aad: None,
+        n: b64u_encode(&s.nonce),
+        ct: b64u_encode(&s.ct),
+        ep: Some(b64u_encode(&s.eph_pub)),
+        pad: 0,
+    }
+}
+
+pub fn seal_open_envelope(
+    recipient_priv: &[u8; 32],
+    recipient_pub: &[u8; 32],
+    env: &Envelope,
+) -> Result<Vec<u8>, ()> {
+    let ep: [u8; 32] = b64u_decode(env.ep.as_deref().ok_or(())?)?.try_into().map_err(|_| ())?;
+    let nonce: [u8; 24] = b64u_decode(&env.n)?.try_into().map_err(|_| ())?;
+    let ct = b64u_decode(&env.ct)?;
+    seal_open(recipient_priv, recipient_pub, &ep, &nonce, &ct)
+}
+
+// --- item encrypt/decrypt (IK under VEK; payload under IK) ---
+
+fn item_payload_aad(vault_id: &str, item_id: &str, version: u64) -> String {
+    build_aad(&[("vaultId", vault_id), ("itemId", item_id), ("version", &version.to_string())])
+}
+fn item_key_aad(vault_id: &str, item_id: &str, key_version: u64) -> String {
+    build_aad(&[
+        ("vaultId", vault_id),
+        ("itemId", item_id),
+        ("scope", "ik"),
+        ("keyVersion", &key_version.to_string()),
+    ])
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct EncryptedItem {
+    pub ciphertext: Envelope,
+    pub wrapped_item_key: Envelope,
+}
+
+pub fn encrypt_item(
+    vek: &[u8; 32],
+    vault_id: &str,
+    item_id: &str,
+    version: u64,
+    key_version: u64,
+    plaintext: &[u8],
+) -> EncryptedItem {
+    let ik = random32();
+    let ciphertext = aead_seal_envelope(
+        &ik,
+        plaintext,
+        &item_payload_aad(vault_id, item_id, version),
+        Some(key_version as u32),
+        true,
+    );
+    let wrapped_item_key = aead_seal_envelope(
+        vek,
+        &ik,
+        &item_key_aad(vault_id, item_id, key_version),
+        Some(key_version as u32),
+        false,
+    );
+    EncryptedItem { ciphertext, wrapped_item_key }
+}
+
+pub fn decrypt_item(
+    vek: &[u8; 32],
+    vault_id: &str,
+    item_id: &str,
+    version: u64,
+    key_version: u64,
+    ciphertext: &Envelope,
+    wrapped_item_key: &Envelope,
+) -> Result<Vec<u8>, ()> {
+    let ik_vec = aead_open_envelope(vek, wrapped_item_key, &item_key_aad(vault_id, item_id, key_version))?;
+    let ik: [u8; 32] = ik_vec.try_into().map_err(|_| ())?;
+    aead_open_envelope(&ik, ciphertext, &item_payload_aad(vault_id, item_id, version))
 }

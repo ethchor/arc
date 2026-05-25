@@ -110,6 +110,37 @@ fn ed25519_matches_ts() {
 }
 
 #[test]
+fn opens_a_ts_produced_envelope() {
+    let v = vectors();
+    let e = &v["aeadEnvelope"];
+    let key = a32(e["keyHex"].as_str().unwrap());
+    let aad = e["aad"].as_str().unwrap();
+    let env: Envelope = serde_json::from_value(e["envelope"].clone()).unwrap();
+    let pt = aead_open_envelope(&key, &env, aad).unwrap();
+    assert_eq!(hex::encode(pt), e["plaintextHex"].as_str().unwrap());
+    // wrong AAD fails closed
+    assert!(aead_open_envelope(&key, &env, "different").is_err());
+}
+
+#[test]
+fn item_encrypt_decrypt_round_trips() {
+    let vek = random32();
+    let plaintext = br#"{"type":"secret","key":"API_KEY","value":"sk-live"}"#;
+    let item = encrypt_item(&vek, "v1", "i1", 1, 1, plaintext);
+    let out = decrypt_item(&vek, "v1", "i1", 1, 1, &item.ciphertext, &item.wrapped_item_key).unwrap();
+    assert_eq!(out, plaintext);
+    // a wrong VEK cannot open the wrapped IK
+    assert!(decrypt_item(&random32(), "v1", "i1", 1, 1, &item.ciphertext, &item.wrapped_item_key).is_err());
+}
+
+#[test]
+fn seal_envelope_round_trips() {
+    let (rpriv, rpub) = x25519_keypair();
+    let env = seal_to_envelope(&rpub, b"vault-key");
+    assert_eq!(seal_open_envelope(&rpriv, &rpub, &env).unwrap(), b"vault-key");
+}
+
+#[test]
 fn seal_round_trips_and_rejects_wrong_recipient() {
     let (rpriv, rpub) = x25519_keypair();
     let sealed = seal(&rpub, b"vault-key");
