@@ -1,4 +1,4 @@
-import { VaultApp } from "./VaultApp";
+import { VaultApp } from "@/components/vault/vault-app";
 
 export default function Page() {
   return <VaultApp />;

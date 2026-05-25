@@ -10,6 +10,8 @@
     "allowJs": true,
     "resolveJsonModule": true,
     "incremental": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
     "plugins": [{ "name": "next" }]
   },
   "include": ["next-env.d.ts", "src", ".next/types/**/*.ts"],
