@@ -2,8 +2,10 @@ import {
   computeAuthHash,
   createVaultKey,
   decryptItem,
+  decryptVaultName,
   edPubFromPriv,
   encryptItem,
+  encryptVaultName,
   enroll as cryptoEnroll,
   type Envelope,
   fromB64u,
@@ -49,6 +51,14 @@ export interface VaultSummary {
   type: string;
   role: string;
   keyVersion: number;
+  /** Decrypted vault name, if one was set. */
+  name?: string;
+}
+
+export interface VaultMember {
+  userId: number;
+  role: string;
+  status: string;
 }
 
 export interface PulledItem {
@@ -162,28 +172,50 @@ export class VaultClient {
   async listVaults(): Promise<VaultSummary[]> {
     if (!this.session) throw new Error("not unlocked: call enroll/unlock/setIdentity first");
     const vaults = await this.http<
-      Array<{ id: string; type: string; role: string; currentKeyVersion: number; grant: Envelope | null }>
+      Array<{
+        id: string;
+        type: string;
+        role: string;
+        currentKeyVersion: number;
+        grant: Envelope | null;
+        encName: Envelope | null;
+      }>
     >("GET", "/vaults");
     const out: VaultSummary[] = [];
     for (const v of vaults) {
+      let name: string | undefined;
       if (v.grant) {
-        this.vkCache.set(v.id, {
-          vk: openVaultKeyGrant(v.grant, this.session.identityPriv),
-          keyVersion: v.currentKeyVersion,
-        });
+        const vk = openVaultKeyGrant(v.grant, this.session.identityPriv);
+        this.vkCache.set(v.id, { vk, keyVersion: v.currentKeyVersion });
+        if (v.encName) {
+          try {
+            name = decryptVaultName(vk, v.encName, v.currentKeyVersion);
+          } catch {
+            name = undefined;
+          }
+        }
       }
-      out.push({ id: v.id, type: v.type, role: v.role, keyVersion: v.currentKeyVersion });
+      out.push({ id: v.id, type: v.type, role: v.role, keyVersion: v.currentKeyVersion, name });
     }
     return out;
   }
 
-  async createVault(type: VaultType = "team"): Promise<{ id: string; keyVersion: number }> {
+  async createVault(type: VaultType = "team", name?: string): Promise<{ id: string; keyVersion: number }> {
     if (!this.session) throw new Error("not unlocked");
     const vkm = createVaultKey(1);
     const ownerGrant = wrapVaultKeyFor(vkm.vk, this.session.identityPub);
-    const r = await this.http<{ id: string; currentKeyVersion: number }>("POST", "/vaults", { type, ownerGrant });
+    const encName = name ? encryptVaultName(vkm.vk, name, 1) : undefined;
+    const r = await this.http<{ id: string; currentKeyVersion: number }>("POST", "/vaults", {
+      type,
+      ownerGrant,
+      ...(encName ? { encName } : {}),
+    });
     this.vkCache.set(r.id, { vk: vkm.vk, keyVersion: r.currentKeyVersion });
     return { id: r.id, keyVersion: r.currentKeyVersion };
+  }
+
+  async listMembers(vaultId: string): Promise<VaultMember[]> {
+    return this.http("GET", `/vaults/${vaultId}/members`);
   }
 
   async getUserIdentityKey(userId: number): Promise<{
@@ -298,6 +330,21 @@ export class VaultClient {
     });
     this.vkCache.set(vaultId, { vk: newVk, keyVersion: newKeyVersion });
     return { keyVersion: newKeyVersion };
+  }
+
+  /**
+   * Rotate the VK and re-grant to every current active member (key hygiene / post-incident).
+   * To revoke a member instead, pass the trimmed member set to {@link rotateKey}.
+   */
+  async rotateForAllMembers(vaultId: string): Promise<{ keyVersion: number }> {
+    const members = (await this.listMembers(vaultId)).filter((m) => m.status === "active");
+    const remaining = await Promise.all(
+      members.map(async (m) => ({
+        userId: m.userId,
+        identityPubB64: (await this.getUserIdentityKey(m.userId)).identityPublicKey,
+      })),
+    );
+    return this.rotateKey(vaultId, remaining);
   }
 
   private requireVk(vaultId: string): { vk: Uint8Array; keyVersion: number } {

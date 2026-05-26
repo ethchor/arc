@@ -1,10 +1,11 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Lock, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeCustomizer } from "@/components/theme-customizer";
 
-export function SiteHeader({ onLock }: { onLock?: () => void }) {
+export function SiteHeader({ onLock, actions }: { onLock?: () => void; actions?: ReactNode }) {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
@@ -13,6 +14,7 @@ export function SiteHeader({ onLock }: { onLock?: () => void }) {
           arc-vault
         </div>
         <div className="flex items-center gap-2">
+          {actions}
           {onLock && (
             <Button variant="outline" size="sm" onClick={onLock}>
               <Lock className="h-4 w-4" /> Lock

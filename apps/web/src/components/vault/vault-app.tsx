@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { FolderPlus, Pencil, Plus, Search, Trash2, Vault } from "lucide-react";
-import type { PulledItem, VaultSummary } from "@arc-vault/sdk";
+import { Pencil, Plus, Search, Trash2, Vault } from "lucide-react";
+import type { PulledItem, VaultSummary, VaultType } from "@arc-vault/sdk";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,8 +18,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { CopyField } from "@/components/vault/copy-field";
+import { CreateVaultDialog } from "@/components/vault/create-vault-dialog";
 import { ItemDialog, type LoginInput } from "@/components/vault/item-dialog";
+import { MembersDialog } from "@/components/vault/members-dialog";
 import { RecoveryKeyCard } from "@/components/vault/recovery-key-card";
+import { SettingsDialog } from "@/components/vault/settings-dialog";
 import { ShareDialog } from "@/components/vault/share-dialog";
 import { SiteHeader } from "@/components/vault/site-header";
 import { UnlockScreen } from "@/components/vault/unlock-screen";
@@ -45,6 +48,17 @@ export function VaultApp() {
   const [activeItem, setActiveItem] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [autolock, setAutolock] = React.useState(5);
+
+  React.useEffect(() => {
+    const stored = Number(localStorage.getItem("arc-vault-autolock"));
+    if (stored) setAutolock(stored);
+  }, []);
+
+  const setAutolockPersist = (minutes: number) => {
+    setAutolock(minutes);
+    localStorage.setItem("arc-vault-autolock", String(minutes));
+  };
 
   const guard = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -93,9 +107,9 @@ export function VaultApp() {
       setPhase("unlocked");
     });
 
-  const createVault = () =>
+  const createVault = (type: VaultType, name: string) =>
     guard(async () => {
-      const v = await getClient().createVault("team");
+      const v = await getClient().createVault(type, name);
       await loadVaults();
       await openVault(v.id);
       toast.success("Vault created");
@@ -135,6 +149,27 @@ export function VaultApp() {
     setQuery("");
   };
 
+  // Idle auto-lock (docs/12 §12.3): wipe in-memory keys after `autolock` minutes of inactivity.
+  React.useEffect(() => {
+    if (phase !== "unlocked") return;
+    let timer: ReturnType<typeof setTimeout>;
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        doLock();
+        toast("Locked due to inactivity");
+      }, autolock * 60_000);
+    };
+    const events = ["mousemove", "keydown", "click", "scroll"];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, autolock]);
+
   if (phase !== "unlocked") {
     return (
       <div className="min-h-screen">
@@ -157,7 +192,10 @@ export function VaultApp() {
 
   return (
     <div className="min-h-screen">
-      <SiteHeader onLock={doLock} />
+      <SiteHeader
+        onLock={doLock}
+        actions={<SettingsDialog autolock={autolock} onAutolock={setAutolockPersist} />}
+      />
       <main className="mx-auto max-w-5xl px-4 py-6">
         {recoveryKey && (
           <div className="mb-6">
@@ -168,9 +206,7 @@ export function VaultApp() {
           <aside className="space-y-2">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-medium text-muted-foreground">Vaults</h2>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={createVault} aria-label="New vault">
-                <FolderPlus className="h-4 w-4" />
-              </Button>
+              <CreateVaultDialog onCreate={createVault} />
             </div>
             <div className="space-y-1">
               {vaults.map((v) => (
@@ -183,7 +219,7 @@ export function VaultApp() {
                   )}
                 >
                   <Vault className="h-4 w-4 text-muted-foreground" />
-                  <span className="truncate capitalize">{v.type}</span>
+                  <span className={cn("truncate", !v.name && "capitalize")}>{v.name ?? v.type}</span>
                   <Badge variant="secondary" className="ml-auto">
                     {v.role}
                   </Badge>
@@ -196,6 +232,19 @@ export function VaultApp() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h1 className="text-lg font-semibold">Items</h1>
               <div className="flex items-center gap-2">
+                {selected && (
+                  <MembersDialog
+                    canManage={!!canManage}
+                    onLoad={() => getClient().listMembers(selected)}
+                    onRotate={async () => {
+                      await getClient().rotateForAllMembers(selected);
+                      const vs = await getClient().listVaults();
+                      setVaults(vs);
+                      await openVault(selected);
+                      toast.success("Vault key rotated");
+                    }}
+                  />
+                )}
                 {canManage && selected && (
                   <ShareDialog
                     onLookup={(userId) => getClient().getUserIdentityKey(userId)}

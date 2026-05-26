@@ -304,6 +304,19 @@ export function decryptItem(vk: Uint8Array, ref: ItemRef, enc: EncryptedItem): J
   }
 }
 
+// --- vault name (encrypted under VK; docs/07 §7.7) ---
+
+const vaultNameAad = (keyVersion: number) =>
+  buildAad([["scope", "vault-name"], ["keyVersion", String(keyVersion)]]);
+
+export function encryptVaultName(vk: Uint8Array, name: string, keyVersion = 1): Envelope {
+  return aeadSeal(vk, utf8(name), vaultNameAad(keyVersion), { kv: keyVersion });
+}
+
+export function decryptVaultName(vk: Uint8Array, env: Envelope, keyVersion = 1): string {
+  return fromUtf8(aeadOpen(vk, env, vaultNameAad(keyVersion)));
+}
+
 export function lockSession(session: Session): void {
   wipe(session.wk, session.identityPriv, session.signingPriv);
 }
