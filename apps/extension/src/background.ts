@@ -1,13 +1,12 @@
 // MV3 service worker: the ONLY place the unlocked session and crypto keys live (docs/12 §12.4).
-// The content script never receives key material — only a single matched username/password to
-// fill, and only after this worker enforces HTTPS + registrable-domain origin binding.
+// The content script never receives key material — only the specific values to fill, and only
+// after this worker enforces HTTPS + registrable-domain origin binding. The popup (a privileged
+// extension page, not the page DOM) may list metadata and fetch a single credential on demand.
 import { VaultClient } from "@arc-vault/sdk";
 import { originMatches } from "./origin";
-import type { BackgroundMessage, FillResponse, UnlockResponse } from "./messages";
+import type { BackgroundMessage, Creds, FillResponse, LoginMeta, UnlockResponse } from "./messages";
 
-interface LoginEntry {
-  url: string;
-  username: string;
+interface LoginEntry extends LoginMeta {
   password: string;
 }
 
@@ -26,10 +25,12 @@ async function unlock(baseUrl: string, email: string, masterPassword: string): P
       for (const item of items) {
         if (item.deleted) continue;
         const d = item.data as
-          | { type?: string; fields?: { url?: string; username?: string; password?: string } }
+          | { type?: string; title?: string; fields?: { url?: string; username?: string; password?: string } }
           | null;
         if (d?.type === "login" && d.fields?.url) {
           next.push({
+            id: item.id,
+            title: d.title ?? d.fields.url,
             url: d.fields.url,
             username: d.fields.username ?? "",
             password: d.fields.password ?? "",
@@ -47,7 +48,18 @@ async function unlock(baseUrl: string, email: string, masterPassword: string): P
 chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendResponse) => {
   if (message.type === "arc:unlock") {
     void unlock(message.baseUrl, message.email, message.masterPassword).then(sendResponse);
-    return true; // async response
+    return true;
+  }
+  if (message.type === "arc:list") {
+    const metas: LoginMeta[] = logins.map(({ id, title, url, username }) => ({ id, title, url, username }));
+    sendResponse(metas);
+    return true;
+  }
+  if (message.type === "arc:get") {
+    const found = logins.find((l) => l.id === message.id);
+    const creds: Creds | null = found ? { username: found.username, password: found.password } : null;
+    sendResponse(creds);
+    return true;
   }
   if (message.type === "arc:requestFill") {
     const match = logins.find((l) => originMatches(message.pageUrl, l.url));

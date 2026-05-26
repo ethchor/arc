@@ -5,7 +5,7 @@
   "description": "arc-vault browser extension (MV3): origin-bound autofill, isolated content script.",
   "type": "module",
   "scripts": {
-    "build": "tsup && cp public/manifest.json public/popup.html dist/",
+    "build": "tsup && cp public/* dist/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

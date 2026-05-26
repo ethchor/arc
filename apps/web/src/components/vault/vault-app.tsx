@@ -1,16 +1,26 @@
 "use client";
 
 import * as React from "react";
-import { FolderPlus, Vault } from "lucide-react";
+import { FolderPlus, Pencil, Plus, Search, Trash2, Vault } from "lucide-react";
 import type { PulledItem, VaultSummary } from "@arc-vault/sdk";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { AddItemDialog, type LoginInput } from "@/components/vault/add-item-dialog";
 import { CopyField } from "@/components/vault/copy-field";
+import { ItemDialog, type LoginInput } from "@/components/vault/item-dialog";
 import { RecoveryKeyCard } from "@/components/vault/recovery-key-card";
+import { ShareDialog } from "@/components/vault/share-dialog";
 import { SiteHeader } from "@/components/vault/site-header";
 import { UnlockScreen } from "@/components/vault/unlock-screen";
 import { getClient, initClient, lock } from "@/vault-store";
@@ -23,6 +33,8 @@ interface LoginData {
 }
 type Phase = "login" | "account" | "unlocked";
 
+const asLogin = (i: PulledItem) => i.data as LoginData | null;
+
 export function VaultApp() {
   const [phase, setPhase] = React.useState<Phase>("login");
   const [busy, setBusy] = React.useState(false);
@@ -31,6 +43,8 @@ export function VaultApp() {
   const [selected, setSelected] = React.useState<string | null>(null);
   const [items, setItems] = React.useState<PulledItem[]>([]);
   const [activeItem, setActiveItem] = React.useState<string | null>(null);
+  const [query, setQuery] = React.useState("");
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
 
   const guard = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -87,16 +101,28 @@ export function VaultApp() {
       toast.success("Vault created");
     });
 
-  const addLogin = async (value: LoginInput) => {
-    if (!selected) return;
-    await getClient().putItem(
-      selected,
-      { type: "login", title: value.title, fields: { url: value.url, username: value.username, password: value.password } },
-      { type: "login" },
-    );
-    await openVault(selected);
-    toast.success("Saved");
-  };
+  const saveLogin = (value: LoginInput, existing?: PulledItem) =>
+    guard(async () => {
+      if (!selected) return;
+      const data = { type: "login", title: value.title, fields: { url: value.url, username: value.username, password: value.password } };
+      await getClient().putItem(
+        selected,
+        data,
+        existing ? { id: existing.id, baseVersion: existing.version, type: "login" } : { type: "login" },
+      );
+      await openVault(selected);
+      if (existing) setActiveItem(existing.id);
+      toast.success("Saved");
+    });
+
+  const deleteItem = (item: PulledItem) =>
+    guard(async () => {
+      if (!selected) return;
+      await getClient().deleteItem(selected, item.id);
+      setConfirmDelete(false);
+      await openVault(selected);
+      toast.success("Deleted");
+    });
 
   const doLock = () => {
     lock();
@@ -106,6 +132,7 @@ export function VaultApp() {
     setSelected(null);
     setRecoveryKey(null);
     setActiveItem(null);
+    setQuery("");
   };
 
   if (phase !== "unlocked") {
@@ -117,8 +144,16 @@ export function VaultApp() {
     );
   }
 
+  const selectedVault = vaults.find((v) => v.id === selected);
+  const canManage = selectedVault?.role === "owner" || selectedVault?.role === "admin";
   const active = items.find((i) => i.id === activeItem);
-  const activeData = active?.data as LoginData | null | undefined;
+  const activeData = active ? asLogin(active) : null;
+  const q = query.trim().toLowerCase();
+  const filtered = items.filter((i) => {
+    if (!q) return true;
+    const d = asLogin(i);
+    return [d?.title, d?.fields.username, d?.fields.url].some((s) => s?.toLowerCase().includes(q));
+  });
 
   return (
     <div className="min-h-screen">
@@ -158,20 +193,51 @@ export function VaultApp() {
           </aside>
 
           <section className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h1 className="text-lg font-semibold">Items</h1>
-              {selected && <AddItemDialog onAdd={addLogin} />}
+              <div className="flex items-center gap-2">
+                {canManage && selected && (
+                  <ShareDialog
+                    onLookup={(userId) => getClient().getUserIdentityKey(userId)}
+                    onShare={async (userId, role, pub) => {
+                      await getClient().addMember(selected, userId, role, pub);
+                      toast.success("Access granted");
+                    }}
+                  />
+                )}
+                {selected && (
+                  <ItemDialog
+                    trigger={
+                      <Button size="sm">
+                        <Plus className="h-4 w-4" /> Add login
+                      </Button>
+                    }
+                    onSubmit={(v) => saveLogin(v)}
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search items"
+                className="pl-8"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
             </div>
             <Separator />
-            {items.length === 0 ? (
+
+            {filtered.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">
-                No items yet. Add your first login.
+                {items.length === 0 ? "No items yet. Add your first login." : "No matches."}
               </p>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1">
-                  {items.map((i) => {
-                    const d = i.data as LoginData | null;
+                  {filtered.map((i) => {
+                    const d = asLogin(i);
                     return (
                       <button
                         key={i.id}
@@ -192,9 +258,38 @@ export function VaultApp() {
                     );
                   })}
                 </div>
+
                 <Card>
-                  <CardHeader>
+                  <CardHeader className="flex-row items-center justify-between space-y-0">
                     <CardTitle className="text-base">{activeData?.title ?? "Select an item"}</CardTitle>
+                    {active && activeData && (
+                      <div className="flex items-center gap-1">
+                        <ItemDialog
+                          heading="Edit login"
+                          initial={{
+                            title: activeData.title,
+                            url: activeData.fields.url,
+                            username: activeData.fields.username,
+                            password: activeData.fields.password,
+                          }}
+                          trigger={
+                            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          }
+                          onSubmit={(v) => saveLogin(v, active)}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          aria-label="Delete"
+                          onClick={() => setConfirmDelete(true)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </CardHeader>
                   <CardContent className="space-y-2">
                     {activeData ? (
@@ -213,6 +308,26 @@ export function VaultApp() {
           </section>
         </div>
       </main>
+
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this item?</DialogTitle>
+            <DialogDescription>
+              This removes &quot;{activeData?.title}&quot; from the vault. It is soft-deleted and
+              syncs to your other devices.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={busy} onClick={() => active && deleteItem(active)}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
