@@ -19,6 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { CopyField } from "@/components/vault/copy-field";
 import { CreateVaultDialog } from "@/components/vault/create-vault-dialog";
+import { DevicePendingView } from "@/components/vault/device-pending-view";
+import { DevicesDialog } from "@/components/vault/devices-dialog";
 import { ItemDialog, type LoginInput } from "@/components/vault/item-dialog";
 import { MembersDialog } from "@/components/vault/members-dialog";
 import { RecoveryKeyCard } from "@/components/vault/recovery-key-card";
@@ -34,7 +36,7 @@ interface LoginData {
   title: string;
   fields: { url: string; username: string; password: string };
 }
-type Phase = "login" | "account" | "unlocked";
+type Phase = "login" | "account" | "device-pending" | "unlocked";
 
 const asLogin = (i: PulledItem) => i.data as LoginData | null;
 
@@ -49,6 +51,9 @@ export function VaultApp() {
   const [query, setQuery] = React.useState("");
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [autolock, setAutolock] = React.useState(5);
+  const [deviceMode, setDeviceMode] = React.useState(false);
+  const [deviceId, setDeviceId] = React.useState<string | null>(null);
+  const [deviceCode, setDeviceCode] = React.useState("");
 
   React.useEffect(() => {
     const stored = Number(localStorage.getItem("arc-vault-autolock"));
@@ -107,6 +112,33 @@ export function VaultApp() {
       setPhase("unlocked");
     });
 
+  const startNewDevice = () =>
+    guard(async () => {
+      const r = await getClient().registerDevice("Web device");
+      setDeviceId(r.deviceId);
+      setDeviceCode(r.verificationCode);
+      setPhase("device-pending");
+    });
+
+  const pollApproval = async (announce: boolean) => {
+    if (!deviceId) return;
+    try {
+      const granted = await getClient().loadDeviceGrants(deviceId);
+      if (granted.length > 0) {
+        setDeviceMode(true);
+        const dv = await getClient().listDeviceVaults();
+        setVaults(dv);
+        if (dv[0]) await openVault(dv[0].id);
+        setPhase("unlocked");
+        toast.success("Device approved");
+      } else if (announce) {
+        toast("Not approved yet");
+      }
+    } catch (e) {
+      if (announce) toast.error((e as Error).message);
+    }
+  };
+
   const createVault = (type: VaultType, name: string) =>
     guard(async () => {
       const v = await getClient().createVault(type, name);
@@ -147,7 +179,18 @@ export function VaultApp() {
     setRecoveryKey(null);
     setActiveItem(null);
     setQuery("");
+    setDeviceMode(false);
+    setDeviceId(null);
+    setDeviceCode("");
   };
+
+  // Poll for device approval while waiting (docs/06 §6.3).
+  React.useEffect(() => {
+    if (phase !== "device-pending") return;
+    const t = setInterval(() => void pollApproval(false), 3000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, deviceId]);
 
   // Idle auto-lock (docs/12 §12.3): wipe in-memory keys after `autolock` minutes of inactivity.
   React.useEffect(() => {
@@ -170,17 +213,33 @@ export function VaultApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, autolock]);
 
+  if (phase === "device-pending") {
+    return (
+      <div className="min-h-screen">
+        <SiteHeader />
+        <DevicePendingView code={deviceCode} onCheck={() => pollApproval(true)} onCancel={doLock} />
+      </div>
+    );
+  }
+
   if (phase !== "unlocked") {
     return (
       <div className="min-h-screen">
         <SiteHeader />
-        <UnlockScreen phase={phase} busy={busy} onSignIn={signIn} onUnlock={unlock} onEnroll={enroll} />
+        <UnlockScreen
+          phase={phase}
+          busy={busy}
+          onSignIn={signIn}
+          onUnlock={unlock}
+          onEnroll={enroll}
+          onNewDevice={startNewDevice}
+        />
       </div>
     );
   }
 
   const selectedVault = vaults.find((v) => v.id === selected);
-  const canManage = selectedVault?.role === "owner" || selectedVault?.role === "admin";
+  const canManage = !deviceMode && (selectedVault?.role === "owner" || selectedVault?.role === "admin");
   const active = items.find((i) => i.id === activeItem);
   const activeData = active ? asLogin(active) : null;
   const q = query.trim().toLowerCase();
@@ -194,7 +253,18 @@ export function VaultApp() {
     <div className="min-h-screen">
       <SiteHeader
         onLock={doLock}
-        actions={<SettingsDialog autolock={autolock} onAutolock={setAutolockPersist} />}
+        actions={
+          <>
+            <DevicesDialog
+              onLoad={() => getClient().listPendingDevices()}
+              onApprove={async (d) => {
+                await getClient().approveDevice(d.id, d.publicKey);
+                toast.success("Device approved");
+              }}
+            />
+            <SettingsDialog autolock={autolock} onAutolock={setAutolockPersist} />
+          </>
+        }
       />
       <main className="mx-auto max-w-5xl px-4 py-6">
         {recoveryKey && (

@@ -8,11 +8,14 @@ import {
   encryptVaultName,
   enroll as cryptoEnroll,
   type Envelope,
+  fingerprint,
   fromB64u,
+  generateDeviceKeyPair,
   type JsonValue,
   type Keyset,
   openVaultKeyGrant,
   rewrapItemKey,
+  sealOpen,
   toB64u,
   unlock as cryptoUnlock,
   wrapVaultKeyFor,
@@ -69,6 +72,13 @@ export interface PulledItem {
   data: JsonValue | null;
 }
 
+export interface PendingDevice {
+  id: string;
+  name: string;
+  publicKey: string;
+  verificationCode: string;
+}
+
 /**
  * One client for both personas:
  * - consumer: {@link enroll} / {@link unlock} derive the identity key from a master password.
@@ -78,6 +88,8 @@ export interface PulledItem {
 export class VaultClient {
   private token?: string;
   private session?: ClientSession;
+  private devicePriv?: Uint8Array;
+  private devicePub?: Uint8Array;
   private readonly vkCache = new Map<string, { vk: Uint8Array; keyVersion: number }>();
   private readonly fetchImpl: typeof fetch;
 
@@ -345,6 +357,75 @@ export class VaultClient {
       })),
     );
     return this.rotateKey(vaultId, remaining);
+  }
+
+  // --- multi-device onboarding (docs/06 §6.3) ---
+
+  /** New device: generate a device keypair (kept in memory) and register its public key. */
+  async registerDevice(name: string): Promise<{ deviceId: string; verificationCode: string }> {
+    const kp = generateDeviceKeyPair();
+    this.devicePriv = kp.priv;
+    this.devicePub = kp.pub;
+    const r = await this.http<{ id: string; approved: boolean }>("POST", "/vault/devices", {
+      publicKey: toB64u(kp.pub),
+      name,
+    });
+    return { deviceId: r.id, verificationCode: fingerprint(kp.pub, 3) };
+  }
+
+  /** Trusted device: list devices awaiting approval (with their verification codes). */
+  async listPendingDevices(): Promise<PendingDevice[]> {
+    return this.http("GET", "/vault/devices?pending=true");
+  }
+
+  /** Trusted device: wrap every cached VK to the new device's public key and approve it. */
+  async approveDevice(deviceId: string, devicePublicKeyB64: string): Promise<void> {
+    const devicePub = fromB64u(devicePublicKeyB64);
+    const grants = [...this.vkCache.entries()].map(([vaultId, { vk, keyVersion }]) => ({
+      vaultId,
+      keyVersion,
+      wrappedVaultKey: wrapVaultKeyFor(vk, devicePub),
+    }));
+    await this.http("POST", `/vault/devices/${deviceId}/approve`, { grants });
+  }
+
+  /** New device: fetch and open this device's VK grants with the device private key. */
+  async loadDeviceGrants(deviceId: string): Promise<Array<{ id: string; keyVersion: number }>> {
+    if (!this.devicePriv) throw new Error("no device key; call registerDevice first");
+    const grants = await this.http<
+      Array<{ vaultId: string; keyVersion: number; wrappedVaultKey: Envelope }>
+    >("GET", `/vault/devices/me/keyset?deviceId=${deviceId}`);
+    const out: Array<{ id: string; keyVersion: number }> = [];
+    for (const g of grants) {
+      this.vkCache.set(g.vaultId, {
+        vk: sealOpen(this.devicePriv, g.wrappedVaultKey),
+        keyVersion: g.keyVersion,
+      });
+      out.push({ id: g.vaultId, keyVersion: g.keyVersion });
+    }
+    return out;
+  }
+
+  /** New device: list the vaults this device can decrypt (names via the device VK). */
+  async listDeviceVaults(): Promise<VaultSummary[]> {
+    const vaults = await this.http<
+      Array<{ id: string; type: string; role: string; currentKeyVersion: number; encName: Envelope | null }>
+    >("GET", "/vaults");
+    const out: VaultSummary[] = [];
+    for (const v of vaults) {
+      const cached = this.vkCache.get(v.id);
+      if (!cached) continue;
+      let name: string | undefined;
+      if (v.encName) {
+        try {
+          name = decryptVaultName(cached.vk, v.encName, v.currentKeyVersion);
+        } catch {
+          name = undefined;
+        }
+      }
+      out.push({ id: v.id, type: v.type, role: v.role, keyVersion: v.currentKeyVersion, name });
+    }
+    return out;
   }
 
   private requireVk(vaultId: string): { vk: Uint8Array; keyVersion: number } {

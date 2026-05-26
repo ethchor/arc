@@ -20,9 +20,10 @@ interface Props {
   onSignIn: (baseUrl: string, email: string) => void;
   onUnlock: (password: string) => void;
   onEnroll: (password: string) => void;
+  onNewDevice?: () => void;
 }
 
-export function UnlockScreen({ phase, busy, onSignIn, onUnlock, onEnroll }: Props) {
+export function UnlockScreen({ phase, busy, onSignIn, onUnlock, onEnroll, onNewDevice }: Props) {
   const [baseUrl, setBaseUrl] = React.useState("http://localhost:3001");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -96,6 +97,11 @@ export function UnlockScreen({ phase, busy, onSignIn, onUnlock, onEnroll }: Prop
               >
                 Create a new vault
               </Button>
+              {onNewDevice && (
+                <Button variant="ghost" className="w-full" disabled={busy} onClick={onNewDevice}>
+                  Set up as a new device
+                </Button>
+              )}
             </CardFooter>
           </>
         )}
