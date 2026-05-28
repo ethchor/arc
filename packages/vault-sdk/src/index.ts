@@ -1,9 +1,11 @@
 import {
   computeAuthHash,
   createVaultKey,
+  decryptFolderName,
   decryptItem,
   decryptVaultName,
   edPubFromPriv,
+  encryptFolderName,
   encryptItem,
   encryptVaultName,
   enroll as cryptoEnroll,
@@ -69,7 +71,13 @@ export interface PulledItem {
   version: number;
   seq: number;
   deleted: boolean;
+  folderId: string | null;
   data: JsonValue | null;
+}
+
+export interface VaultFolder {
+  id: string;
+  name: string;
 }
 
 export interface PendingDevice {
@@ -262,13 +270,15 @@ export class VaultClient {
       `/vaults/${vaultId}/items?since=${since}`,
     );
     const items = res.items.map((row): PulledItem => {
-      if (row.deletedAt) return { id: row.id, version: row.version, seq: row.seq, deleted: true, data: null };
+      if (row.deletedAt) {
+        return { id: row.id, version: row.version, seq: row.seq, deleted: true, folderId: row.folderId ?? null, data: null };
+      }
       const data = decryptItem(
         vk.vk,
         { vaultId, itemId: row.id, version: row.version, keyVersion: row.vaultKeyVersion },
         { ciphertext: row.ciphertext, wrappedItemKey: row.wrappedItemKey },
       );
-      return { id: row.id, version: row.version, seq: row.seq, deleted: false, data };
+      return { id: row.id, version: row.version, seq: row.seq, deleted: false, folderId: row.folderId ?? null, data };
     });
     return { items, cursor: res.cursor };
   }
@@ -276,7 +286,7 @@ export class VaultClient {
   async putItem(
     vaultId: string,
     data: JsonValue,
-    opts: { id?: string; baseVersion?: number; type?: string } = {},
+    opts: { id?: string; baseVersion?: number; type?: string; folderId?: string | null } = {},
   ): Promise<{ id: string; version: number; seq: number }> {
     const vk = this.requireVk(vaultId);
     const id = opts.id ?? crypto.randomUUID();
@@ -289,7 +299,33 @@ export class VaultClient {
       vaultKeyVersion: vk.keyVersion,
       ...(opts.baseVersion !== undefined ? { baseVersion: opts.baseVersion } : {}),
       ...(opts.type ? { type: opts.type } : {}),
+      ...(opts.folderId ? { folderId: opts.folderId } : {}),
     });
+  }
+
+  async listFolders(vaultId: string): Promise<VaultFolder[]> {
+    const vk = this.requireVk(vaultId);
+    const rows = await this.http<Array<{ id: string; encName: Envelope }>>("GET", `/vaults/${vaultId}/folders`);
+    return rows.map((f) => {
+      let name = f.id;
+      try {
+        name = decryptFolderName(vk.vk, f.encName, vk.keyVersion);
+      } catch {
+        /* leave id as fallback */
+      }
+      return { id: f.id, name };
+    });
+  }
+
+  async createFolder(vaultId: string, name: string): Promise<{ id: string }> {
+    const vk = this.requireVk(vaultId);
+    return this.http("POST", `/vaults/${vaultId}/folders`, {
+      encName: encryptFolderName(vk.vk, name, vk.keyVersion),
+    });
+  }
+
+  async deleteFolder(vaultId: string, folderId: string): Promise<{ ok: boolean }> {
+    return this.http("DELETE", `/vaults/${vaultId}/folders/${folderId}`);
   }
 
   async deleteItem(vaultId: string, id: string): Promise<{ ok: boolean }> {
@@ -442,5 +478,6 @@ interface ItemRow {
   vaultKeyVersion: number;
   ciphertext: Envelope;
   wrappedItemKey: Envelope;
+  folderId: string | null;
   deletedAt: string | null;
 }

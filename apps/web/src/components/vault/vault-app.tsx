@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Pencil, Plus, Search, Trash2, Vault } from "lucide-react";
-import type { PulledItem, VaultSummary, VaultType } from "@arc-vault/sdk";
+import { Folder, Pencil, Plus, Search, Trash2, Vault, X } from "lucide-react";
+import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc-vault/sdk";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { DevicePendingView } from "@/components/vault/device-pending-view";
 import { DevicesDialog } from "@/components/vault/devices-dialog";
 import { ItemDialog, type LoginInput } from "@/components/vault/item-dialog";
 import { MembersDialog } from "@/components/vault/members-dialog";
+import { NewFolderDialog } from "@/components/vault/new-folder-dialog";
 import { RecoveryKeyCard } from "@/components/vault/recovery-key-card";
 import { SettingsDialog } from "@/components/vault/settings-dialog";
 import { ShareDialog } from "@/components/vault/share-dialog";
@@ -54,6 +55,8 @@ export function VaultApp() {
   const [deviceMode, setDeviceMode] = React.useState(false);
   const [deviceId, setDeviceId] = React.useState<string | null>(null);
   const [deviceCode, setDeviceCode] = React.useState("");
+  const [folders, setFolders] = React.useState<VaultFolder[]>([]);
+  const [folderFilter, setFolderFilter] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const stored = Number(localStorage.getItem("arc-vault-autolock"));
@@ -79,8 +82,14 @@ export function VaultApp() {
   const openVault = async (id: string) => {
     setSelected(id);
     setActiveItem(null);
+    setFolderFilter(null);
     const { items } = await getClient().pull(id, 0);
     setItems(items.filter((i) => !i.deleted));
+    try {
+      setFolders(await getClient().listFolders(id));
+    } catch {
+      setFolders([]);
+    }
   };
 
   const loadVaults = async () => {
@@ -147,18 +156,34 @@ export function VaultApp() {
       toast.success("Vault created");
     });
 
-  const saveLogin = (value: LoginInput, existing?: PulledItem) =>
+  const saveLogin = (value: LoginInput, folderId: string | null, existing?: PulledItem) =>
     guard(async () => {
       if (!selected) return;
       const data = { type: "login", title: value.title, fields: { url: value.url, username: value.username, password: value.password } };
-      await getClient().putItem(
-        selected,
-        data,
-        existing ? { id: existing.id, baseVersion: existing.version, type: "login" } : { type: "login" },
-      );
+      const opts = existing
+        ? { id: existing.id, baseVersion: existing.version, type: "login", folderId }
+        : { type: "login", folderId };
+      await getClient().putItem(selected, data, opts);
       await openVault(selected);
       if (existing) setActiveItem(existing.id);
       toast.success("Saved");
+    });
+
+  const createFolder = (name: string) =>
+    guard(async () => {
+      if (!selected) return;
+      await getClient().createFolder(selected, name);
+      setFolders(await getClient().listFolders(selected));
+      toast.success("Folder created");
+    });
+
+  const deleteFolderAction = () =>
+    guard(async () => {
+      if (!selected || !folderFilter) return;
+      await getClient().deleteFolder(selected, folderFilter);
+      setFolderFilter(null);
+      setFolders(await getClient().listFolders(selected));
+      toast.success("Folder deleted");
     });
 
   const deleteItem = (item: PulledItem) =>
@@ -182,6 +207,8 @@ export function VaultApp() {
     setDeviceMode(false);
     setDeviceId(null);
     setDeviceCode("");
+    setFolders([]);
+    setFolderFilter(null);
   };
 
   // Poll for device approval while waiting (docs/06 §6.3).
@@ -244,6 +271,7 @@ export function VaultApp() {
   const activeData = active ? asLogin(active) : null;
   const q = query.trim().toLowerCase();
   const filtered = items.filter((i) => {
+    if (folderFilter && i.folderId !== folderFilter) return false;
     if (!q) return true;
     const d = asLogin(i);
     return [d?.title, d?.fields.username, d?.fields.url].some((s) => s?.toLowerCase().includes(q));
@@ -331,11 +359,47 @@ export function VaultApp() {
                         <Plus className="h-4 w-4" /> Add login
                       </Button>
                     }
-                    onSubmit={(v) => saveLogin(v)}
+                    folders={folders}
+                    initialFolderId={folderFilter}
+                    onSubmit={(v, f) => saveLogin(v, f)}
                   />
                 )}
               </div>
             </div>
+
+            {selected && (
+              <div className="flex flex-wrap items-center gap-1">
+                <Button
+                  variant={folderFilter === null ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFolderFilter(null)}
+                >
+                  All
+                </Button>
+                {folders.map((f) => (
+                  <Button
+                    key={f.id}
+                    variant={folderFilter === f.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setFolderFilter(f.id)}
+                  >
+                    <Folder className="h-3.5 w-3.5" /> {f.name}
+                  </Button>
+                ))}
+                <NewFolderDialog onCreate={createFolder} />
+                {folderFilter && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={deleteFolderAction}
+                    aria-label="Delete folder"
+                  >
+                    <X className="h-3.5 w-3.5" /> Delete folder
+                  </Button>
+                )}
+              </div>
+            )}
 
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -391,12 +455,14 @@ export function VaultApp() {
                             username: activeData.fields.username,
                             password: activeData.fields.password,
                           }}
+                          folders={folders}
+                          initialFolderId={active.folderId}
                           trigger={
                             <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
                               <Pencil className="h-4 w-4" />
                             </Button>
                           }
-                          onSubmit={(v) => saveLogin(v, active)}
+                          onSubmit={(v, f) => saveLogin(v, f, active)}
                         />
                         <Button
                           variant="ghost"

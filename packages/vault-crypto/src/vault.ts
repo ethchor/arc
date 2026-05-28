@@ -317,6 +317,19 @@ export function decryptVaultName(vk: Uint8Array, env: Envelope, keyVersion = 1):
   return fromUtf8(aeadOpen(vk, env, vaultNameAad(keyVersion)));
 }
 
+// --- folder name (encrypted under VK; docs/07 §7.7) ---
+
+const folderNameAad = (keyVersion: number) =>
+  buildAad([["scope", "folder-name"], ["keyVersion", String(keyVersion)]]);
+
+export function encryptFolderName(vk: Uint8Array, name: string, keyVersion = 1): Envelope {
+  return aeadSeal(vk, utf8(name), folderNameAad(keyVersion), { kv: keyVersion });
+}
+
+export function decryptFolderName(vk: Uint8Array, env: Envelope, keyVersion = 1): string {
+  return fromUtf8(aeadOpen(vk, env, folderNameAad(keyVersion)));
+}
+
 export function lockSession(session: Session): void {
   wipe(session.wk, session.identityPriv, session.signingPriv);
 }

@@ -14,6 +14,7 @@ import {
   VaultAuditLogEntity,
   VaultDeviceEntity,
   VaultEntity,
+  VaultFolderEntity,
   VaultHeadEntity,
   VaultItemEntity,
   VaultKeyGrantEntity,
@@ -23,6 +24,7 @@ import {
 import type {
   AddMemberDto,
   ApproveDeviceDto,
+  CreateFolderDto,
   CreateVaultDto,
   EnrollDto,
   PutHeadDto,
@@ -53,8 +55,34 @@ export class VaultService {
     @InjectRepository(VaultDeviceEntity) private readonly devices: Repository<VaultDeviceEntity>,
     @InjectRepository(VaultHeadEntity) private readonly heads: Repository<VaultHeadEntity>,
     @InjectRepository(VaultAuditLogEntity) private readonly audit: Repository<VaultAuditLogEntity>,
+    @InjectRepository(VaultFolderEntity) private readonly folders: Repository<VaultFolderEntity>,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
+
+  // --- folders ---
+
+  async listFolders(userId: number, vaultId: string) {
+    await this.requireRole(vaultId, userId, "viewer");
+    const rows = await this.folders.find({ where: { vaultId } });
+    return rows.filter((f) => !f.deletedAt).map((f) => ({ id: f.id, encName: f.encName }));
+  }
+
+  async createFolder(userId: number, vaultId: string, dto: CreateFolderDto) {
+    await this.requireRole(vaultId, userId, "editor");
+    const f = await this.folders.save(this.folders.create({ vaultId, encName: dto.encName, parentId: null, seq: 0 }));
+    await this.writeAudit(vaultId, userId, "folder_created", f.id);
+    return { id: f.id };
+  }
+
+  async deleteFolder(userId: number, vaultId: string, folderId: string) {
+    await this.requireRole(vaultId, userId, "editor");
+    const f = await this.folders.findOne({ where: { id: folderId, vaultId } });
+    if (!f) throw new NotFoundException("folder not found");
+    f.deletedAt = new Date();
+    await this.folders.save(f);
+    await this.writeAudit(vaultId, userId, "folder_deleted", folderId);
+    return { ok: true };
+  }
 
   // --- enrollment / keyset / unlock ---
 

@@ -71,6 +71,10 @@ export class RegisterDeviceDto {
   @IsString() name!: string;
 }
 
+export class CreateFolderDto {
+  @IsObject() encName!: EnvelopeJson;
+}
+
 export class ApproveDeviceDto {
   @IsArray() grants!: Array<{ keyVersion: number; wrappedVaultKey: EnvelopeJson; vaultId: string }>;
 }

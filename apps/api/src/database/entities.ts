@@ -308,6 +308,34 @@ export class VaultAuditLogEntity {
   createdAt!: Date;
 }
 
+@Entity("vault_folders")
+export class VaultFolderEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  vaultId!: string;
+
+  @Column({ type: "simple-json" })
+  encName!: EnvelopeJson;
+
+  @Column({ type: "uuid", nullable: true })
+  parentId!: string | null;
+
+  @Column({ type: "int", default: 0 })
+  seq!: number;
+
+  @Column({ type: "datetime", nullable: true })
+  deletedAt!: Date | null;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
+}
+
 export const entities = [
   UserEntity,
   VaultUserKeysEntity,
@@ -318,4 +346,5 @@ export const entities = [
   VaultDeviceEntity,
   VaultHeadEntity,
   VaultAuditLogEntity,
+  VaultFolderEntity,
 ];

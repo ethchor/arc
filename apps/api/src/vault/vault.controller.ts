@@ -16,6 +16,7 @@ import { VaultService } from "./vault.service";
 import {
   AddMemberDto,
   ApproveDeviceDto,
+  CreateFolderDto,
   CreateVaultDto,
   EnrollDto,
   PutHeadDto,
@@ -91,6 +92,25 @@ export class VaultController {
     @Param("itemId") itemId: string,
   ) {
     return this.vault.deleteItem(u.userId, id, itemId);
+  }
+
+  @Get("vaults/:id/folders")
+  folders(@CurrentUser() u: CurrentUserData, @Param("id") id: string) {
+    return this.vault.listFolders(u.userId, id);
+  }
+
+  @Post("vaults/:id/folders")
+  createFolder(@CurrentUser() u: CurrentUserData, @Param("id") id: string, @Body() dto: CreateFolderDto) {
+    return this.vault.createFolder(u.userId, id, dto);
+  }
+
+  @Delete("vaults/:id/folders/:folderId")
+  deleteFolder(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("folderId") folderId: string,
+  ) {
+    return this.vault.deleteFolder(u.userId, id, folderId);
   }
 
   @Get("vaults/:id/head")
