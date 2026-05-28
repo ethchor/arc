@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Folder, Pencil, Plus, Search, Trash2, Vault, X } from "lucide-react";
+import { Clock, FileClock, Folder, Pencil, Plus, RotateCw, Search, Trash2, Vault, X } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc-vault/sdk";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -17,17 +17,21 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { AccessView } from "@/components/vault/access-view";
+import { ConsoleShell, type ConsoleSection } from "@/components/vault/console-shell";
 import { CopyField } from "@/components/vault/copy-field";
 import { CreateVaultDialog } from "@/components/vault/create-vault-dialog";
 import { DevicePendingView } from "@/components/vault/device-pending-view";
 import { DevicesDialog } from "@/components/vault/devices-dialog";
+import { InfoView } from "@/components/vault/info-view";
 import { ItemDialog, type LoginInput } from "@/components/vault/item-dialog";
-import { MembersDialog } from "@/components/vault/members-dialog";
 import { NewFolderDialog } from "@/components/vault/new-folder-dialog";
+import { PoliciesView } from "@/components/vault/policies-view";
 import { RecoveryKeyCard } from "@/components/vault/recovery-key-card";
 import { SettingsDialog } from "@/components/vault/settings-dialog";
 import { ShareDialog } from "@/components/vault/share-dialog";
 import { SiteHeader } from "@/components/vault/site-header";
+import { ToolsView } from "@/components/vault/tools-view";
 import { UnlockScreen } from "@/components/vault/unlock-screen";
 import { getClient, initClient, lock } from "@/vault-store";
 import { cn } from "@/lib/utils";
@@ -57,6 +61,7 @@ export function VaultApp() {
   const [deviceCode, setDeviceCode] = React.useState("");
   const [folders, setFolders] = React.useState<VaultFolder[]>([]);
   const [folderFilter, setFolderFilter] = React.useState<string | null>(null);
+  const [section, setSection] = React.useState<ConsoleSection>("secrets");
 
   React.useEffect(() => {
     const stored = Number(localStorage.getItem("arc-vault-autolock"));
@@ -195,6 +200,15 @@ export function VaultApp() {
       toast.success("Deleted");
     });
 
+  const rotateVaultKey = () =>
+    guard(async () => {
+      if (!selected) return;
+      await getClient().rotateForAllMembers(selected);
+      setVaults(await getClient().listVaults());
+      await openVault(selected);
+      toast.success("Vault key rotated");
+    });
+
   const doLock = () => {
     lock();
     setPhase("login");
@@ -209,6 +223,7 @@ export function VaultApp() {
     setDeviceCode("");
     setFolders([]);
     setFolderFilter(null);
+    setSection("secrets");
   };
 
   // Poll for device approval while waiting (docs/06 §6.3).
@@ -278,29 +293,34 @@ export function VaultApp() {
   });
 
   return (
-    <div className="min-h-screen">
-      <SiteHeader
+    <>
+      <ConsoleShell
+        section={section}
+        onSection={setSection}
+        vaultName={selectedVault?.name ?? selectedVault?.type}
+        statusLabel={deviceMode ? "Device session" : "Unlocked"}
         onLock={doLock}
         actions={
           <>
-            <DevicesDialog
-              onLoad={() => getClient().listPendingDevices()}
-              onApprove={async (d) => {
-                await getClient().approveDevice(d.id, d.publicKey);
-                toast.success("Device approved");
-              }}
-            />
+            {!deviceMode && (
+              <DevicesDialog
+                onLoad={() => getClient().listPendingDevices()}
+                onApprove={async (d) => {
+                  await getClient().approveDevice(d.id, d.publicKey);
+                  toast.success("Device approved");
+                }}
+              />
+            )}
             <SettingsDialog autolock={autolock} onAutolock={setAutolockPersist} />
           </>
         }
-      />
-      <main className="mx-auto max-w-5xl px-4 py-6">
-        {recoveryKey && (
-          <div className="mb-6">
-            <RecoveryKeyCard recoveryKey={recoveryKey} onDismiss={() => setRecoveryKey(null)} />
-          </div>
-        )}
-        <div className="grid gap-6 md:grid-cols-[220px_1fr]">
+      >
+        {section === "secrets" && (
+          <div className="space-y-6">
+            {recoveryKey && (
+              <RecoveryKeyCard recoveryKey={recoveryKey} onDismiss={() => setRecoveryKey(null)} />
+            )}
+            <div className="grid gap-6 md:grid-cols-[220px_1fr]">
           <aside className="space-y-2">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-medium text-muted-foreground">Vaults</h2>
@@ -330,28 +350,6 @@ export function VaultApp() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h1 className="text-lg font-semibold">Items</h1>
               <div className="flex items-center gap-2">
-                {selected && (
-                  <MembersDialog
-                    canManage={!!canManage}
-                    onLoad={() => getClient().listMembers(selected)}
-                    onRotate={async () => {
-                      await getClient().rotateForAllMembers(selected);
-                      const vs = await getClient().listVaults();
-                      setVaults(vs);
-                      await openVault(selected);
-                      toast.success("Vault key rotated");
-                    }}
-                  />
-                )}
-                {canManage && selected && (
-                  <ShareDialog
-                    onLookup={(userId) => getClient().getUserIdentityKey(userId)}
-                    onShare={async (userId, role, pub) => {
-                      await getClient().addMember(selected, userId, role, pub);
-                      toast.success("Access granted");
-                    }}
-                  />
-                )}
                 {selected && (
                   <ItemDialog
                     trigger={
@@ -491,8 +489,72 @@ export function VaultApp() {
               </div>
             )}
           </section>
-        </div>
-      </main>
+            </div>
+          </div>
+        )}
+
+        {section === "access" &&
+          (selected ? (
+            <AccessView
+              vaultId={selected}
+              loadMembers={() => getClient().listMembers(selected)}
+              actions={
+                <>
+                  {canManage && (
+                    <ShareDialog
+                      onLookup={(userId) => getClient().getUserIdentityKey(userId)}
+                      onShare={async (userId, role, pub) => {
+                        await getClient().addMember(selected, userId, role, pub);
+                        toast.success("Access granted");
+                      }}
+                    />
+                  )}
+                  {canManage && (
+                    <Button variant="outline" size="sm" onClick={rotateVaultKey} disabled={busy}>
+                      <RotateCw className="h-4 w-4" /> Rotate key
+                    </Button>
+                  )}
+                </>
+              }
+            />
+          ) : (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              Select a vault under Secrets first.
+            </p>
+          ))}
+
+        {section === "policies" && <PoliciesView role={selectedVault?.role} />}
+
+        {section === "leases" && (
+          <InfoView
+            icon={Clock}
+            title="Leases"
+            description="Time-boxed access grants and break-glass sessions."
+            points={[
+              "Active time-boxed member grants and their expiry",
+              "Break-glass / emergency sessions with a server-enforced TTL",
+              "Manual revoke before expiry",
+              "Backed by signed grants — see docs/14 (developer platform)",
+            ]}
+          />
+        )}
+
+        {section === "audit" && (
+          <InfoView
+            icon={FileClock}
+            title="Audit log"
+            description="Metadata-only record of vault activity."
+            points={[
+              "Who acted, when, and on which vault — never item contents or plaintext",
+              "Membership changes and key rotations",
+              "Device approvals and grant changes",
+              "Configurable retention — see docs/11 (audit & privacy)",
+            ]}
+          />
+        )}
+
+        {section === "tools" && <ToolsView />}
+      </ConsoleShell>
 
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent>
@@ -513,6 +575,6 @@ export function VaultApp() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
