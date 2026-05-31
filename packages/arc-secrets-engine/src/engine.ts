@@ -1,4 +1,4 @@
-import type { Lease } from "@arc-vault/leasing";
+import type { Lease } from "@arc/leasing";
 import type {
   EngineType,
   IssueOptions,

@@ -1,5 +1,5 @@
-import { normalizeMount } from "@arc-vault/leasing";
-import type { KvEngine, KvReadResult, KvWriteResult } from "@arc-vault/secrets-engine";
+import { normalizeMount } from "@arc/leasing";
+import type { KvEngine, KvReadResult, KvWriteResult } from "@arc/secrets-engine";
 import type { OpenBaoClient } from "./client";
 
 const strip = (path: string): string => path.replace(/^\/+/, "");

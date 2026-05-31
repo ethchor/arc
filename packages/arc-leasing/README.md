@@ -1,4 +1,4 @@
-# @arc-vault/leasing
+# @arc/leasing
 
 Engine-A **lease lifecycle** — Vault-style TTLs, renewal, and revocation — as pure,
 backend-agnostic logic. No network, no storage, no crypto.
@@ -9,7 +9,7 @@ A `Lease` records when a dynamically issued secret/token was minted, when it exp
 sweeps expired/revoked entries.
 
 ```ts
-import { LeaseManager } from "@arc-vault/leasing";
+import { LeaseManager } from "@arc/leasing";
 
 const leases = new LeaseManager();
 const lease = leases.issue({ mount: "database/pg", ttlSeconds: 3600, maxTtlSeconds: 86_400 });

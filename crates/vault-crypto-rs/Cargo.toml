@@ -3,7 +3,7 @@ name = "arc-vault-crypto"
 version = "0.0.0"
 edition = "2021"
 publish = false
-description = "Rust core of the arc-vault zero-knowledge crypto protocol; byte-compatible with @arc-vault/crypto."
+description = "Rust core of the arc-vault zero-knowledge crypto protocol; byte-compatible with @arc/crypto."
 
 [dependencies]
 argon2 = "0.5"

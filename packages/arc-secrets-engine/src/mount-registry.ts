@@ -1,4 +1,4 @@
-import { normalizeMount } from "@arc-vault/leasing";
+import { normalizeMount } from "@arc/leasing";
 import type { MountConfig } from "./types";
 
 export interface ResolvedMount {

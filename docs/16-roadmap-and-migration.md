@@ -9,7 +9,7 @@ the unified model (doc 03 §3.2, doc 07) is built from Phase 1.
 
 ### Phase 1 — MVP, single-device, unified model `[spec]`
 
-- `packages/vault-crypto`: Argon2id, HKDF split, XChaCha20-Poly1305, the **versioned
+- `packages/arc-crypto`: Argon2id, HKDF split, XChaCha20-Poly1305, the **versioned
   envelope + JCS** (doc 04). Reuse `@noble/hashes`; add `libsodium-wrappers-sumo` (the sumo
   build is required for `crypto_pwhash`) or `@noble/ciphers` (see §16.3).
 - Identity + signing keypairs from enrollment (doc 05) — even single-device, so the identity
@@ -85,7 +85,7 @@ KATs, so a fix in the shared core benefits both.
 
 ## 16.3 Library choices
 
-- **Web (`packages/vault-crypto`):** `libsodium-wrappers-sumo` (audited Argon2id +
+- **Web (`packages/arc-crypto`):** `libsodium-wrappers-sumo` (audited Argon2id +
   XChaCha20-Poly1305 + `crypto_box`/seal; sumo build for `crypto_pwhash`). Alternative:
   `@noble/ciphers` + `@noble/hashes` (pure-JS, no WASM, smaller, slightly slower Argon2). Pick
   one and pin it; the envelope/KATs make the choice swappable later.

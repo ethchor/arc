@@ -1,6 +1,6 @@
 # 08 — Data Model
 
-TypeORM entities for `apps/api`. All `enc*` / `wrapped*` / `ciphertext` columns store
+TypeORM entities for `apps/arc-server`. All `enc*` / `wrapped*` / `ciphertext` columns store
 **envelope JSON** (doc 04) as `text` — the server never parses them as anything but opaque
 bytes. Postgres is the target; entities are registered centrally and changes ship as
 migrations.
@@ -157,7 +157,7 @@ Index `(userId, approved)`. Device VK grants live in `vault_key_grants` via
 - Sync hot paths: `(vaultId, seq)` for delta pulls, `(vaultId, updatedAt)` for conflict
   detection. Both are composite and cover the common `WHERE vaultId=? AND seq>?` query.
 - Grant lookup: `(vaultId, keyVersion, granteeUserId)` unique doubles as the read index.
-- All schema changes ship as TypeORM migrations under `apps/api/src/migrations/`; no
+- All schema changes ship as TypeORM migrations under `apps/arc-server/src/migrations/`; no
   `synchronize:true` in any environment (it would risk dropping ciphertext columns).
 - `seqCounter` on `vaults` is incremented inside the same transaction as the mutation it
   numbers (doc 10 §10.2) to keep `seq` gap-free and monotonic.

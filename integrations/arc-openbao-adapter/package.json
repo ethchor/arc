@@ -1,5 +1,5 @@
 {
-  "name": "@arc-vault/openbao-adapter",
+  "name": "@arc/openbao-adapter",
   "version": "0.0.0",
   "private": true,
   "description": "Implements the arc-secrets-engine contract against a colocated OpenBao (MPL 2.0) server over its HTTP API. No HashiCorp Vault BSL code.",
@@ -21,8 +21,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@arc-vault/leasing": "workspace:*",
-    "@arc-vault/secrets-engine": "workspace:*"
+    "@arc/leasing": "workspace:*",
+    "@arc/secrets-engine": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.5",

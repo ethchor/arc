@@ -65,7 +65,7 @@ runner is ephemeral so nothing persists.
 
 A CLI and language SDKs wrap mode (1): `arc-vault read prod-db/DATABASE_URL` resolves the
 SA's grant, decrypts locally, prints to stdout / exports to env. The SDK bundles
-`packages/vault-crypto` so decryption is identical to every other client (doc 04 KATs apply).
+`packages/arc-crypto` so decryption is identical to every other client (doc 04 KATs apply).
 
 ## 14.4 Delegated / break-glass access
 

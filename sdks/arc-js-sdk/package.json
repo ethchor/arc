@@ -1,8 +1,8 @@
 {
-  "name": "@arc/leasing",
+  "name": "@arc/sdk",
   "version": "0.0.0",
   "private": true,
-  "description": "Engine A lease lifecycle: TTLs, renewal, revocation (Vault-style leasing). No backend, no network.",
+  "description": "Client SDK: composes the vault crypto core with the sync API. Consumer + machine-identity modes.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,13 +12,14 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arc/crypto": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.5",

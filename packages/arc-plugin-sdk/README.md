@@ -1,4 +1,4 @@
-# @arc-vault/plugin-sdk
+# @arc/plugin-sdk
 
 Contracts + in-process host for arc's plugin system (parity with Vault's secret-engine / auth-method
 ecosystem). A plugin depends on **this package only** (plus `arc-types` once it exists) — never on
@@ -14,7 +14,7 @@ app internals.
 scoped capabilities. See `docs/MONOREPO_PLAN.md` §3b.
 
 ```ts
-import { PluginHost } from "@arc-vault/plugin-sdk";
+import { PluginHost } from "@arc/plugin-sdk";
 
 const host = new PluginHost();
 host.register(myAwsPlugin);

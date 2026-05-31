@@ -1,6 +1,6 @@
 //! Rust core of the arc-vault zero-knowledge crypto protocol.
 //!
-//! This mirrors `packages/vault-crypto` (TypeScript) byte-for-byte: same Argon2id params,
+//! This mirrors `packages/arc-crypto` (TypeScript) byte-for-byte: same Argon2id params,
 //! same HKDF branch labels, same length-prefixed AAD, same RFC 8785 / I-JSON canonical
 //! serialization, same XChaCha20-Poly1305 AEAD, and the same anonymous sealed box
 //! (X25519 + HKDF-SHA256 + XChaCha20-Poly1305). Parity is enforced by `tests/parity.rs`,
@@ -171,7 +171,7 @@ pub fn seal_open(
     aead_decrypt(&key, nonce, ct, b"")
 }
 
-// --- versioned envelope (mirrors packages/vault-crypto/src/envelope.ts) ---
+// --- versioned envelope (mirrors packages/arc-crypto/src/envelope.ts) ---
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;

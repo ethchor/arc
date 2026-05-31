@@ -1,6 +1,6 @@
-# @arc-vault/openbao-adapter
+# @arc/openbao-adapter
 
-Implements the `@arc-vault/secrets-engine` contract against a **colocated OpenBao** server over
+Implements the `@arc/secrets-engine` contract against a **colocated OpenBao** server over
 its HTTP API. This is the Engine-A core integration: OpenBao provides the barrier, seal/unseal,
 Raft HA, PKI, transit, and KV v2; arc drives it through this adapter.
 
@@ -9,7 +9,7 @@ Raft HA, PKI, transit, and KV v2; arc drives it through this adapter.
 - `OpenBaoKvEngine` — maps arc's `KvEngine` onto OpenBao's `<mount>/data|metadata/<path>` layout.
 
 ```ts
-import { OpenBaoClient, OpenBaoKvEngine } from "@arc-vault/openbao-adapter";
+import { OpenBaoClient, OpenBaoKvEngine } from "@arc/openbao-adapter";
 
 const client = new OpenBaoClient({ addr: process.env.BAO_ADDR!, token: process.env.BAO_TOKEN });
 await client.sealStatus();                       // -> { sealed: false, version, ... }

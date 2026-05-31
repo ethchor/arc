@@ -1,4 +1,4 @@
-//! Webkit-free desktop runtime for arc-vault. The Tauri shell in `apps/desktop/src-tauri`
+//! Webkit-free desktop runtime for arc-vault. The Tauri shell in `apps/arc-vault-desktop/src-tauri`
 //! is a thin wrapper that exposes these as `#[tauri::command]`s; all real logic lives here
 //! so it compiles and is tested without GUI system dependencies.
 

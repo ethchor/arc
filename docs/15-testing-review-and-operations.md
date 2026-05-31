@@ -6,7 +6,7 @@ deployment-time controls).
 
 ## 15.1 Cross-platform parity (TS ↔ Rust)
 
-The single most important correctness property: `packages/vault-crypto` (TS) and the Tauri
+The single most important correctness property: `packages/arc-crypto` (TS) and the Tauri
 `vault::crypto` (Rust) must produce **identical bytes** for identical inputs, or a vault
 encrypted on desktop won't open on web (and signatures won't verify across clients).
 

@@ -10,7 +10,7 @@
 
 **Scope.** Only the documented OpenBao HTTP API: `/v1/sys/*`, `/v1/<mount>/...`. No barrier,
 seal, Raft, or crypto is implemented here — that lives inside OpenBao. This package just maps
-arc's `@arc-vault/secrets-engine` contract onto HTTP calls.
+arc's `@arc/secrets-engine` contract onto HTTP calls.
 
-**Deps rule.** Depends on `@arc-vault/secrets-engine` and `@arc-vault/leasing` only (plus the
+**Deps rule.** Depends on `@arc/secrets-engine` and `@arc/leasing` only (plus the
 runtime `fetch`). Never import app internals.

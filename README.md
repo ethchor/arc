@@ -25,12 +25,17 @@ Read [`docs/README.md`](docs/README.md) — it is the index, glossary, status le
 
 A Turborepo monorepo:
 
-- `apps/api` — NestJS + TypeORM + Postgres + JWT (sync authorization + blind blob store)
-- `apps/web` — Next.js web client
-- `apps/desktop` — Tauri (Rust core crypto, OS keychain, SQLCipher offline cache)
-- `apps/extension` — browser extension (autofill, origin-bound)
-- `packages/vault-crypto` — shared TypeScript crypto (Argon2id, HKDF, XChaCha20-Poly1305,
+- `apps/arc-server` — NestJS + TypeORM + Postgres + JWT (sync authorization + blind blob store)
+- `apps/arc-vault-web` — Next.js web client
+- `apps/arc-vault-desktop` — Tauri (Rust core crypto, OS keychain, SQLCipher offline cache)
+- `apps/arc-browser-extension` — browser extension (autofill, origin-bound)
+- `apps/arc-cli` — CLI for both engines
+- `packages/arc-crypto` — shared TypeScript crypto (Argon2id, HKDF, XChaCha20-Poly1305,
   X25519/Ed25519, the versioned envelope)
+- `packages/arc-leasing`, `packages/arc-secrets-engine`, `packages/arc-plugin-sdk` —
+  Engine-A foundations (lease lifecycle, engine contract + mount routing, plugin contracts)
+- `integrations/arc-openbao-adapter` — colocated OpenBao (MPL 2.0) integration
+- `sdks/arc-js-sdk` — public TypeScript SDK
 
 The Rust core and the TypeScript core implement the **same** wire protocol and envelope so
 ciphertext and signatures are portable across every client.

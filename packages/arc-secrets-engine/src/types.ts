@@ -1,4 +1,4 @@
-import type { Lease } from "@arc-vault/leasing";
+import type { Lease } from "@arc/leasing";
 
 /** Well-known engine types, kept open so adapters/plugins can introduce their own. */
 export type EngineType = "kv-v2" | "database" | "pki" | "transit" | "ssh" | (string & {});

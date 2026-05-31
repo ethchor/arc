@@ -32,7 +32,7 @@ compromise. Therefore:
   origin — shrinking the XSS/network surface.
 - XSS while unlocked still = compromise; CSP reduces, it does not eliminate.
 
-## 12.2 Tauri / Rust core (`apps/desktop/src-tauri/src/vault/`)
+## 12.2 Tauri / Rust core (`apps/arc-vault-desktop/src-tauri/src/vault/`)
 
 Materially stronger than the browser: keys live in Rust `Zeroizing` memory and the WebView
 never holds the VK. Module sketch:
@@ -40,7 +40,7 @@ never holds the VK. Module sketch:
 | File | Responsibility |
 | ---- | -------------- |
 | `mod.rs` | command registration; in-memory `VaultSession` state |
-| `crypto.rs` | Argon2id derive, HKDF split, XChaCha20-Poly1305 seal/open, `crypto_box`/seal, Ed25519, JCS+digest — the **same** envelope/serialization as `packages/vault-crypto` (doc 04) |
+| `crypto.rs` | Argon2id derive, HKDF split, XChaCha20-Poly1305 seal/open, `crypto_box`/seal, Ed25519, JCS+digest — the **same** envelope/serialization as `packages/arc-crypto` (doc 04) |
 | `keychain.rs` | OS keychain (`keyring`): stores **only** the device X25519 private key (and optionally a device VK grant). Never MK/VK/identity-priv plaintext. |
 | `store.rs` | `rusqlite` + SQLCipher offline encrypted cache; the SQLCipher DB key is random, wrapped under the keychain device key |
 | `session.rs` | auto-lock timer; holds VK in `Zeroizing` while unlocked |

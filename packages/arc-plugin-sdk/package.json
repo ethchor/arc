@@ -1,5 +1,5 @@
 {
-  "name": "@arc-vault/plugin-sdk",
+  "name": "@arc/plugin-sdk",
   "version": "0.0.0",
   "private": true,
   "description": "Plugin contracts + in-process host: SecretsPlugin, AuthPlugin, StoragePlugin, capability scoping. Plugins depend on this only.",

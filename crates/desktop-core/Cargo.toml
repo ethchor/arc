@@ -3,7 +3,7 @@ name = "arc-vault-desktop-core"
 version = "0.0.0"
 edition = "2021"
 publish = false
-description = "Webkit-free desktop runtime for arc-vault: in-memory session (auto-lock), device keychain, encrypted local cache. Wrapped by the Tauri shell in apps/desktop."
+description = "Webkit-free desktop runtime for arc-vault: in-memory session (auto-lock), device keychain, encrypted local cache. Wrapped by the Tauri shell in apps/arc-vault-desktop."
 
 [dependencies]
 arc-vault-crypto = { path = "../vault-crypto-rs" }

@@ -7,7 +7,7 @@ coverage/
 out/
 build/
 target/
-apps/desktop/src-tauri/gen/
+apps/arc-vault-desktop/src-tauri/gen/
 .env
 .env.*
 !.env.example
