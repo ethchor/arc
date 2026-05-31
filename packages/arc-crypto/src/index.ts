@@ -7,5 +7,6 @@ export * from "./envelope";
 export * from "./kdf";
 export * from "./keys";
 export * from "./seal";
+export * from "./pq-hybrid";
 export * from "./sign";
 export * from "./vault";

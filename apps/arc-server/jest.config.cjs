@@ -6,9 +6,11 @@ module.exports = {
   testMatch: ["<rootDir>/test/**/*.e2e-spec.ts", "<rootDir>/src/**/*.spec.ts"],
   moduleFileExtensions: ["ts", "js", "json"],
   moduleNameMapper: {
-    // Resolve workspace packages to their TS source so ts-jest transforms them
-    // (avoids ESM/CJS friction with the built dist).
-    "^@arc/crypto$": "<rootDir>/../../packages/arc-crypto/src/index.ts",
+    // @arc/crypto pulls in the ESM-only @noble/post-quantum, which Jest's CommonJS
+    // loader can't process from source. tsup's CJS bundle inlines that dep, so we
+    // point at the built dist instead — turbo's "test: depends on ^build" guarantees
+    // it exists. @arc/sdk and @arc/cli stay on source for fast iteration.
+    "^@arc/crypto$": "<rootDir>/../../packages/arc-crypto/dist/index.cjs",
     "^@arc/sdk$": "<rootDir>/../../sdks/arc-js-sdk/src/index.ts",
     "^@arc/cli$": "<rootDir>/../../apps/arc-cli/src/index.ts",
   },

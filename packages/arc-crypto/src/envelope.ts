@@ -14,6 +14,15 @@ export const ALG = {
    * the seal shares primitives with the rest of the stack and is trivially reproduced in Rust.
    */
   SEAL: "seal-x25519-hkdf-xc20p",
+  /**
+   * Post-quantum hybrid sealed box (ADR-001 §"Open questions" #1, ADR-002). Ephemeral
+   * X25519 ECDH + ML-KEM-768 KEM, both shared secrets fed into HKDF-SHA256 with the full
+   * KEM transcript and both recipient public keys bound into the salt. Symmetric layer is
+   * the same XChaCha20-Poly1305 as the classical `SEAL`, so the only new primitive
+   * compared to the rest of the stack is ML-KEM-768. Defeats harvest-now-decrypt-later
+   * against the wrapped VK grants the server stores.
+   */
+  PQ_SEAL: "pq-seal-x25519-mlkem768-hkdf-xc20p",
 } as const;
 
 export const KDF = { ARGON2ID: "argon2id-1" } as const;
@@ -36,6 +45,8 @@ export interface Envelope {
   ct: string;
   /** base64url ephemeral public key (seal envelopes only) */
   ep?: string | null;
+  /** base64url ML-KEM-768 ciphertext (pq-seal envelopes only, ADR-002) */
+  kc?: string | null;
   /** plaintext padding length stripped after decrypt (docs/02 §2.5) */
   pad?: number;
 }

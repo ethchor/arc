@@ -83,21 +83,36 @@ because it's easier" monoculture (cheap, but wrong for the components that
   (`apps/arc-vault-desktop/src-tauri`) is built locally / on release runners
   only, since it pulls webkit2gtk. This is already the layout.
 
-## Open questions
+## Open questions — disposition (2026-05-31)
 
-- **Post-quantum hybrid wrap of the recovery key** (X25519 + ML-KEM-768).
-  Should be retrofitted to `arc-crypto` (TS + Rust) when a vetted ML-KEM
-  implementation ships in `@noble/post-quantum` / a Rust crate at the same
-  audit bar as the current primitives. Cheap now, expensive after the
-  recovery format is in production.
-- **Native browser-extension WASM crypto.** Compiling `arc-vault-crypto`
-  (Rust) to WASM for the extension would let us run a memory-safer crypto
-  path inside the service worker. Open: bundle size, startup latency,
-  Manifest V3 constraints on WASM.
-- **`arc-agent` location.** A separate `apps/arc-agent` Rust crate, or
-  shared code with `desktop-core` via a new `crates/agent-core`? Decide
-  when the agent's first concrete use case (sidecar template rendering vs.
-  systemd unit secret injection) is locked.
+After surveying the codebase the three open questions were re-evaluated and
+disposed of as follows.
+
+- **Post-quantum hybrid wrap.** ✅ **Acted on.** Re-reading the code clarified
+  that the *real* harvest-now-decrypt-later surface is not the recovery key
+  (which uses a symmetric XChaCha20-Poly1305 wrap — post-Grover-fine at
+  128-bit-equivalent), but `seal()` / `wrapVaultKeyFor` — the anonymous X25519
+  sealed box that wraps the VK to a recipient identity. Those envelopes sit on
+  the server in `vault_key_grants` and are exactly the bytes a state-level
+  adversary would record today to decrypt in 203X. Landed an X25519 +
+  ML-KEM-768 hybrid primitive (`pqSeal` / `pqSealOpen`, alg
+  `pq-seal-x25519-mlkem768-hkdf-xc20p`) in `packages/arc-crypto` with full
+  binding of the KEM transcript and both recipient public keys into the HKDF
+  salt (X-Wing-style construction). Migration of `wrapVaultKeyFor` itself to
+  the hybrid envelope is tracked in **ADR-002**.
+- **Native browser-extension WASM crypto.** ❌ **Deferred.** XSS-while-unlocked
+  is the dominant extension threat, and WASM crypto does not help: the calling
+  JS still has to feed plaintext keys into WASM and receive plaintext out, so
+  an XSS that lives in the extension popup or content script can lift the keys
+  regardless of where the AEAD runs. The marginal gain (side-channel hardening
+  inside the WASM module) is small relative to the costs (bundle size,
+  Manifest V3's `wasm-unsafe-eval` CSP friction, TS↔WASM parity work). The
+  effort is better spent on shrinking the unlocked window (auto-lock policy,
+  origin-bound capability tokens) — items the docs already track.
+- **`arc-agent` location.** ❌ **Deferred.** No concrete use case yet — sidecar
+  templating, systemd secret injection, K8s in-pod fetcher are all plausible
+  but none is in scope. Deciding the directory and shape now would be
+  speculation; revisit when the first agent use case has a sponsor.
 
 ## References
 
