@@ -152,9 +152,15 @@ importers:
 
   apps/arc-vault-web:
     dependencies:
+      '@arc/crypto':
+        specifier: workspace:*
+        version: link:../../packages/arc-crypto
       '@arc/sdk':
         specifier: workspace:*
         version: link:../../sdks/arc-js-sdk
+      '@arc/types':
+        specifier: workspace:*
+        version: link:../../packages/arc-types
       '@radix-ui/react-dialog':
         specifier: ^1.1.4
         version: 1.1.15(@types/react-dom@18.3.7(@types/react@18.3.29))(@types/react@18.3.29)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

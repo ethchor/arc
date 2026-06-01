@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Clock, FileClock, Folder, Pencil, Plus, RotateCw, Search, Trash2, Vault, X } from "lucide-react";
+import { Clock, FileClock, Folder, KeyRound, Pencil, Plus, RotateCw, Search, Trash2, Vault, X } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
+import type { JsonValue, TotpAlgorithm } from "@arc/types";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,8 @@ import { DevicePendingView } from "@/components/vault/device-pending-view";
 import { DevicesDialog } from "@/components/vault/devices-dialog";
 import { InfoView } from "@/components/vault/info-view";
 import { ItemDialog, type LoginInput } from "@/components/vault/item-dialog";
+import { TotpCard } from "@/components/vault/totp-card";
+import { TotpDialog, type TotpInput } from "@/components/vault/totp-dialog";
 import { NewFolderDialog } from "@/components/vault/new-folder-dialog";
 import { PoliciesView } from "@/components/vault/policies-view";
 import { RecoveryKeyCard } from "@/components/vault/recovery-key-card";
@@ -41,9 +44,37 @@ interface LoginData {
   title: string;
   fields: { url: string; username: string; password: string };
 }
+interface TotpData {
+  type: "totp";
+  key: string;
+  secret: string;
+  issuer?: string;
+  account?: string;
+  period?: number;
+  digits?: number;
+  algorithm?: TotpAlgorithm;
+}
 type Phase = "login" | "account" | "device-pending" | "unlocked";
 
-const asLogin = (i: PulledItem) => i.data as LoginData | null;
+// PulledItem.data is JsonValue | null. The strict union doesn't structurally overlap with
+// our concrete item shapes, so we cast through `unknown` after discriminating on `type`.
+const asLogin = (i: PulledItem): LoginData | null => {
+  const d = i.data as unknown as { type?: string } | null;
+  return d?.type === "login" ? (i.data as unknown as LoginData) : null;
+};
+const asTotp = (i: PulledItem): TotpData | null => {
+  const d = i.data as unknown as { type?: string } | null;
+  return d?.type === "totp" ? (i.data as unknown as TotpData) : null;
+};
+const itemTitle = (i: PulledItem): string =>
+  asLogin(i)?.title ?? asTotp(i)?.key ?? i.id;
+const itemSubtitle = (i: PulledItem): string => {
+  const l = asLogin(i);
+  if (l) return l.fields.username;
+  const t = asTotp(i);
+  if (t) return t.issuer ? `${t.issuer}${t.account ? ` · ${t.account}` : ""}` : (t.account ?? "TOTP");
+  return "";
+};
 
 export function VaultApp() {
   const [phase, setPhase] = React.useState<Phase>("login");
@@ -174,6 +205,27 @@ export function VaultApp() {
       toast.success("Saved");
     });
 
+  const saveTotp = (value: TotpInput, folderId: string | null, existing?: PulledItem) =>
+    guard(async () => {
+      if (!selected) return;
+      const payload: TotpData = {
+        type: "totp",
+        key: value.key,
+        secret: value.secret,
+        ...(value.issuer ? { issuer: value.issuer } : {}),
+        ...(value.account ? { account: value.account } : {}),
+      };
+      const opts = existing
+        ? { id: existing.id, baseVersion: existing.version, type: "totp", folderId }
+        : { type: "totp", folderId };
+      // TotpData is structurally JsonValue; the cast satisfies the SDK's broader parameter
+      // type (same pattern as the CLI's totp-add).
+      await getClient().putItem(selected, payload as unknown as JsonValue, opts);
+      await openVault(selected);
+      if (existing) setActiveItem(existing.id);
+      toast.success("Saved");
+    });
+
   const createFolder = (name: string) =>
     guard(async () => {
       if (!selected) return;
@@ -283,13 +335,18 @@ export function VaultApp() {
   const selectedVault = vaults.find((v) => v.id === selected);
   const canManage = !deviceMode && (selectedVault?.role === "owner" || selectedVault?.role === "admin");
   const active = items.find((i) => i.id === activeItem);
-  const activeData = active ? asLogin(active) : null;
+  const activeLogin = active ? asLogin(active) : null;
+  const activeTotp = active ? asTotp(active) : null;
+  const activeTitle = active ? itemTitle(active) : null;
   const q = query.trim().toLowerCase();
   const filtered = items.filter((i) => {
     if (folderFilter && i.folderId !== folderFilter) return false;
     if (!q) return true;
-    const d = asLogin(i);
-    return [d?.title, d?.fields.username, d?.fields.url].some((s) => s?.toLowerCase().includes(q));
+    const l = asLogin(i);
+    if (l) return [l.title, l.fields.username, l.fields.url].some((s) => s?.toLowerCase().includes(q));
+    const t = asTotp(i);
+    if (t) return [t.key, t.issuer, t.account].some((s) => s?.toLowerCase().includes(q));
+    return i.id.toLowerCase().includes(q);
   });
 
   return (
@@ -351,16 +408,28 @@ export function VaultApp() {
               <h1 className="text-lg font-semibold">Items</h1>
               <div className="flex items-center gap-2">
                 {selected && (
-                  <ItemDialog
-                    trigger={
-                      <Button size="sm">
-                        <Plus className="h-4 w-4" /> Add login
-                      </Button>
-                    }
-                    folders={folders}
-                    initialFolderId={folderFilter}
-                    onSubmit={(v, f) => saveLogin(v, f)}
-                  />
+                  <>
+                    <ItemDialog
+                      trigger={
+                        <Button size="sm">
+                          <Plus className="h-4 w-4" /> Add login
+                        </Button>
+                      }
+                      folders={folders}
+                      initialFolderId={folderFilter}
+                      onSubmit={(v, f) => saveLogin(v, f)}
+                    />
+                    <TotpDialog
+                      trigger={
+                        <Button size="sm" variant="outline">
+                          <KeyRound className="h-4 w-4" /> Add TOTP
+                        </Button>
+                      }
+                      folders={folders}
+                      initialFolderId={folderFilter}
+                      onSubmit={(v, f) => saveTotp(v, f)}
+                    />
+                  </>
                 )}
               </div>
             </div>
@@ -412,13 +481,14 @@ export function VaultApp() {
 
             {filtered.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">
-                {items.length === 0 ? "No items yet. Add your first login." : "No matches."}
+                {items.length === 0 ? "No items yet. Add your first login or TOTP." : "No matches."}
               </p>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1">
                   {filtered.map((i) => {
-                    const d = asLogin(i);
+                    const totp = asTotp(i);
+                    const title = itemTitle(i);
                     return (
                       <button
                         key={i.id}
@@ -429,11 +499,11 @@ export function VaultApp() {
                         )}
                       >
                         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
-                          {(d?.title ?? "?").slice(0, 1).toUpperCase()}
+                          {totp ? <KeyRound className="h-4 w-4" /> : title.slice(0, 1).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-medium">{d?.title ?? i.id}</div>
-                          <div className="truncate text-xs text-muted-foreground">{d?.fields.username}</div>
+                          <div className="truncate text-sm font-medium">{title}</div>
+                          <div className="truncate text-xs text-muted-foreground">{itemSubtitle(i)}</div>
                         </div>
                       </button>
                     );
@@ -442,26 +512,47 @@ export function VaultApp() {
 
                 <Card>
                   <CardHeader className="flex-row items-center justify-between space-y-0">
-                    <CardTitle className="text-base">{activeData?.title ?? "Select an item"}</CardTitle>
-                    {active && activeData && (
+                    <CardTitle className="text-base">{activeTitle ?? "Select an item"}</CardTitle>
+                    {active && (activeLogin || activeTotp) && (
                       <div className="flex items-center gap-1">
-                        <ItemDialog
-                          heading="Edit login"
-                          initial={{
-                            title: activeData.title,
-                            url: activeData.fields.url,
-                            username: activeData.fields.username,
-                            password: activeData.fields.password,
-                          }}
-                          folders={folders}
-                          initialFolderId={active.folderId}
-                          trigger={
-                            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          }
-                          onSubmit={(v, f) => saveLogin(v, f, active)}
-                        />
+                        {activeLogin && (
+                          <ItemDialog
+                            heading="Edit login"
+                            initial={{
+                              title: activeLogin.title,
+                              url: activeLogin.fields.url,
+                              username: activeLogin.fields.username,
+                              password: activeLogin.fields.password,
+                            }}
+                            folders={folders}
+                            initialFolderId={active.folderId}
+                            trigger={
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            }
+                            onSubmit={(v, f) => saveLogin(v, f, active)}
+                          />
+                        )}
+                        {activeTotp && (
+                          <TotpDialog
+                            heading="Edit TOTP"
+                            initial={{
+                              key: activeTotp.key,
+                              secret: activeTotp.secret,
+                              issuer: activeTotp.issuer ?? "",
+                              account: activeTotp.account ?? "",
+                            }}
+                            folders={folders}
+                            initialFolderId={active.folderId}
+                            trigger={
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            }
+                            onSubmit={(v, f) => saveTotp(v, f, active)}
+                          />
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -475,12 +566,21 @@ export function VaultApp() {
                     )}
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    {activeData ? (
+                    {activeLogin ? (
                       <>
-                        <CopyField label="URL" value={activeData.fields.url} />
-                        <CopyField label="Username" value={activeData.fields.username} />
-                        <CopyField label="Password" value={activeData.fields.password} secret />
+                        <CopyField label="URL" value={activeLogin.fields.url} />
+                        <CopyField label="Username" value={activeLogin.fields.username} />
+                        <CopyField label="Password" value={activeLogin.fields.password} secret />
                       </>
+                    ) : activeTotp ? (
+                      <TotpCard
+                        secret={activeTotp.secret}
+                        period={activeTotp.period}
+                        digits={activeTotp.digits}
+                        algorithm={activeTotp.algorithm}
+                        issuer={activeTotp.issuer}
+                        account={activeTotp.account}
+                      />
                     ) : (
                       <p className="text-sm text-muted-foreground">Choose an item to view its fields.</p>
                     )}
@@ -561,7 +661,7 @@ export function VaultApp() {
           <DialogHeader>
             <DialogTitle>Delete this item?</DialogTitle>
             <DialogDescription>
-              This removes &quot;{activeData?.title}&quot; from the vault. It is soft-deleted and
+              This removes &quot;{activeTitle}&quot; from the vault. It is soft-deleted and
               syncs to your other devices.
             </DialogDescription>
           </DialogHeader>
