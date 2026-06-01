@@ -2,12 +2,14 @@ import { Logger, Module } from "@nestjs/common";
 import {
   MountRegistry,
   type KvEngine,
+  type PkiEngine,
   type SecretsEngine,
   type TransitEngine,
 } from "@arc/secrets-engine";
 import {
   OpenBaoClient,
   OpenBaoKvEngine,
+  OpenBaoPkiEngine,
   OpenBaoTransitEngine,
 } from "@arc/openbao-adapter";
 import { EnginesController } from "./engines.controller";
@@ -48,6 +50,10 @@ export function buildEnginesConfig(): EnginesConfig {
   const transit: TransitEngine = new OpenBaoTransitEngine(client, "transit");
   registry.mount({ path: "transit/", type: "transit", description: "Transit (OpenBao)" });
   enginesByMount.set("transit/", transit);
+
+  const pki: PkiEngine = new OpenBaoPkiEngine(client, "pki");
+  registry.mount({ path: "pki/", type: "pki", description: "PKI (OpenBao)" });
+  enginesByMount.set("pki/", pki);
 
   logger.log(
     `Engine-A enabled (addr=${addr}, mounts=${[...enginesByMount.keys()].join(", ")})`,

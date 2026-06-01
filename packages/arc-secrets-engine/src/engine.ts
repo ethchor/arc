@@ -5,6 +5,12 @@ import type {
   IssuedCredential,
   KvReadResult,
   KvWriteResult,
+  PkiCertificate,
+  PkiIssueRequest,
+  PkiIssuedCertificate,
+  PkiRevocation,
+  PkiSignedCertificate,
+  PkiSignRequest,
 } from "./types";
 
 /**
@@ -80,4 +86,27 @@ export interface TransitCreateKeyOptions {
   algorithm?: string;
   /** Allow plaintext-export of this key. Defaults to `false` — strongly recommended. */
   exportable?: boolean;
+}
+
+/**
+ * PKI engine — issues, signs, and revokes X.509 certificates against a backend CA. Mirrors
+ * Vault/OpenBao's `pki/*` endpoints: roles bound by name, leaf certs minted under a role,
+ * CSR signing for callers that hold their own private key, serial-based revocation.
+ *
+ * Not a {@link DynamicSecretsEngine}: certs carry their own embedded expiration (NotAfter),
+ * and Vault's PKI only emits a `lease_id` when the role has `generate_lease=true` — uncommon
+ * in modern setups. arc treats PKI as lease-free for now; if a role needs lease tracking it
+ * can be layered on top by the caller.
+ */
+export interface PkiEngine extends SecretsEngine {
+  readonly type: "pki";
+  issueCertificate(role: string, req: PkiIssueRequest): Promise<PkiIssuedCertificate>;
+  signCsr(role: string, req: PkiSignRequest): Promise<PkiSignedCertificate>;
+  revokeCertificate(serialNumber: string): Promise<PkiRevocation>;
+  readCertificate(serialNumber: string): Promise<PkiCertificate>;
+  listCertificates(): Promise<string[]>;
+  /** PEM-encoded issuer cert at `<mount>/ca/pem`. */
+  readCaCertificate(): Promise<string>;
+  /** PEM-encoded CA chain at `<mount>/ca_chain`. */
+  readCaChain(): Promise<string>;
 }

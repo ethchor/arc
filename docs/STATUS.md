@@ -134,7 +134,8 @@ Anything that ships *between* the phases gets folded into the closest one.
 
 ## In progress (this branch)
 
-- (nothing — pick the next item from the Pending block below)
+- [~] Phase 3 — Engine A: PKI adapter shipped; DB dynamic creds, plugin host, and
+  per-mount ACL queued next on this branch.
 
 ----
 
@@ -168,9 +169,17 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 - [ ] Per-mount ACL on `/v1/*`. Today any authenticated user can hit any mounted engine;
   proper capability checks (read/write/list against the resolved mount path) land with
   `@arc/grants`. The hook point is `EnginesService.resolve` in `apps/arc-server/src/engines/`.
-- [ ] PKI engine adapter (`OpenBaoPkiEngine` against `/v1/pki/*`). Same shape as the KV +
-  transit adapters — add `pki-engine.ts` to `integrations/arc-openbao-adapter/src/`, mount
-  it under `pki/` in `EnginesModule.buildEnginesConfig`.
+- [x] PKI engine adapter. `PkiEngine` contract in `@arc/secrets-engine` (issue/sign/revoke
+  /read/list certs + CA cert + CA chain), `OpenBaoPkiEngine` in
+  `integrations/arc-openbao-adapter/src/pki-engine.ts` mapping arc's contract onto OpenBao's
+  `pki/issue/<role>` / `pki/sign/<role>` / `pki/revoke` / `pki/cert/<serial>` / `pki/certs`
+  / `pki/ca/pem` / `pki/ca_chain` HTTP layout (SANs comma-joined, TTL as `<n>s` per Vault).
+  10 unit tests cover the mocked-fetch contract (issue body shape, sign-CSR override,
+  revoke-by-serial, read-cert-with-or-without revocation_time, list, CA PEM, CA chain
+  flattening, error case, custom mount). Mounted at `pki/` by `EnginesModule`; dispatched
+  by `EnginesService` (GET for cert/list/ca/ca_chain, POST for issue/sign/revoke,
+  Vault TTL strings + comma-CSV SAN parsing in the body). Live OpenBao e2e test rounds
+  through issue → read → CA → revoke → re-read shows `revocation_time` → list.
 - [ ] Database dynamic credentials adapter (`/v1/database/creds/<role>` against OpenBao).
   Wires `@arc/leasing` into a real lease flow — first dynamic-secrets engine.
 - [ ] `arc-server`: plugin host (in-process module + gRPC/WASM backend) per

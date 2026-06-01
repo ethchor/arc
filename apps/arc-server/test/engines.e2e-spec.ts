@@ -101,17 +101,46 @@ live("engines e2e — live OpenBao (BAO_ADDR set)", () => {
   beforeAll(async () => {
     process.env.BAO_ADDR = dockerAddr!;
     process.env.BAO_TOKEN = dockerToken;
-    // Make sure transit is mounted on the live backend before we exercise it. The KV
-    // mount is on by default in dev mode.
-    await fetch(`${dockerAddr}/v1/sys/mounts/transit`, {
+    // Make sure transit + pki are mounted on the live backend before we exercise them.
+    // The KV mount is on by default in dev mode.
+    const ensureMount = (type: string) =>
+      fetch(`${dockerAddr}/v1/sys/mounts/${type}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Vault-Token": dockerToken,
+        },
+        body: JSON.stringify({ type }),
+      }).catch(() => {
+        /* re-runs leave the mount in place; the next call will 400; ignore */
+      });
+    await ensureMount("transit");
+    await ensureMount("pki");
+    // PKI needs a self-signed root + a role before issue/sign work.
+    await fetch(`${dockerAddr}/v1/pki/root/generate/internal`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Vault-Token": dockerToken,
       },
-      body: JSON.stringify({ type: "transit" }),
+      body: JSON.stringify({ common_name: "arc-test-root", ttl: "87600h" }),
     }).catch(() => {
-      /* re-runs leave the mount in place; the next call will 400; ignore */
+      /* already generated on prior runs */
+    });
+    await fetch(`${dockerAddr}/v1/pki/roles/arc-test`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Vault-Token": dockerToken,
+      },
+      body: JSON.stringify({
+        allowed_domains: "arc.test",
+        allow_subdomains: true,
+        allow_bare_domains: true,
+        max_ttl: "72h",
+      }),
+    }).catch(() => {
+      /* role already set */
     });
     const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = mod.createNestApplication();
@@ -134,7 +163,7 @@ live("engines e2e — live OpenBao (BAO_ADDR set)", () => {
     expect(res.body.sealed).toBe(false);
   });
 
-  it("lists mounts (secret + transit) via /v1/sys/mounts", async () => {
+  it("lists mounts (secret + transit + pki) via /v1/sys/mounts", async () => {
     const res = await request(server)
       .get("/v1/sys/mounts")
       .set(auth(token))
@@ -142,6 +171,7 @@ live("engines e2e — live OpenBao (BAO_ADDR set)", () => {
     const paths = (res.body.data as Array<{ path: string }>).map((m) => m.path);
     expect(paths).toContain("secret/");
     expect(paths).toContain("transit/");
+    expect(paths).toContain("pki/");
   });
 
   it("KV v2: put → get → delete round-trips through /v1/secret/data/<key>", async () => {
@@ -205,6 +235,48 @@ live("engines e2e — live OpenBao (BAO_ADDR set)", () => {
     expect(Buffer.from(dec.body.data.plaintext as string, "base64").toString()).toBe(
       "hello from arc-server",
     );
+  });
+
+  it("PKI: issue → read → revoke → list round-trips through /v1/pki", async () => {
+    const cn = `svc-${Date.now()}-${Math.floor(Math.random() * 1e6)}.arc.test`;
+
+    const issued = await request(server)
+      .post(`/v1/pki/issue/arc-test`)
+      .set(auth(token))
+      .send({ common_name: cn, ttl: "1h" })
+      .expect(201);
+    expect(typeof issued.body.data.serial_number).toBe("string");
+    expect(issued.body.data.certificate).toContain("BEGIN CERTIFICATE");
+    expect(issued.body.data.private_key).toContain("BEGIN");
+    const serial = issued.body.data.serial_number as string;
+
+    const read = await request(server)
+      .get(`/v1/pki/cert/${serial}`)
+      .set(auth(token))
+      .expect(200);
+    expect(read.body.data.certificate).toContain("BEGIN CERTIFICATE");
+
+    const ca = await request(server).get(`/v1/pki/ca/pem`).set(auth(token)).expect(200);
+    expect(ca.body.data.certificate).toContain("BEGIN CERTIFICATE");
+
+    const revoked = await request(server)
+      .post(`/v1/pki/revoke`)
+      .set(auth(token))
+      .send({ serial_number: serial })
+      .expect(201);
+    expect(typeof revoked.body.data.revocation_time).toBe("number");
+
+    const afterRevoke = await request(server)
+      .get(`/v1/pki/cert/${serial}`)
+      .set(auth(token))
+      .expect(200);
+    expect(afterRevoke.body.data.revocation_time).toBeGreaterThan(0);
+
+    const list = await request(server)
+      .get(`/v1/pki/certs?list=true`)
+      .set(auth(token))
+      .expect(200);
+    expect(Array.isArray(list.body.data.keys)).toBe(true);
   });
 
   it("returns 404 when a mount does not exist at the requested prefix", async () => {

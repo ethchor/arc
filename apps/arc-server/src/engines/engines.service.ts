@@ -8,6 +8,9 @@ import {
 import {
   MountRegistry,
   type KvEngine,
+  type PkiEngine,
+  type PkiIssueRequest,
+  type PkiSignRequest,
   type SecretsEngine,
   type TransitEngine,
 } from "@arc/secrets-engine";
@@ -103,6 +106,30 @@ export class EnginesService {
       }
       throw new NotFoundException({ errors: [`unsupported KV path: ${relativePath}`] });
     }
+    if (engine.type === "pki") {
+      const pki = engine as PkiEngine;
+      const listMode = query.list === "true" || query.list === "1";
+      if (listMode && relativePath === "certs") {
+        const keys = await pki.listCertificates();
+        return { data: { keys } };
+      }
+      if (relativePath === "ca/pem" || relativePath === "ca") {
+        const cert = await pki.readCaCertificate();
+        return { data: { certificate: cert } };
+      }
+      if (relativePath === "ca_chain") {
+        const chain = await pki.readCaChain();
+        return { data: { ca_chain: chain } };
+      }
+      if (relativePath.startsWith("cert/")) {
+        const serial = relativePath.slice("cert/".length);
+        const cert = await pki.readCertificate(serial);
+        const data: Record<string, unknown> = { certificate: cert.certificate };
+        if (cert.revocationTime !== undefined) data.revocation_time = cert.revocationTime;
+        return { data };
+      }
+      throw new NotFoundException({ errors: [`unsupported PKI path: ${relativePath}`] });
+    }
     throw new NotFoundException({
       errors: [`engine type ${engine.type} does not support GET at ${relativePath}`],
     });
@@ -170,6 +197,47 @@ export class EnginesService {
       throw new NotFoundException({
         errors: [`unsupported transit path: ${relativePath}`],
       });
+    }
+
+    if (engine.type === "pki") {
+      const pki = engine as PkiEngine;
+      if (relativePath.startsWith("issue/")) {
+        const role = relativePath.slice("issue/".length);
+        const issued = await pki.issueCertificate(role, parsePkiIssueBody(body));
+        return {
+          data: {
+            certificate: issued.certificate,
+            issuing_ca: issued.issuingCa,
+            ca_chain: issued.caChain,
+            private_key: issued.privateKey,
+            private_key_type: issued.privateKeyType,
+            serial_number: issued.serialNumber,
+            expiration: issued.expiration,
+          },
+        };
+      }
+      if (relativePath.startsWith("sign/")) {
+        const role = relativePath.slice("sign/".length);
+        const signed = await pki.signCsr(role, parsePkiSignBody(body));
+        return {
+          data: {
+            certificate: signed.certificate,
+            issuing_ca: signed.issuingCa,
+            ca_chain: signed.caChain,
+            serial_number: signed.serialNumber,
+            expiration: signed.expiration,
+          },
+        };
+      }
+      if (relativePath === "revoke") {
+        const serial = body.serial_number;
+        if (typeof serial !== "string") {
+          throw new NotFoundException({ errors: ["pki/revoke requires `serial_number`"] });
+        }
+        const r = await pki.revokeCertificate(serial);
+        return { data: { revocation_time: r.revocationTime } };
+      }
+      throw new NotFoundException({ errors: [`unsupported PKI path: ${relativePath}`] });
     }
 
     throw new NotFoundException({
@@ -243,4 +311,67 @@ function base64ToBytes(s: string): Uint8Array {
 
 function bytesToBase64(b: Uint8Array): string {
   return Buffer.from(b.buffer, b.byteOffset, b.byteLength).toString("base64");
+}
+
+function parsePkiIssueBody(body: Record<string, unknown>): PkiIssueRequest {
+  const cn = body.common_name;
+  if (typeof cn !== "string" || cn.length === 0) {
+    throw new NotFoundException({ errors: ["pki/issue requires `common_name`"] });
+  }
+  const req: PkiIssueRequest = { commonName: cn };
+  setOptionalTtl(body.ttl, (s) => (req.ttlSeconds = s));
+  setOptionalCsv(body.alt_names, (xs) => (req.altNames = xs));
+  setOptionalCsv(body.ip_sans, (xs) => (req.ipSans = xs));
+  setOptionalCsv(body.uri_sans, (xs) => (req.uriSans = xs));
+  if (typeof body.exclude_cn_from_sans === "boolean") req.excludeCnFromSans = body.exclude_cn_from_sans;
+  if (body.format === "pem" || body.format === "der" || body.format === "pem_bundle") {
+    req.format = body.format;
+  }
+  return req;
+}
+
+function parsePkiSignBody(body: Record<string, unknown>): PkiSignRequest {
+  const csr = body.csr;
+  if (typeof csr !== "string" || csr.length === 0) {
+    throw new NotFoundException({ errors: ["pki/sign requires `csr`"] });
+  }
+  const req: PkiSignRequest = { csr };
+  if (typeof body.common_name === "string") req.commonName = body.common_name;
+  setOptionalTtl(body.ttl, (s) => (req.ttlSeconds = s));
+  setOptionalCsv(body.alt_names, (xs) => (req.altNames = xs));
+  setOptionalCsv(body.ip_sans, (xs) => (req.ipSans = xs));
+  setOptionalCsv(body.uri_sans, (xs) => (req.uriSans = xs));
+  if (typeof body.exclude_cn_from_sans === "boolean") req.excludeCnFromSans = body.exclude_cn_from_sans;
+  if (body.format === "pem" || body.format === "der" || body.format === "pem_bundle") {
+    req.format = body.format;
+  }
+  return req;
+}
+
+/**
+ * Vault TTL strings accept `"3600s"`, `"60m"`, `"24h"`, or a bare number-of-seconds string.
+ * arc's contract is `ttlSeconds: number`; convert here so callers get the friendly form too.
+ */
+function setOptionalTtl(raw: unknown, set: (seconds: number) => void): void {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    set(raw);
+    return;
+  }
+  if (typeof raw === "string" && raw.length > 0) {
+    const m = /^(\d+)\s*(s|m|h|d)?$/i.exec(raw.trim());
+    if (m) {
+      const n = Number(m[1]);
+      const unit = (m[2] ?? "s").toLowerCase();
+      const mult = unit === "s" ? 1 : unit === "m" ? 60 : unit === "h" ? 3600 : 86400;
+      set(n * mult);
+    }
+  }
+}
+
+function setOptionalCsv(raw: unknown, set: (parts: string[]) => void): void {
+  if (typeof raw === "string" && raw.length > 0) {
+    set(raw.split(",").map((s) => s.trim()).filter((s) => s.length > 0));
+  } else if (Array.isArray(raw)) {
+    set(raw.filter((x): x is string => typeof x === "string"));
+  }
 }

@@ -9,3 +9,4 @@ export type {
 } from "./client";
 export { OpenBaoKvEngine } from "./kv-engine";
 export { OpenBaoTransitEngine, TransitProtocolError } from "./transit-engine";
+export { OpenBaoPkiEngine, PkiProtocolError } from "./pki-engine";

@@ -6,10 +6,18 @@ export type {
   KvWriteResult,
   IssueOptions,
   IssuedCredential,
+  PkiFormat,
+  PkiIssueRequest,
+  PkiIssuedCertificate,
+  PkiSignRequest,
+  PkiSignedCertificate,
+  PkiCertificate,
+  PkiRevocation,
 } from "./types";
 export type {
   DynamicSecretsEngine,
   KvEngine,
+  PkiEngine,
   SecretsEngine,
   TransitCiphertext,
   TransitCreateKeyOptions,
