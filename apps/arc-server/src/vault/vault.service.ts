@@ -505,4 +505,32 @@ export class VaultService {
   private async writeAudit(vaultId: string | null, actorUserId: number | null, action: string, targetId: string | null) {
     await this.audit.save(this.audit.create({ vaultId, actorUserId, action, targetId }));
   }
+
+  /**
+   * Vault-scoped audit log. Requires viewer-or-higher membership on the vault. Returns
+   * the newest events first, bounded by `limit` (1-200, default 50) and optionally
+   * paginated with the `before` ISO timestamp from the prior page's last entry.
+   */
+  async listAudit(
+    userId: number,
+    vaultId: string,
+    opts: { limit?: number; before?: string } = {},
+  ) {
+    await this.requireRole(vaultId, userId, "viewer");
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    const qb = this.audit
+      .createQueryBuilder("a")
+      .where("a.vaultId = :vaultId", { vaultId })
+      .orderBy("a.createdAt", "DESC")
+      .limit(limit);
+    if (opts.before) qb.andWhere("a.createdAt < :before", { before: opts.before });
+    const rows = await qb.getMany();
+    return rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      actorUserId: r.actorUserId,
+      targetId: r.targetId,
+      ts: r.createdAt.toISOString(),
+    }));
+  }
 }

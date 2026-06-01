@@ -70,6 +70,19 @@ describe("vault SDK e2e (consumer + service account)", () => {
     await A2.listVaults();
     const reread = await A2.pull(vault.id, 0);
     expect(reread.items[0]!.data).toMatchObject({ value: "postgres://secret" });
+
+    // Audit log records the activity from the original session. Server returns
+    // newest-first; we should see at least the item_created and vault_created actions
+    // for this vault, and they should be metadata-only (no plaintext leak).
+    const audit = await A2.listAudit(vault.id, { limit: 20 });
+    expect(audit.length).toBeGreaterThanOrEqual(2);
+    const actions = audit.map((e) => e.action);
+    expect(actions).toContain("vault_created");
+    expect(actions).toContain("item_created");
+    // No event body should carry the ciphertext or the plaintext.
+    const blob = JSON.stringify(audit);
+    expect(blob).not.toContain("postgres://secret");
+    expect(blob).not.toContain("ciphertext");
   });
 
   it("service account: a machine identity reads a granted vault with no master password", async () => {

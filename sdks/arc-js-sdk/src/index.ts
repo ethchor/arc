@@ -91,6 +91,15 @@ export interface PendingDevice {
   verificationCode: string;
 }
 
+export interface AuditEvent {
+  id: string;
+  action: string;
+  actorUserId: number | null;
+  targetId: string | null;
+  /** ISO 8601 server timestamp. */
+  ts: string;
+}
+
 /**
  * One client for both personas:
  * - consumer: {@link enroll} / {@link unlock} derive the identity key from a master password.
@@ -270,6 +279,22 @@ export class VaultClient {
     });
     this.vkCache.set(r.id, { vk: vkm.vk, keyVersion: r.currentKeyVersion });
     return { id: r.id, keyVersion: r.currentKeyVersion };
+  }
+
+  /**
+   * Server-side metadata audit log for a vault. Newest-first. The server enforces
+   * viewer-or-higher membership and the metadata-only invariant (docs/11) — no
+   * ciphertext or key material is ever included.
+   */
+  async listAudit(
+    vaultId: string,
+    opts: { limit?: number; before?: string } = {},
+  ): Promise<AuditEvent[]> {
+    const params = new URLSearchParams();
+    if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+    if (opts.before !== undefined) params.set("before", opts.before);
+    const qs = params.toString();
+    return this.http("GET", `/vaults/${vaultId}/audit${qs ? `?${qs}` : ""}`);
   }
 
   async listMembers(vaultId: string): Promise<VaultMember[]> {

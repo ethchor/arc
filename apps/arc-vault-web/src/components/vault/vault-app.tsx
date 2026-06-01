@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { AccessView } from "@/components/vault/access-view";
+import { AuditView } from "@/components/vault/audit-view";
 import { ConsoleShell, type ConsoleSection } from "@/components/vault/console-shell";
 import { CopyField } from "@/components/vault/copy-field";
 import { CreateVaultDialog } from "@/components/vault/create-vault-dialog";
@@ -759,19 +760,17 @@ export function VaultApp() {
           />
         )}
 
-        {section === "audit" && (
-          <InfoView
-            icon={FileClock}
-            title="Audit log"
-            description="Metadata-only record of vault activity."
-            points={[
-              "Who acted, when, and on which vault — never item contents or plaintext",
-              "Membership changes and key rotations",
-              "Device approvals and grant changes",
-              "Configurable retention — see docs/11 (audit & privacy)",
-            ]}
-          />
-        )}
+        {section === "audit" &&
+          (selected ? (
+            <AuditView
+              vaultId={selected}
+              loadAudit={(opts) => getClient().listAudit(selected, opts)}
+            />
+          ) : (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              Select a vault under Secrets first.
+            </p>
+          ))}
 
         {section === "tools" && <ToolsView />}
       </ConsoleShell>

@@ -156,4 +156,17 @@ export class VaultController {
   revokeDevice(@CurrentUser() u: CurrentUserData, @Param("id") id: string) {
     return this.vault.revokeDevice(u.userId, id);
   }
+
+  @Get("vaults/:id/audit")
+  audit(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Query("limit") limit?: string,
+    @Query("before") before?: string,
+  ) {
+    return this.vault.listAudit(u.userId, id, {
+      ...(limit !== undefined ? { limit: Number(limit) } : {}),
+      ...(before !== undefined ? { before } : {}),
+    });
+  }
 }

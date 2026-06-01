@@ -97,6 +97,14 @@ Anything that ships *between* the phases gets folded into the closest one.
   true` + `synchronize: false` when `NODE_ENV=production`. New `migration:generate /
   run / revert / show` scripts in `apps/arc-server/package.json` + a CLI-side
   `src/database/typeorm.config.ts` data source for them.
+- [x] Audit log query API + UI. New `GET /vaults/:id/audit` endpoint (paginated by
+  `before` ISO timestamp, default limit 50, max 200, viewer-or-higher required) +
+  `VaultClient.listAudit()` SDK method + `AuditView` component replacing the static
+  marketing copy in the Audit section. Shows newest-first table with friendly action
+  labels, warn-tone badges for destructive events (unlock_failed, item_deleted,
+  device_revoked, vault_key_rotated). E2E test asserts events show up after a real
+  enroll → create → put cycle AND that no ciphertext or plaintext leaks into the
+  metadata log.
 
 ----
 
@@ -146,8 +154,6 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 - [ ] Cloud plugins: `arc-plugin-aws`, `arc-plugin-gcp`, `arc-plugin-azure`.
 - [ ] SCM plugins: `arc-plugin-github`, `arc-plugin-gitlab`, `arc-plugin-bitbucket`.
 - [ ] Auth plugins: `arc-plugin-oidc`, `arc-plugin-kubernetes`.
-- [ ] Audit-log query API + a `/vault/audit` UI panel (entity already exists; nothing
-  reads from it today).
 
 ### Phase 4 — deployment + ops
 
