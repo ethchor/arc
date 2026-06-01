@@ -61,6 +61,9 @@ importers:
       '@arc/crypto':
         specifier: workspace:*
         version: link:../../packages/arc-crypto
+      '@arc/leasing':
+        specifier: workspace:*
+        version: link:../../packages/arc-leasing
       '@arc/openbao-adapter':
         specifier: workspace:*
         version: link:../../integrations/arc-openbao-adapter

@@ -89,6 +89,26 @@ describe("engines e2e — disabled (no BAO_ADDR)", () => {
     const res = await request(server).get("/v1/sys/mounts").set(auth(token)).expect(503);
     expect(res.body.errors).toBeDefined();
   });
+
+  it("sys/leases/renew + revoke return 503 when Engine-A is disabled", async () => {
+    await request(server)
+      .post("/v1/sys/leases/renew")
+      .set(auth(token))
+      .send({ lease_id: "anything" })
+      .expect(503);
+    await request(server)
+      .put("/v1/sys/leases/revoke/anything")
+      .set(auth(token))
+      .expect(503);
+  });
+
+  it("sys/leases/renew rejects an empty lease_id with 400 before reaching the engine", async () => {
+    await request(server)
+      .post("/v1/sys/leases/renew")
+      .set(auth(token))
+      .send({})
+      .expect(400);
+  });
 });
 
 const live = dockerAddr ? describe : describe.skip;

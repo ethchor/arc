@@ -1,12 +1,15 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { LeaseError, type LeaseManager } from "@arc/leasing";
 import {
   MountRegistry,
+  type DynamicSecretsEngine,
   type KvEngine,
   type PkiEngine,
   type PkiIssueRequest,
@@ -28,6 +31,11 @@ export interface EnginesConfig {
   registry: MountRegistry;
   /** Mount path (with trailing slash, the {@link MountRegistry} normalization) → engine. */
   enginesByMount: Map<string, SecretsEngine>;
+  /**
+   * Shared arc-internal lease registry. Every dynamic-secret engine mints leases through
+   * this so `sys/leases/renew`/`revoke` can look them up by arc id regardless of engine.
+   */
+  leases: LeaseManager;
 }
 
 /**
@@ -130,9 +138,84 @@ export class EnginesService {
       }
       throw new NotFoundException({ errors: [`unsupported PKI path: ${relativePath}`] });
     }
+    if (engine.type === "database") {
+      const dyn = engine as DynamicSecretsEngine;
+      if (relativePath.startsWith("creds/")) {
+        const role = relativePath.slice("creds/".length);
+        const issued = await dyn.issue(role);
+        return {
+          data: issued.data,
+          lease_id: issued.lease.id,
+          lease_duration: leaseDurationSeconds(issued.lease),
+          renewable: issued.lease.renewable,
+        };
+      }
+      throw new NotFoundException({ errors: [`unsupported database path: ${relativePath}`] });
+    }
     throw new NotFoundException({
       errors: [`engine type ${engine.type} does not support GET at ${relativePath}`],
     });
+  }
+
+  /**
+   * `POST /v1/sys/leases/renew` — renew an arc-internal lease. The dispatcher resolves
+   * the lease's mount to a {@link DynamicSecretsEngine} and delegates; the adapter knows
+   * how to drive the upstream `sys/leases/renew` against OpenBao if needed.
+   */
+  async renewLease(leaseId: string, incrementSeconds?: number): Promise<Record<string, unknown>> {
+    this.requireClient();
+    const lease = this.config.leases.get(leaseId);
+    if (!lease) throw new NotFoundException({ errors: [`no lease ${leaseId}`] });
+    const engine = this.config.enginesByMount.get(lease.mount);
+    if (!engine) {
+      throw new NotFoundException({
+        errors: [`engine not registered for mount ${lease.mount}`],
+      });
+    }
+    if (!isDynamicSecretsEngine(engine)) {
+      throw new BadRequestException({
+        errors: [`engine ${engine.type} at ${lease.mount} does not support leasing`],
+      });
+    }
+    try {
+      const renewed = await engine.renew(leaseId, incrementSeconds);
+      return {
+        lease_id: renewed.id,
+        lease_duration: leaseDurationSeconds(renewed),
+        renewable: renewed.renewable,
+      };
+    } catch (err) {
+      if (err instanceof LeaseError) {
+        throw new BadRequestException({ errors: [err.message], code: err.code });
+      }
+      throw err;
+    }
+  }
+
+  /** `PUT /v1/sys/leases/revoke/<id>` / `POST /v1/sys/leases/revoke {lease_id}`. */
+  async revokeLease(leaseId: string): Promise<void> {
+    this.requireClient();
+    const lease = this.config.leases.get(leaseId);
+    if (!lease) throw new NotFoundException({ errors: [`no lease ${leaseId}`] });
+    const engine = this.config.enginesByMount.get(lease.mount);
+    if (!engine) {
+      throw new NotFoundException({
+        errors: [`engine not registered for mount ${lease.mount}`],
+      });
+    }
+    if (!isDynamicSecretsEngine(engine)) {
+      throw new BadRequestException({
+        errors: [`engine ${engine.type} at ${lease.mount} does not support leasing`],
+      });
+    }
+    try {
+      await engine.revoke(leaseId);
+    } catch (err) {
+      if (err instanceof LeaseError) {
+        throw new BadRequestException({ errors: [err.message], code: err.code });
+      }
+      throw err;
+    }
   }
 
   /**
@@ -297,6 +380,20 @@ export class EnginesService {
     }
     return this.config.client;
   }
+}
+
+function isDynamicSecretsEngine(engine: SecretsEngine): engine is DynamicSecretsEngine {
+  const probe = engine as Partial<DynamicSecretsEngine>;
+  return typeof probe.issue === "function" && typeof probe.renew === "function";
+}
+
+/**
+ * Vault's `lease_duration` is the seconds-until-expiry granted by the current operation —
+ * not the original ttl. `LeaseManager.renew` advances `expiresAt` from now but keeps
+ * `ttlSeconds` readonly, so derive the wire value from the expiry delta.
+ */
+function leaseDurationSeconds(lease: { expiresAt: number }): number {
+  return Math.max(0, Math.floor((lease.expiresAt - Date.now()) / 1000));
 }
 
 function pickFirst(v: string | string[] | undefined): string | undefined {

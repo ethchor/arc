@@ -180,8 +180,21 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   by `EnginesService` (GET for cert/list/ca/ca_chain, POST for issue/sign/revoke,
   Vault TTL strings + comma-CSV SAN parsing in the body). Live OpenBao e2e test rounds
   through issue → read → CA → revoke → re-read shows `revocation_time` → list.
-- [ ] Database dynamic credentials adapter (`/v1/database/creds/<role>` against OpenBao).
-  Wires `@arc/leasing` into a real lease flow — first dynamic-secrets engine.
+- [x] Database dynamic-credentials adapter (first dynamic-secrets engine). `OpenBaoDatabaseEngine`
+  in `integrations/arc-openbao-adapter/src/database-engine.ts` implements `DynamicSecretsEngine`
+  on top of OpenBao's `database/creds/<role>` (issue) + `sys/leases/renew` (renew) +
+  `sys/leases/revoke` (revoke). `LeaseManager` is the source of truth for arc-internal lease
+  ids (UUIDs); backend OpenBao lease ids ride along in `lease.backendLeaseId`. 8 adapter unit
+  tests cover the issue + renew + revoke happy paths, default TTL, ttl override, not-renewable
+  refusal, unknown-lease 404, and the body-form revoke. Mounted at `database/` by `EnginesModule`,
+  which now also holds a process-wide `LeaseManager` in `EnginesConfig.leases`. New
+  controller routes: `POST /v1/sys/leases/renew { lease_id, increment }`, `PUT
+  /v1/sys/leases/revoke/<id>`, `POST /v1/sys/leases/revoke { lease_id }`. 5 unit-spec tests
+  on `EnginesService` exercise the full lifecycle through a fake DynamicSecretsEngine (issue
+  → renew → revoke → revoked-renew 400 → unknown-lease 404 → non-dynamic-mount 400). `lease_duration`
+  is derived from `expiresAt - now` so renewal increments propagate to the wire even though
+  `LeaseManager.renew` keeps `ttlSeconds` readonly. `@arc/leasing` now dual-publishes ESM + CJS
+  so Jest can `require()` `LeaseError` / `LeaseManager` directly.
 - [ ] `arc-server`: plugin host (in-process module + gRPC/WASM backend) per
   `packages/arc-plugin-sdk`'s contract. The interface is defined; the host runtime isn't.
 - [ ] Cloud plugins: `arc-plugin-aws`, `arc-plugin-gcp`, `arc-plugin-azure`.

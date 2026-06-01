@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -6,6 +7,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -53,6 +55,56 @@ export class EnginesController {
   @Get("sys/mounts")
   async mounts() {
     return { data: await this.engines.listMounts() };
+  }
+
+  /**
+   * Vault's lease-renewal endpoint. Body: `{ lease_id, increment? }`. The increment is
+   * seconds; arc accepts a bare integer (no Vault TTL string forms here — clients of this
+   * endpoint already know they're talking to the renew API).
+   */
+  @Post("sys/leases/renew")
+  async renewLease(@Body() body: { lease_id?: unknown; increment?: unknown } = {}) {
+    if (typeof body.lease_id !== "string" || body.lease_id.length === 0) {
+      throw new BadRequestException({ errors: ["`lease_id` is required"] });
+    }
+    let increment: number | undefined;
+    if (body.increment !== undefined) {
+      const n = Number(body.increment);
+      if (!Number.isFinite(n) || n <= 0) {
+        throw new BadRequestException({ errors: ["`increment` must be a positive number"] });
+      }
+      increment = n;
+    }
+    try {
+      return await this.engines.renewLease(body.lease_id, increment);
+    } catch (err) {
+      this.engines.translateError(err);
+    }
+  }
+
+  /** `PUT /v1/sys/leases/revoke/<id>` per Vault's HTTP API. 204 on success. */
+  @Put("sys/leases/revoke/:leaseId")
+  @HttpCode(204)
+  async revokeLeaseByPath(@Param("leaseId") leaseId: string) {
+    try {
+      await this.engines.revokeLease(leaseId);
+    } catch (err) {
+      this.engines.translateError(err);
+    }
+  }
+
+  /** Body form: `POST /v1/sys/leases/revoke { lease_id }`. 204 on success. */
+  @Post("sys/leases/revoke")
+  @HttpCode(204)
+  async revokeLeaseByBody(@Body() body: { lease_id?: unknown } = {}) {
+    if (typeof body.lease_id !== "string" || body.lease_id.length === 0) {
+      throw new BadRequestException({ errors: ["`lease_id` is required"] });
+    }
+    try {
+      await this.engines.revokeLease(body.lease_id);
+    } catch (err) {
+      this.engines.translateError(err);
+    }
   }
 
   @Get("*splat")
