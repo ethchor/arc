@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, FileClock, Folder, KeyRound, Pencil, Plus, RotateCw, Search, Trash2, Vault, X } from "lucide-react";
+import { Clock, FileClock, FileText, Folder, KeyRound, KeySquare, Pencil, Plus, RotateCw, Search, Trash2, Vault, X } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import type { JsonValue, TotpAlgorithm } from "@arc/types";
 import { toast } from "sonner";
@@ -26,6 +26,8 @@ import { DevicePendingView } from "@/components/vault/device-pending-view";
 import { DevicesDialog } from "@/components/vault/devices-dialog";
 import { InfoView } from "@/components/vault/info-view";
 import { ItemDialog, type LoginInput } from "@/components/vault/item-dialog";
+import { NoteDialog, type NoteInput } from "@/components/vault/note-dialog";
+import { SecretDialog, type SecretInput } from "@/components/vault/secret-dialog";
 import { TotpCard } from "@/components/vault/totp-card";
 import { TotpDialog, type TotpInput } from "@/components/vault/totp-dialog";
 import { NewFolderDialog } from "@/components/vault/new-folder-dialog";
@@ -54,6 +56,16 @@ interface TotpData {
   digits?: number;
   algorithm?: TotpAlgorithm;
 }
+interface NoteData {
+  type: "note";
+  title: string;
+  body: string;
+}
+interface SecretData {
+  type: "secret";
+  key: string;
+  value: string;
+}
 type Phase = "login" | "account" | "device-pending" | "unlocked";
 
 // PulledItem.data is JsonValue | null. The strict union doesn't structurally overlap with
@@ -66,13 +78,24 @@ const asTotp = (i: PulledItem): TotpData | null => {
   const d = i.data as unknown as { type?: string } | null;
   return d?.type === "totp" ? (i.data as unknown as TotpData) : null;
 };
+const asNote = (i: PulledItem): NoteData | null => {
+  const d = i.data as unknown as { type?: string } | null;
+  return d?.type === "note" ? (i.data as unknown as NoteData) : null;
+};
+const asSecret = (i: PulledItem): SecretData | null => {
+  const d = i.data as unknown as { type?: string } | null;
+  return d?.type === "secret" ? (i.data as unknown as SecretData) : null;
+};
 const itemTitle = (i: PulledItem): string =>
-  asLogin(i)?.title ?? asTotp(i)?.key ?? i.id;
+  asLogin(i)?.title ?? asTotp(i)?.key ?? asNote(i)?.title ?? asSecret(i)?.key ?? i.id;
 const itemSubtitle = (i: PulledItem): string => {
   const l = asLogin(i);
   if (l) return l.fields.username;
   const t = asTotp(i);
   if (t) return t.issuer ? `${t.issuer}${t.account ? ` · ${t.account}` : ""}` : (t.account ?? "TOTP");
+  const n = asNote(i);
+  if (n) return n.body.split("\n")[0]?.slice(0, 60) ?? "Note";
+  if (asSecret(i)) return "Secret";
   return "";
 };
 
@@ -218,8 +241,34 @@ export function VaultApp() {
       const opts = existing
         ? { id: existing.id, baseVersion: existing.version, type: "totp", folderId }
         : { type: "totp", folderId };
-      // TotpData is structurally JsonValue; the cast satisfies the SDK's broader parameter
-      // type (same pattern as the CLI's totp-add).
+      // Concrete item shapes are structurally JsonValue; the cast satisfies the SDK's
+      // broader parameter type (same pattern as the CLI's totp-add).
+      await getClient().putItem(selected, payload as unknown as JsonValue, opts);
+      await openVault(selected);
+      if (existing) setActiveItem(existing.id);
+      toast.success("Saved");
+    });
+
+  const saveNote = (value: NoteInput, folderId: string | null, existing?: PulledItem) =>
+    guard(async () => {
+      if (!selected) return;
+      const payload: NoteData = { type: "note", title: value.title, body: value.body };
+      const opts = existing
+        ? { id: existing.id, baseVersion: existing.version, type: "note", folderId }
+        : { type: "note", folderId };
+      await getClient().putItem(selected, payload as unknown as JsonValue, opts);
+      await openVault(selected);
+      if (existing) setActiveItem(existing.id);
+      toast.success("Saved");
+    });
+
+  const saveSecret = (value: SecretInput, folderId: string | null, existing?: PulledItem) =>
+    guard(async () => {
+      if (!selected) return;
+      const payload: SecretData = { type: "secret", key: value.key, value: value.value };
+      const opts = existing
+        ? { id: existing.id, baseVersion: existing.version, type: "secret", folderId }
+        : { type: "secret", folderId };
       await getClient().putItem(selected, payload as unknown as JsonValue, opts);
       await openVault(selected);
       if (existing) setActiveItem(existing.id);
@@ -337,6 +386,8 @@ export function VaultApp() {
   const active = items.find((i) => i.id === activeItem);
   const activeLogin = active ? asLogin(active) : null;
   const activeTotp = active ? asTotp(active) : null;
+  const activeNote = active ? asNote(active) : null;
+  const activeSecret = active ? asSecret(active) : null;
   const activeTitle = active ? itemTitle(active) : null;
   const q = query.trim().toLowerCase();
   const filtered = items.filter((i) => {
@@ -346,6 +397,10 @@ export function VaultApp() {
     if (l) return [l.title, l.fields.username, l.fields.url].some((s) => s?.toLowerCase().includes(q));
     const t = asTotp(i);
     if (t) return [t.key, t.issuer, t.account].some((s) => s?.toLowerCase().includes(q));
+    const n = asNote(i);
+    if (n) return [n.title, n.body].some((s) => s?.toLowerCase().includes(q));
+    const s = asSecret(i);
+    if (s) return [s.key, s.value].some((str) => str?.toLowerCase().includes(q));
     return i.id.toLowerCase().includes(q);
   });
 
@@ -429,6 +484,26 @@ export function VaultApp() {
                       initialFolderId={folderFilter}
                       onSubmit={(v, f) => saveTotp(v, f)}
                     />
+                    <NoteDialog
+                      trigger={
+                        <Button size="sm" variant="outline">
+                          <FileText className="h-4 w-4" /> Add note
+                        </Button>
+                      }
+                      folders={folders}
+                      initialFolderId={folderFilter}
+                      onSubmit={(v, f) => saveNote(v, f)}
+                    />
+                    <SecretDialog
+                      trigger={
+                        <Button size="sm" variant="outline">
+                          <KeySquare className="h-4 w-4" /> Add secret
+                        </Button>
+                      }
+                      folders={folders}
+                      initialFolderId={folderFilter}
+                      onSubmit={(v, f) => saveSecret(v, f)}
+                    />
                   </>
                 )}
               </div>
@@ -481,14 +556,22 @@ export function VaultApp() {
 
             {filtered.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">
-                {items.length === 0 ? "No items yet. Add your first login or TOTP." : "No matches."}
+                {items.length === 0 ? "No items yet. Add a login, TOTP, note, or secret." : "No matches."}
               </p>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1">
                   {filtered.map((i) => {
-                    const totp = asTotp(i);
                     const title = itemTitle(i);
+                    const icon = asTotp(i) ? (
+                      <KeyRound className="h-4 w-4" />
+                    ) : asNote(i) ? (
+                      <FileText className="h-4 w-4" />
+                    ) : asSecret(i) ? (
+                      <KeySquare className="h-4 w-4" />
+                    ) : (
+                      title.slice(0, 1).toUpperCase()
+                    );
                     return (
                       <button
                         key={i.id}
@@ -499,7 +582,7 @@ export function VaultApp() {
                         )}
                       >
                         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
-                          {totp ? <KeyRound className="h-4 w-4" /> : title.slice(0, 1).toUpperCase()}
+                          {icon}
                         </div>
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium">{title}</div>
@@ -513,7 +596,7 @@ export function VaultApp() {
                 <Card>
                   <CardHeader className="flex-row items-center justify-between space-y-0">
                     <CardTitle className="text-base">{activeTitle ?? "Select an item"}</CardTitle>
-                    {active && (activeLogin || activeTotp) && (
+                    {active && (activeLogin || activeTotp || activeNote || activeSecret) && (
                       <div className="flex items-center gap-1">
                         {activeLogin && (
                           <ItemDialog
@@ -553,6 +636,34 @@ export function VaultApp() {
                             onSubmit={(v, f) => saveTotp(v, f, active)}
                           />
                         )}
+                        {activeNote && (
+                          <NoteDialog
+                            heading="Edit note"
+                            initial={{ title: activeNote.title, body: activeNote.body }}
+                            folders={folders}
+                            initialFolderId={active.folderId}
+                            trigger={
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            }
+                            onSubmit={(v, f) => saveNote(v, f, active)}
+                          />
+                        )}
+                        {activeSecret && (
+                          <SecretDialog
+                            heading="Edit secret"
+                            initial={{ key: activeSecret.key, value: activeSecret.value }}
+                            folders={folders}
+                            initialFolderId={active.folderId}
+                            trigger={
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            }
+                            onSubmit={(v, f) => saveSecret(v, f, active)}
+                          />
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -581,6 +692,15 @@ export function VaultApp() {
                         issuer={activeTotp.issuer}
                         account={activeTotp.account}
                       />
+                    ) : activeNote ? (
+                      <pre className="whitespace-pre-wrap break-words rounded-md border bg-muted/40 p-3 font-mono text-sm">
+                        {activeNote.body}
+                      </pre>
+                    ) : activeSecret ? (
+                      <>
+                        <CopyField label="Key" value={activeSecret.key} />
+                        <CopyField label="Value" value={activeSecret.value} secret />
+                      </>
                     ) : (
                       <p className="text-sm text-muted-foreground">Choose an item to view its fields.</p>
                     )}

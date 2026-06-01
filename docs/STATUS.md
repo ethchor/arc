@@ -80,6 +80,11 @@ Anything that ships *between* the phases gets folded into the closest one.
   button + progress bar), `TotpDialog` (add/edit), full item-type discrimination in
   `vault-app.tsx` so login + TOTP both render correctly in the list and the active
   panel.
+- [x] Web: secure-note + generic key/value secret item UIs — `NoteDialog`/`SecretDialog`
+  + their active-panel renders. Discriminated unions in `vault-app.tsx` now handle all
+  four item types (login, TOTP, note, secret); search filter, icons, edit + delete all
+  flow through type-aware helpers so the next item type (passkey, payment card…) is a
+  small diff.
 
 ----
 
@@ -95,10 +100,6 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 1 finish
 
-- [ ] Web: secure-note item dialog + view (the `NoteItem` shape in `@arc/types` is
-  already defined; just no UI yet).
-- [ ] Web: generic key/value secret item — today the UI only renders login + TOTP, even
-  though the CLI stores `SecretItem` too.
 - [ ] Server: drop the implicit `synchronize` on entity load; ship a real Postgres
   migrations file so production deployments don't depend on TypeORM auto-DDL.
 - [ ] Server: real Postgres run profile alongside the sql.js test profile (currently a
