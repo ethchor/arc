@@ -6,6 +6,7 @@ import { entities } from "./database/entities";
 import { InitSchema1717200000000 } from "./migrations/1717200000000-init-schema";
 import { AuthModule } from "./auth/auth.module";
 import { EnginesModule } from "./engines/engines.module";
+import { GrantsModule } from "./grants/grants.module";
 import { PluginsModule } from "./plugins/plugins.module";
 import { VaultModule } from "./vault/vault.module";
 
@@ -109,6 +110,7 @@ export function buildDataSourceOptions(): TypeOrmModuleOptions {
     LoggerModule.forRoot(buildLoggerOptions()),
     TypeOrmModule.forRoot(buildDataSourceOptions()),
     AuthModule,
+    GrantsModule,
     VaultModule,
     EnginesModule,
     PluginsModule,

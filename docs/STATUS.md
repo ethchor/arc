@@ -134,8 +134,8 @@ Anything that ships *between* the phases gets folded into the closest one.
 
 ## In progress (this branch)
 
-- [~] Phase 3 — Engine A: PKI adapter shipped; DB dynamic creds, plugin host, and
-  per-mount ACL queued next on this branch.
+- (nothing — Phase 3 priority queue (PKI adapter, DB dynamic creds, plugin host, per-mount
+  ACL) all shipped this branch. Next pick from the Pending block.)
 
 ----
 
@@ -166,9 +166,15 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 3 — Engine A + plugin host
 
-- [ ] Per-mount ACL on `/v1/*`. Today any authenticated user can hit any mounted engine;
-  proper capability checks (read/write/list against the resolved mount path) land with
-  `@arc/grants`. The hook point is `EnginesService.resolve` in `apps/arc-server/src/engines/`.
+- [ ] Persisted policy store. Today `@arc/grants`'s `InMemoryPolicyStore` lives in
+  arc-server's process memory; policies and attachments don't survive restart. A
+  Postgres-backed store (TypeORM entities `PolicyEntity` + `PolicyAttachmentEntity`)
+  implementing the same `PolicyStore` contract is the follow-up — the `PolicyEngine`
+  doesn't need to change.
+- [ ] Admin HTTP API for grant management (`POST /v1/sys/policy`, `POST /v1/sys/policy/users/:id/attach`,
+  etc). `GrantsService.upsertPolicy` / `attach` / `detach` exist; the controller + the
+  bootstrap-admin chicken-and-egg landing is the follow-up. Until then, prod deployments
+  seed policies programmatically at boot.
 - [x] PKI engine adapter. `PkiEngine` contract in `@arc/secrets-engine` (issue/sign/revoke
   /read/list certs + CA cert + CA chain), `OpenBaoPkiEngine` in
   `integrations/arc-openbao-adapter/src/pki-engine.ts` mapping arc's contract onto OpenBao's
@@ -180,6 +186,27 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   by `EnginesService` (GET for cert/list/ca/ca_chain, POST for issue/sign/revoke,
   Vault TTL strings + comma-CSV SAN parsing in the body). Live OpenBao e2e test rounds
   through issue → read → CA → revoke → re-read shows `revocation_time` → list.
+- [x] Per-mount ACL on `/v1/*` via the new `@arc/grants` package. The package owns the
+  policy model (`Capability`, `Scope`, `Policy`, `PolicyStore`), the matching helpers
+  (`normalizePrefix`, `scope(prefix, caps)`, `scopeAllows` — slash-segment-safe so
+  `secret/` never matches `secret-other/foo`), the `PolicyEngine` (decide + decideDetailed
+  with `scope-match` / `no-matching-scope` / `no-policies` reasons), and an
+  `InMemoryPolicyStore` (upsert/attach/detach/list, tolerates removed policies on lookup).
+  21 unit tests cover the engine + scope semantics including default-allow vs default-deny,
+  sudo-implies-all, multi-policy union, and the segment-boundary footgun. Wired into
+  arc-server through `apps/arc-server/src/grants/`: `GrantsService` holds the store + engine,
+  `CapabilityGuard` is a per-controller guard (`@UseGuards(JwtAuthGuard, CapabilityGuard)`
+  on `EnginesController` + `PluginsController`) that maps HTTP method → capability
+  (GET=read, GET?list=true=list, POST=create, PUT=update, DELETE=delete) and asks the
+  engine. `ARC_DEFAULT_POLICY=allow|deny` (default `allow`) controls the "subject has no
+  policies" fallback so dev/test stay frictionless and prod can flip to fail-closed.
+  9 capability-guard unit-specs + 7 grants e2e tests boot the real app with
+  `ARC_DEFAULT_POLICY=deny`, verify default-deny on `/v1/*` for a fresh user, attach a
+  scoped policy and confirm only the covered path+capability passes, confirm `list`
+  capability is required for `?list=true`, confirm `/vaults/*` (Engine-B) is unaffected,
+  confirm 401-before-403 ordering when no bearer token is present, plus a default-allow
+  smoke test that ensures the dev posture still works. `@arc/grants` dual-publishes ESM + CJS
+  for the Jest runner.
 - [x] In-process plugin host wired into arc-server. New `apps/arc-server/src/plugins/`
   module: `PluginsService` holds a `PluginHost` (from `@arc/plugin-sdk`) and exposes
   `register` / `mountSecretsPlugin(plugin, mountPath, config)` / `list` / `unmount`. Mounting

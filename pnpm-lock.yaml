@@ -61,6 +61,9 @@ importers:
       '@arc/crypto':
         specifier: workspace:*
         version: link:../../packages/arc-crypto
+      '@arc/grants':
+        specifier: workspace:*
+        version: link:../../packages/arc-grants
       '@arc/leasing':
         specifier: workspace:*
         version: link:../../packages/arc-leasing
@@ -289,6 +292,18 @@ importers:
       '@noble/post-quantum':
         specifier: ^0.6.1
         version: 0.6.1
+    devDependencies:
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)
+
+  packages/arc-grants:
     devDependencies:
       tsup:
         specifier: ^8.3.5

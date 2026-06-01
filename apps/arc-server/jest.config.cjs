@@ -13,6 +13,7 @@ module.exports = {
     // depends on ^build" guarantees they exist before tests run.
     // @arc/sdk and @arc/cli stay on source for fast iteration.
     "^@arc/crypto$": "<rootDir>/../../packages/arc-crypto/dist/index.cjs",
+    "^@arc/grants$": "<rootDir>/../../packages/arc-grants/dist/index.cjs",
     "^@arc/leasing$": "<rootDir>/../../packages/arc-leasing/dist/index.cjs",
     "^@arc/plugin-sdk$": "<rootDir>/../../packages/arc-plugin-sdk/dist/index.cjs",
     "^@arc/secrets-engine$": "<rootDir>/../../packages/arc-secrets-engine/dist/index.cjs",

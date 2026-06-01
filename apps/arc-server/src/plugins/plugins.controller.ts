@@ -1,5 +1,6 @@
 import { Controller, Get, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { CapabilityGuard } from "../grants/capability.guard";
 import { PluginsService } from "./plugins.service";
 
 /**
@@ -8,7 +9,7 @@ import { PluginsService } from "./plugins.service";
  * own boot path. An admin-facing HTTP API for runtime mount/unmount lands when we wire
  * the @arc/grants ACL so we know who's allowed to do that.
  */
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CapabilityGuard)
 @Controller("v1/sys/plugins")
 export class PluginsController {
   constructor(private readonly plugins: PluginsService) {}

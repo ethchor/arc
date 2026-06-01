@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { CapabilityGuard } from "../grants/capability.guard";
 import { EnginesService } from "./engines.service";
 
 /**
@@ -29,7 +30,13 @@ import { EnginesService } from "./engines.service";
  * follow-up commit when `@arc/grants` lands; today an authenticated user can hit any
  * mounted engine.
  */
-@UseGuards(JwtAuthGuard)
+/**
+ * `@UseGuards(JwtAuthGuard, CapabilityGuard)` — order matters. JwtAuthGuard runs first and
+ * attaches `req.user`; CapabilityGuard then reads it to check per-mount ACL via
+ * {@link GrantsService}. With `ARC_DEFAULT_POLICY=allow` (the dev default) a user without
+ * any attached policies still gets through.
+ */
+@UseGuards(JwtAuthGuard, CapabilityGuard)
 @Controller("v1")
 export class EnginesController {
   constructor(private readonly engines: EnginesService) {}

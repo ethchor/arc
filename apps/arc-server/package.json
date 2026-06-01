@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@arc/crypto": "workspace:*",
+    "@arc/grants": "workspace:*",
     "@arc/leasing": "workspace:*",
     "@arc/openbao-adapter": "workspace:*",
     "@arc/plugin-sdk": "workspace:*",
