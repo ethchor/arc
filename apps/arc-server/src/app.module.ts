@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { entities } from "./database/entities";
 import { InitSchema1717200000000 } from "./migrations/1717200000000-init-schema";
 import { AuthModule } from "./auth/auth.module";
+import { EnginesModule } from "./engines/engines.module";
 import { VaultModule } from "./vault/vault.module";
 
 const migrations = [InitSchema1717200000000];
@@ -108,6 +109,7 @@ export function buildDataSourceOptions(): TypeOrmModuleOptions {
     TypeOrmModule.forRoot(buildDataSourceOptions()),
     AuthModule,
     VaultModule,
+    EnginesModule,
   ],
 })
 export class AppModule {}

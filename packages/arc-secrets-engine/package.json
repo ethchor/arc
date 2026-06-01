@@ -4,19 +4,21 @@
   "private": true,
   "description": "Engine A clean contract: secrets-engine interfaces (KV v2, dynamic), mount routing. Backends (OpenBao adapter, plugins) implement it.",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

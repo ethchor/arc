@@ -115,6 +115,20 @@ Anything that ships *between* the phases gets folded into the closest one.
   `pino-pretty` single-line colored output in dev. `bufferLogs` so even Nest's own
   bootstrap lines come out in the same shape. Configurable via `LOG_LEVEL` (default
   `info` in prod, `debug` in dev).
+- [x] Engine-A wired into `arc-server`. New `EnginesModule` builds a `MountRegistry`
+  from env at boot (`BAO_ADDR` + optional `BAO_TOKEN`/`BAO_NAMESPACE`), mounts
+  `OpenBaoKvEngine` at `secret/` + `OpenBaoTransitEngine` at `transit/`, and exposes a
+  single `/v1/*` controller that resolves the mount and dispatches by engine type.
+  Vault-compatible wire shape (`/v1/secret/data/<key>`, `/v1/transit/encrypt/<key>`,
+  etc.) so existing Vault SDKs reach arc-server unchanged. Without `BAO_ADDR` the
+  server still boots; `/v1/*` returns 503 with `{ engine: "A", configured: false }` and
+  Engine-B (the zero-knowledge vault) keeps working. New `engines.e2e-spec.ts` covers
+  both modes — 4 always-on tests for the disabled path (503 shape, auth still gates,
+  empty registry); 5 conditional tests (`describe.skip` unless `BAO_ADDR` is set) that
+  round-trip KV v2 put/get/delete + transit create/encrypt/decrypt + 404 for unknown
+  mount. `@arc/secrets-engine` + `@arc/openbao-adapter` now dual-publish ESM + CJS via
+  matching `tsup.config.ts` files (inlining `@arc/leasing` in the CJS build) so the
+  CommonJS Jest runner can `require()` them without dual-publishing leasing itself.
 
 ----
 
@@ -151,13 +165,16 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 3 — Engine A + plugin host
 
-- [ ] `arc-server`: integrate `MountRegistry` so requests under `/v1/<mount>/...` route
-  to the right engine adapter. Today the server is Engine-B only.
-- [ ] `arc-server`: plugin host (in-process module + gRPC backend) per
-  `packages/arc-plugin-sdk`'s contract. The interface is defined; the host runtime isn't.
-- [ ] PKI engine adapter (`integrations/arc-openbao-adapter` extends, or a parallel
-  module — TBD on file structure).
+- [ ] Per-mount ACL on `/v1/*`. Today any authenticated user can hit any mounted engine;
+  proper capability checks (read/write/list against the resolved mount path) land with
+  `@arc/grants`. The hook point is `EnginesService.resolve` in `apps/arc-server/src/engines/`.
+- [ ] PKI engine adapter (`OpenBaoPkiEngine` against `/v1/pki/*`). Same shape as the KV +
+  transit adapters — add `pki-engine.ts` to `integrations/arc-openbao-adapter/src/`, mount
+  it under `pki/` in `EnginesModule.buildEnginesConfig`.
 - [ ] Database dynamic credentials adapter (`/v1/database/creds/<role>` against OpenBao).
+  Wires `@arc/leasing` into a real lease flow — first dynamic-secrets engine.
+- [ ] `arc-server`: plugin host (in-process module + gRPC/WASM backend) per
+  `packages/arc-plugin-sdk`'s contract. The interface is defined; the host runtime isn't.
 - [ ] Cloud plugins: `arc-plugin-aws`, `arc-plugin-gcp`, `arc-plugin-azure`.
 - [ ] SCM plugins: `arc-plugin-github`, `arc-plugin-gitlab`, `arc-plugin-bitbucket`.
 - [ ] Auth plugins: `arc-plugin-oidc`, `arc-plugin-kubernetes`.

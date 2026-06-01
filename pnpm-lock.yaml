@@ -61,6 +61,12 @@ importers:
       '@arc/crypto':
         specifier: workspace:*
         version: link:../../packages/arc-crypto
+      '@arc/openbao-adapter':
+        specifier: workspace:*
+        version: link:../../integrations/arc-openbao-adapter
+      '@arc/secrets-engine':
+        specifier: workspace:*
+        version: link:../../packages/arc-secrets-engine
       '@arc/types':
         specifier: workspace:*
         version: link:../../packages/arc-types
