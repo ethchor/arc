@@ -21,7 +21,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@arc/sdk": "workspace:*"
+    "@arc/crypto": "workspace:*",
+    "@arc/sdk": "workspace:*",
+    "@arc/types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

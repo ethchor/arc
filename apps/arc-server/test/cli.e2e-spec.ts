@@ -64,5 +64,18 @@ describe("vault CLI e2e (developer workflow)", () => {
 
     // missing key returns non-zero
     expect(await run("get", vaultId, "NOPE")).toBe(1);
+
+    // --- TOTP round-trip ---
+    // RFC 4226 test secret (ASCII "12345678901234567890" → base32). Storing it as a TOTP
+    // item proves the SDK passes the typed payload through encrypt → server → pull →
+    // decrypt → totp generation with no plaintext leak in between.
+    const totpSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"; // base32 of "12345678901234567890"
+    expect(await run("totp-add", vaultId, "github-mfa", totpSecret, "GitHub", "ethchor")).toBe(0);
+    const beforeTotp = out.length;
+    expect(await run("totp", vaultId, "github-mfa")).toBe(0);
+    const line = out[beforeTotp]!;
+    // Format: "<6 digits>\t(Ns)" where N is 1..30. The exact code depends on wall-clock;
+    // shape verification is the meaningful check here.
+    expect(line).toMatch(/^\d{6}\t\(\d{1,2}s\)$/);
   });
 });

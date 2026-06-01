@@ -36,9 +36,15 @@ importers:
 
   apps/arc-cli:
     dependencies:
+      '@arc/crypto':
+        specifier: workspace:*
+        version: link:../../packages/arc-crypto
       '@arc/sdk':
         specifier: workspace:*
         version: link:../../sdks/arc-js-sdk
+      '@arc/types':
+        specifier: workspace:*
+        version: link:../../packages/arc-types
     devDependencies:
       '@types/node':
         specifier: ^22.10.2

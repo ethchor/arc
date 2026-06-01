@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { totpCode } from "@arc/crypto";
+import type { JsonValue, TotpAlgorithm, TotpItem } from "@arc/types";
 import { VaultClient } from "@arc/sdk";
 
 export interface CliIO {
@@ -29,13 +31,15 @@ function saveConfig(dir: string, cfg: CliConfig): void {
 
 const USAGE =
   "commands:\n" +
-  "  login <email>                 dev login (sync authorization)\n" +
-  "  enroll                        create the vault (needs ARC_MASTER_PASSWORD)\n" +
-  "  create-vault [team|personal]  create a vault, prints its id\n" +
-  "  set <vaultId> <key> <value>   store/update a secret\n" +
-  "  get <vaultId> <key>           print a secret value\n" +
-  "  ls [vaultId]                  list vaults, or keys in a vault\n" +
-  "  whoami                        show current login\n" +
+  "  login <email>                          dev login (sync authorization)\n" +
+  "  enroll                                 create the vault (needs ARC_MASTER_PASSWORD)\n" +
+  "  create-vault [team|personal]           create a vault, prints its id\n" +
+  "  set <vaultId> <key> <value>            store/update a secret\n" +
+  "  get <vaultId> <key>                    print a secret value\n" +
+  "  ls [vaultId]                           list vaults, or keys in a vault\n" +
+  "  totp-add <vaultId> <key> <secret> [issuer] [account]   add a TOTP item\n" +
+  "  totp <vaultId> <key>                   print the current TOTP code for a key\n" +
+  "  whoami                                 show current login\n" +
   "\nsession: set ARC_MASTER_PASSWORD (consumer) or ARC_IDENTITY_KEY (service account).";
 
 export async function runCli(io: CliIO): Promise<number> {
@@ -122,6 +126,56 @@ export async function runCli(io: CliIO): Promise<number> {
           return 1;
         }
         io.out(String((found.data as { value?: unknown }).value));
+        return 0;
+      }
+      case "totp-add": {
+        const [vaultId, key, secret, issuer, account] = args;
+        if (!vaultId || !key || !secret) {
+          throw new Error("usage: totp-add <vaultId> <key> <secret> [issuer] [account]");
+        }
+        await ensureSession();
+        const existing = await findByKey(vaultId, key);
+        const payload: TotpItem = {
+          type: "totp",
+          key,
+          secret,
+          ...(issuer ? { issuer } : {}),
+          ...(account ? { account } : {}),
+        };
+        // TotpItem is structurally JsonValue but TS's interface-vs-index-signature variance
+        // refuses the direct assignment; the cast is the standard escape hatch.
+        await client.putItem(
+          vaultId,
+          payload as unknown as JsonValue,
+          existing
+            ? { id: existing.id, baseVersion: existing.version, type: "totp" }
+            : { type: "totp" },
+        );
+        io.out(`stored TOTP ${key}`);
+        return 0;
+      }
+      case "totp": {
+        const [vaultId, key] = args;
+        if (!vaultId || !key) throw new Error("usage: totp <vaultId> <key>");
+        await ensureSession();
+        const found = await findByKey(vaultId, key);
+        if (!found) {
+          io.err(`not found: ${key}`);
+          return 1;
+        }
+        const data = found.data as Partial<TotpItem> | null;
+        if (!data || data.type !== "totp" || typeof data.secret !== "string") {
+          io.err(`not a TOTP item: ${key}`);
+          return 1;
+        }
+        const { code, secondsRemaining } = totpCode(data.secret, {
+          ...(data.period !== undefined ? { period: data.period } : {}),
+          ...(data.digits !== undefined ? { digits: data.digits } : {}),
+          ...(data.algorithm !== undefined
+            ? { algorithm: data.algorithm as TotpAlgorithm }
+            : {}),
+        });
+        io.out(`${code}\t(${secondsRemaining}s)`);
         return 0;
       }
       case "ls": {
