@@ -101,3 +101,87 @@ export function totpCode(secretBase32: string, opts: TotpOptions = {}): TotpCode
   });
   return { code, secondsRemaining: period - (nowSec % period) };
 }
+
+/**
+ * Parsed `otpauth://` URI fields (Google Authenticator's de-facto interop format).
+ * Spec: https://github.com/google/google-authenticator/wiki/Key-Uri-Format
+ */
+export interface OtpauthFields {
+  /** Always `"totp"` today — HOTP URIs are accepted but issue a warning since we don't
+   *  store a counter alongside HOTP items. */
+  type: "totp" | "hotp";
+  /** Base32 secret, normalized (uppercase, no padding/whitespace). */
+  secret: string;
+  /** Service / company. Pulled from the `?issuer=` query param if present, else from
+   *  the label prefix (`Issuer:Account`). */
+  issuer?: string;
+  /** User-facing account identifier (email, username, …). */
+  account?: string;
+  algorithm?: TotpAlgorithm;
+  digits?: number;
+  period?: number;
+}
+
+const ALG_FROM_URI: Record<string, TotpAlgorithm> = {
+  SHA1: "SHA1",
+  SHA256: "SHA256",
+  SHA512: "SHA512",
+};
+
+/**
+ * Parse `otpauth://totp/<label>?secret=<base32>&issuer=...` URIs (Google Authenticator
+ * format). Throws on anything that isn't a recognisable TOTP URI; partial fields use the
+ * RFC 6238 defaults at code-generation time, so a minimal URI like
+ * `otpauth://totp/?secret=JBSWY3DPEHPK3PXP` round-trips cleanly.
+ */
+export function parseOtpauthUri(uri: string): OtpauthFields {
+  let url: URL;
+  try {
+    url = new URL(uri);
+  } catch {
+    throw new VaultCryptoError("otpauth: not a parsable URI");
+  }
+  if (url.protocol !== "otpauth:") {
+    throw new VaultCryptoError("otpauth: expected an otpauth:// URI");
+  }
+  // WHATWG URL parsing of `otpauth://totp/<label>` lands the type in `host` and the label
+  // in `pathname`. Node's URL exposes the type either there or (rarely) as the first
+  // path segment depending on version — handle both for safety.
+  let otpType = url.host.toLowerCase();
+  let labelRaw = url.pathname.replace(/^\/+/, "");
+  if (!otpType) {
+    const slashIdx = labelRaw.indexOf("/");
+    otpType = (slashIdx >= 0 ? labelRaw.slice(0, slashIdx) : labelRaw).toLowerCase();
+    labelRaw = slashIdx >= 0 ? labelRaw.slice(slashIdx + 1) : "";
+  }
+  if (otpType !== "totp" && otpType !== "hotp") {
+    throw new VaultCryptoError(`otpauth: unsupported type ${otpType}`);
+  }
+  const params = url.searchParams;
+  const secretRaw = params.get("secret");
+  if (!secretRaw) throw new VaultCryptoError("otpauth: missing required `secret` parameter");
+  // Validate by passing through the same normaliser the generator uses.
+  decodeSecret(secretRaw);
+
+  const label = decodeURIComponent(labelRaw);
+  const colonIdx = label.indexOf(":");
+  const labelIssuer = colonIdx > 0 ? label.slice(0, colonIdx).trim() : undefined;
+  const labelAccount = colonIdx > 0 ? label.slice(colonIdx + 1).trim() : label.trim() || undefined;
+
+  const algParam = params.get("algorithm")?.toUpperCase();
+  const algorithm = algParam && ALG_FROM_URI[algParam] ? ALG_FROM_URI[algParam] : undefined;
+  const digitsParam = params.get("digits");
+  const digits = digitsParam ? Number(digitsParam) : undefined;
+  const periodParam = params.get("period");
+  const period = periodParam ? Number(periodParam) : undefined;
+
+  return {
+    type: otpType,
+    secret: secretRaw.replace(/[\s=]+/g, "").toUpperCase(),
+    issuer: params.get("issuer")?.trim() || labelIssuer,
+    account: labelAccount,
+    ...(algorithm ? { algorithm } : {}),
+    ...(digits !== undefined && Number.isFinite(digits) ? { digits } : {}),
+    ...(period !== undefined && Number.isFinite(period) ? { period } : {}),
+  };
+}

@@ -85,6 +85,11 @@ Anything that ships *between* the phases gets folded into the closest one.
   four item types (login, TOTP, note, secret); search filter, icons, edit + delete all
   flow through type-aware helpers so the next item type (passkey, payment card…) is a
   small diff.
+- [x] TOTP: `otpauth://` URI import (Google Authenticator format). Paste a full URI into
+  the secret field in `TotpDialog` and it auto-populates key / issuer / account /
+  algorithm / digits / period. `parseOtpauthUri` exported from `@arc/crypto`; 7 unit
+  tests cover the canonical Google URI, label-prefix fallback for issuer, minimal URIs,
+  base32 normalisation across the input, and three rejection paths.
 
 ----
 
@@ -158,7 +163,8 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 - [?] Web: should the master-password recovery flow live in the unlock screen or as a
   separate route? Today it's tucked behind a button in `RecoveryKeyCard`.
-- [?] TOTP: support `otpauth://` URI import (most clients export this format)?
+- ~~[?] TOTP: support `otpauth://` URI import (most clients export this format)?~~ → yes,
+  shipped in this batch (TotpDialog auto-detects on paste).
 - [?] Secure notes: do they need rich text or is plaintext-with-newlines fine for v1?
 - [?] Per-vault icons / colours — Bitwarden parity feature; currently no UI surface.
 - [?] Item-level sharing (one item to one user, not whole vault) — Bitwarden has this;

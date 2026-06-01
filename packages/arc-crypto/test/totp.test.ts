@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { base32Encode } from "../src/keys";
-import { hotpCode, totpCode } from "../src/totp";
+import { hotpCode, parseOtpauthUri, totpCode } from "../src/totp";
 import { VaultCryptoError } from "../src/types";
 
 // RFC 4226 §10.1 — ASCII "12345678901234567890" as the HOTP secret.
@@ -56,6 +56,52 @@ describe("TOTP (RFC 6238 KATs)", () => {
       ).toBe(c.sha512);
     });
   }
+});
+
+describe("parseOtpauthUri", () => {
+  it("parses the canonical Google Authenticator URI", () => {
+    const f = parseOtpauthUri(
+      "otpauth://totp/GitHub:ethchor?secret=JBSWY3DPEHPK3PXP&issuer=GitHub&algorithm=SHA1&digits=6&period=30",
+    );
+    expect(f.type).toBe("totp");
+    expect(f.secret).toBe("JBSWY3DPEHPK3PXP");
+    expect(f.issuer).toBe("GitHub");
+    expect(f.account).toBe("ethchor");
+    expect(f.algorithm).toBe("SHA1");
+    expect(f.digits).toBe(6);
+    expect(f.period).toBe(30);
+  });
+
+  it("falls back to the label prefix for the issuer when the query param is missing", () => {
+    const f = parseOtpauthUri("otpauth://totp/Apple:me%40example.com?secret=JBSWY3DPEHPK3PXP");
+    expect(f.issuer).toBe("Apple");
+    expect(f.account).toBe("me@example.com");
+  });
+
+  it("accepts a minimal URI (just type + secret) and leaves algorithm/digits/period to defaults", () => {
+    const f = parseOtpauthUri("otpauth://totp/?secret=JBSWY3DPEHPK3PXP");
+    expect(f.secret).toBe("JBSWY3DPEHPK3PXP");
+    expect(f.algorithm).toBeUndefined();
+    expect(f.digits).toBeUndefined();
+    expect(f.period).toBeUndefined();
+  });
+
+  it("normalises a secret with whitespace + lowercase + padding", () => {
+    const f = parseOtpauthUri("otpauth://totp/x?secret=jbsw%20y3dp%20ehpk%203pxp%3D%3D");
+    expect(f.secret).toBe("JBSWY3DPEHPK3PXP");
+  });
+
+  it("rejects a non-otpauth URI", () => {
+    expect(() => parseOtpauthUri("https://example.com/?secret=JBSWY3DPEHPK3PXP")).toThrow();
+  });
+
+  it("rejects an otpauth URI with an unknown type", () => {
+    expect(() => parseOtpauthUri("otpauth://yotp/x?secret=JBSWY3DPEHPK3PXP")).toThrow();
+  });
+
+  it("rejects when the secret param is missing", () => {
+    expect(() => parseOtpauthUri("otpauth://totp/x")).toThrow();
+  });
 });
 
 describe("totpCode behavior", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { parseOtpauthUri } from "@arc/crypto";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +23,26 @@ export interface TotpInput {
 }
 
 const EMPTY: TotpInput = { key: "", secret: "", issuer: "", account: "" };
+
+/**
+ * If the user pastes an `otpauth://` URI into the secret field, parse it and auto-fill
+ * the issuer / account / name. Falls back to the raw paste on any error (the user might
+ * be pasting a bare base32 secret).
+ */
+function maybeApplyOtpauth(prev: TotpInput, pasted: string): TotpInput {
+  if (!pasted.startsWith("otpauth://")) return { ...prev, secret: pasted };
+  try {
+    const f = parseOtpauthUri(pasted);
+    return {
+      key: prev.key || f.account || f.issuer || "TOTP",
+      secret: f.secret,
+      issuer: f.issuer ?? prev.issuer,
+      account: f.account ?? prev.account,
+    };
+  } catch {
+    return { ...prev, secret: pasted };
+  }
+}
 
 export function TotpDialog({
   trigger,
@@ -86,16 +107,20 @@ export function TotpDialog({
             />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="totp-secret">Secret (base32)</Label>
+            <Label htmlFor="totp-secret">Secret (base32 or otpauth:// URI)</Label>
             <Input
               id="totp-secret"
               className="font-mono"
-              placeholder="JBSWY3DPEHPK3PXP"
+              placeholder="JBSWY3DPEHPK3PXP — or paste otpauth://totp/..."
               value={form.secret}
-              onChange={set("secret")}
+              onChange={(e) => setForm((f) => maybeApplyOtpauth(f, e.target.value))}
               autoComplete="off"
               spellCheck={false}
             />
+            <p className="text-xs text-muted-foreground">
+              Paste the full <code>otpauth://</code> URI from your existing app and we'll
+              fill the rest of the fields for you.
+            </p>
           </div>
           <div className="grid gap-1.5 sm:grid-cols-2">
             <div className="grid gap-1.5">
