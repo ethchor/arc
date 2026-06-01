@@ -13,8 +13,12 @@ import {
 /** An opaque ciphertext envelope (docs/04). The server never interprets it. */
 export type EnvelopeJson = Record<string, unknown>;
 
-export type VaultType = "personal" | "team" | "org";
-export type MemberRole = "owner" | "admin" | "editor" | "viewer";
+// VaultType + MemberRole live in @arc/types so the SDK, web UI, and any future client can
+// reference the same union without depending on the server's TypeORM entities. Imported
+// for local use in this file's column type annotations, re-exported for the DTO + service
+// modules that already import from this entities barrel.
+import type { MemberRole, VaultType } from "@arc/types";
+export type { MemberRole, VaultType };
 export type MemberStatus = "invited" | "active" | "revoked";
 
 /** Account identity (sync authorization only — never holds keys). */

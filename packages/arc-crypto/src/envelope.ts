@@ -2,6 +2,13 @@ import { aeadDecrypt, aeadEncrypt, NONCE_BYTES, randomBytes } from "./primitives
 import { fromB64u, toB64u, utf8 } from "./bytes";
 import { VaultCryptoError } from "./types";
 
+// Envelope + SignatureEnvelope wire shapes live in @arc/types so plugins and the server
+// can reference them without depending on the crypto runtime. Imported for local use in
+// this file's runtime helpers, and re-exported so existing crypto consumers (sdk, server
+// entities, tests) keep their @arc/crypto imports working.
+import type { Envelope, SignatureEnvelope } from "@arc/types";
+export type { Envelope, SignatureEnvelope };
+
 export const ENVELOPE_VERSION = 1;
 
 /** Algorithm registry (docs/04 §4.7). Ids are opaque strings; readers reject unknown ids. */
@@ -27,37 +34,8 @@ export const ALG = {
 
 export const KDF = { ARGON2ID: "argon2id-1" } as const;
 
-/** Versioned container for one AEAD ciphertext or one sealed box. */
-export interface Envelope {
-  /** envelope schema version */
-  v: number;
-  /** algorithm id from ALG */
-  alg: string;
-  /** KDF id when password-derived, else null */
-  kdf?: string | null;
-  /** key version of the wrapping key that produced `ct`, else null */
-  kv?: number | null;
-  /** canonical AAD string actually bound (docs/04 §4.3), else null */
-  aad?: string | null;
-  /** base64url nonce (24 bytes) */
-  n: string;
-  /** base64url ciphertext + 16-byte tag */
-  ct: string;
-  /** base64url ephemeral public key (seal envelopes only) */
-  ep?: string | null;
-  /** base64url ML-KEM-768 ciphertext (pq-seal envelopes only, ADR-002) */
-  kc?: string | null;
-  /** plaintext padding length stripped after decrypt (docs/02 §2.5) */
-  pad?: number;
-}
-
-export interface SignatureEnvelope {
-  v: number;
-  alg: "Ed25519";
-  /** signing key id, supports rotation (docs/05) */
-  kid?: string | null;
-  sig: string;
-}
+// Envelope and SignatureEnvelope are re-exported from @arc/types above. The runtime
+// constructors (aeadSeal / aeadOpen, etc.) below remain here in @arc/crypto.
 
 // Length-bucket padding to blunt ciphertext-size fingerprinting (docs/02 §2.5).
 const BUCKETS = [64, 256, 1024, 4096, 16384, 65536, 262144];

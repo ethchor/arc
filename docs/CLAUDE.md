@@ -204,7 +204,7 @@ Check `arc-types` first before defining any interface.
 
 - [ ] Scaffold monorepo (incl. integrations/ + plugins tree)
 - [ ] pnpm workspaces + Turborepo
-- [ ] arc-types core interfaces (both engines + plugin contracts)
+- [x] arc-types core interfaces (both engines + plugin contracts) — `packages/arc-types` holds `JsonValue`, `Envelope` + `SignatureEnvelope` wire shapes, `MemberRole`/`VaultType`. Other shared types migrate in as they appear.
 - [ ] arc-crypto skeleton (Bitwarden-style E2E model, using audited libs)
 - [ ] arc-secrets-engine interface + arc-leasing
 - [ ] arc-openbao-adapter skeleton talking to dev-mode OpenBao (`bao status` round-trip)
