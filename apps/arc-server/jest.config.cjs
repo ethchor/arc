@@ -14,6 +14,7 @@ module.exports = {
     // @arc/sdk and @arc/cli stay on source for fast iteration.
     "^@arc/crypto$": "<rootDir>/../../packages/arc-crypto/dist/index.cjs",
     "^@arc/leasing$": "<rootDir>/../../packages/arc-leasing/dist/index.cjs",
+    "^@arc/plugin-sdk$": "<rootDir>/../../packages/arc-plugin-sdk/dist/index.cjs",
     "^@arc/secrets-engine$": "<rootDir>/../../packages/arc-secrets-engine/dist/index.cjs",
     "^@arc/openbao-adapter$": "<rootDir>/../../integrations/arc-openbao-adapter/dist/index.cjs",
     "^@arc/sdk$": "<rootDir>/../../sdks/arc-js-sdk/src/index.ts",

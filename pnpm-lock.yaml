@@ -67,6 +67,9 @@ importers:
       '@arc/openbao-adapter':
         specifier: workspace:*
         version: link:../../integrations/arc-openbao-adapter
+      '@arc/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/arc-plugin-sdk
       '@arc/secrets-engine':
         specifier: workspace:*
         version: link:../../packages/arc-secrets-engine

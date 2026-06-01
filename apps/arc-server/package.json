@@ -17,6 +17,7 @@
     "@arc/crypto": "workspace:*",
     "@arc/leasing": "workspace:*",
     "@arc/openbao-adapter": "workspace:*",
+    "@arc/plugin-sdk": "workspace:*",
     "@arc/secrets-engine": "workspace:*",
     "@arc/types": "workspace:*",
     "@nestjs/common": "^11.0.0",

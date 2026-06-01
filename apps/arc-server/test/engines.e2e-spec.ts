@@ -70,11 +70,14 @@ describe("engines e2e — disabled (no BAO_ADDR)", () => {
     expect(res.body.configured).toBe(false);
   });
 
-  it("returns 503 on a KV read path when Engine-A is disabled", async () => {
+  it("returns 404 on a KV read path when Engine-A is disabled (mount doesn't exist)", async () => {
+    // Previously 503 — relaxed so plugin-only deployments work. Mount resolution is now
+    // independent of the OpenBao client; sys/seal-status + sys/health remain 503 since
+    // they're explicit proxies to the backend.
     const res = await request(server)
       .get("/v1/secret/data/whatever")
       .set(auth(token))
-      .expect(503);
+      .expect(404);
     expect(Array.isArray(res.body.errors)).toBe(true);
   });
 
@@ -83,23 +86,21 @@ describe("engines e2e — disabled (no BAO_ADDR)", () => {
     await request(server).get("/v1/secret/data/x").expect(401);
   });
 
-  it("/v1/sys/mounts returns an empty list when no mounts are registered", async () => {
-    // The endpoint requires the client too, since "no Engine-A configured" is the right
-    // failure when there is no backend — even if the registry could in principle answer.
-    const res = await request(server).get("/v1/sys/mounts").set(auth(token)).expect(503);
-    expect(res.body.errors).toBeDefined();
+  it("/v1/sys/mounts returns an empty list when nothing is mounted (plugins-only deployments are valid)", async () => {
+    const res = await request(server).get("/v1/sys/mounts").set(auth(token)).expect(200);
+    expect(res.body.data).toEqual([]);
   });
 
-  it("sys/leases/renew + revoke return 503 when Engine-A is disabled", async () => {
+  it("sys/leases endpoints return 404 (not 503) when the lease id is unknown — lease lifecycle doesn't need BAO_ADDR", async () => {
     await request(server)
       .post("/v1/sys/leases/renew")
       .set(auth(token))
       .send({ lease_id: "anything" })
-      .expect(503);
+      .expect(404);
     await request(server)
       .put("/v1/sys/leases/revoke/anything")
       .set(auth(token))
-      .expect(503);
+      .expect(404);
   });
 
   it("sys/leases/renew rejects an empty lease_id with 400 before reaching the engine", async () => {

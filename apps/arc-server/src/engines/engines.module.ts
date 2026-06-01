@@ -77,6 +77,6 @@ export function buildEnginesConfig(): EnginesConfig {
     { provide: ENGINES_CONFIG, useFactory: buildEnginesConfig },
     EnginesService,
   ],
-  exports: [EnginesService],
+  exports: [EnginesService, ENGINES_CONFIG],
 })
 export class EnginesModule {}

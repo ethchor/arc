@@ -180,6 +180,29 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   by `EnginesService` (GET for cert/list/ca/ca_chain, POST for issue/sign/revoke,
   Vault TTL strings + comma-CSV SAN parsing in the body). Live OpenBao e2e test rounds
   through issue → read → CA → revoke → re-read shows `revocation_time` → list.
+- [x] In-process plugin host wired into arc-server. New `apps/arc-server/src/plugins/`
+  module: `PluginsService` holds a `PluginHost` (from `@arc/plugin-sdk`) and exposes
+  `register` / `mountSecretsPlugin(plugin, mountPath, config)` / `list` / `unmount`. Mounting
+  registers in the same `MountRegistry` + `enginesByMount` map that drives `/v1/*` dispatch,
+  with `PluginSecretsEngine` adapting `SecretsPlugin` (the plugin-author contract) onto
+  `DynamicSecretsEngine` (the dispatcher contract). The shared `LeaseManager` owns arc
+  lease ids for plugin-issued credentials; backend plugin lease ids ride in
+  `lease.backendLeaseId`. Unmount calls `LeaseManager.revokePrefix` so every outstanding
+  lease at that mount is revoked atomically. `EnginesService.get` now dispatches
+  `<mount>/creds/<role>` against any `DynamicSecretsEngine` (not just type-`database`),
+  which is what lets plugin mounts slot in without the dispatcher learning a new shape.
+  `requireClient()` was dropped from `resolve` / `listMounts` / lease lifecycle so a
+  plugin-only deployment (no OpenBao) is a valid configuration — `/v1/sys/seal-status` and
+  `/v1/sys/health` still 503 since they're explicit OpenBao proxies. New `GET
+  /v1/sys/plugins` controller for read-only listing (write-side will land with `@arc/grants`
+  ACL — admin endpoint needs auth). 6 unit-spec tests on `PluginsService` cover the full
+  loop: register/configure/mount → dispatch creds/<role> → renew via the plugin → revoke
+  → unmount drops the registry + revokes prefix leases → configure() failure stays
+  half-mounted-free → duplicate-name registration refused with 400. The test harness builds
+  an `EnginesService` with `client: null`, proving plugin mounts work end-to-end without
+  any OpenBao backend. `@arc/plugin-sdk` now dual-publishes ESM + CJS so Jest can `require()`
+  `PluginHost` directly. Out-of-process plugins (gRPC / WASM) follow in a later commit;
+  the host runtime here is the in-process foundation.
 - [x] Database dynamic-credentials adapter (first dynamic-secrets engine). `OpenBaoDatabaseEngine`
   in `integrations/arc-openbao-adapter/src/database-engine.ts` implements `DynamicSecretsEngine`
   on top of OpenBao's `database/creds/<role>` (issue) + `sys/leases/renew` (renew) +
@@ -195,8 +218,8 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   is derived from `expiresAt - now` so renewal increments propagate to the wire even though
   `LeaseManager.renew` keeps `ttlSeconds` readonly. `@arc/leasing` now dual-publishes ESM + CJS
   so Jest can `require()` `LeaseError` / `LeaseManager` directly.
-- [ ] `arc-server`: plugin host (in-process module + gRPC/WASM backend) per
-  `packages/arc-plugin-sdk`'s contract. The interface is defined; the host runtime isn't.
+- [ ] `arc-server`: out-of-process plugin host (gRPC / WASM backend). The in-process
+  module shipped above; out-of-process transport for sandboxed plugins is the follow-up.
 - [ ] Cloud plugins: `arc-plugin-aws`, `arc-plugin-gcp`, `arc-plugin-azure`.
 - [ ] SCM plugins: `arc-plugin-github`, `arc-plugin-gitlab`, `arc-plugin-bitbucket`.
 - [ ] Auth plugins: `arc-plugin-oidc`, `arc-plugin-kubernetes`.

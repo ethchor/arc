@@ -69,8 +69,12 @@ export class EnginesService {
     return await client.health();
   }
 
+  /**
+   * Lists every registered mount. No `requireClient()` here — a plugin-only deployment
+   * (no OpenBao, all mounts come from plugins) is a valid configuration, and the registry
+   * is always queryable.
+   */
   async listMounts(): Promise<Array<{ path: string; type: string; description?: string }>> {
-    this.requireClient();
     return this.config.registry.list().map((m) => ({
       path: m.path,
       type: String(m.type),
@@ -138,19 +142,18 @@ export class EnginesService {
       }
       throw new NotFoundException({ errors: [`unsupported PKI path: ${relativePath}`] });
     }
-    if (engine.type === "database") {
-      const dyn = engine as DynamicSecretsEngine;
-      if (relativePath.startsWith("creds/")) {
-        const role = relativePath.slice("creds/".length);
-        const issued = await dyn.issue(role);
-        return {
-          data: issued.data,
-          lease_id: issued.lease.id,
-          lease_duration: leaseDurationSeconds(issued.lease),
-          renewable: issued.lease.renewable,
-        };
-      }
-      throw new NotFoundException({ errors: [`unsupported database path: ${relativePath}`] });
+    // Any dynamic-secrets engine — including plugin-backed mounts — exposes credentials
+    // through `<mount>/creds/<role>`. Routing is by capability (DynamicSecretsEngine
+    // shape), not by `type` string, so plugins don't need to claim "database".
+    if (relativePath.startsWith("creds/") && isDynamicSecretsEngine(engine)) {
+      const role = relativePath.slice("creds/".length);
+      const issued = await engine.issue(role);
+      return {
+        data: issued.data,
+        lease_id: issued.lease.id,
+        lease_duration: leaseDurationSeconds(issued.lease),
+        renewable: issued.lease.renewable,
+      };
     }
     throw new NotFoundException({
       errors: [`engine type ${engine.type} does not support GET at ${relativePath}`],
@@ -163,7 +166,6 @@ export class EnginesService {
    * how to drive the upstream `sys/leases/renew` against OpenBao if needed.
    */
   async renewLease(leaseId: string, incrementSeconds?: number): Promise<Record<string, unknown>> {
-    this.requireClient();
     const lease = this.config.leases.get(leaseId);
     if (!lease) throw new NotFoundException({ errors: [`no lease ${leaseId}`] });
     const engine = this.config.enginesByMount.get(lease.mount);
@@ -194,7 +196,6 @@ export class EnginesService {
 
   /** `PUT /v1/sys/leases/revoke/<id>` / `POST /v1/sys/leases/revoke {lease_id}`. */
   async revokeLease(leaseId: string): Promise<void> {
-    this.requireClient();
     const lease = this.config.leases.get(leaseId);
     if (!lease) throw new NotFoundException({ errors: [`no lease ${leaseId}`] });
     const engine = this.config.enginesByMount.get(lease.mount);
@@ -353,7 +354,9 @@ export class EnginesService {
   }
 
   private resolve(requestPath: string): { engine: SecretsEngine; relativePath: string } {
-    this.requireClient();
+    // No requireClient() — a plugin-mounted path is reachable without an OpenBao backend.
+    // If the path doesn't resolve, 404 is the right error (not 503), regardless of whether
+    // a backend is configured.
     const resolved = this.config.registry.resolve(requestPath);
     if (!resolved) {
       throw new NotFoundException({ errors: [`no mount at ${requestPath}`] });

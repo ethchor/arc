@@ -6,6 +6,7 @@ import { entities } from "./database/entities";
 import { InitSchema1717200000000 } from "./migrations/1717200000000-init-schema";
 import { AuthModule } from "./auth/auth.module";
 import { EnginesModule } from "./engines/engines.module";
+import { PluginsModule } from "./plugins/plugins.module";
 import { VaultModule } from "./vault/vault.module";
 
 const migrations = [InitSchema1717200000000];
@@ -110,6 +111,7 @@ export function buildDataSourceOptions(): TypeOrmModuleOptions {
     AuthModule,
     VaultModule,
     EnginesModule,
+    PluginsModule,
   ],
 })
 export class AppModule {}
