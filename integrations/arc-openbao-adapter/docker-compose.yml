@@ -1,0 +1,21 @@
+# Local dev OpenBao for `pnpm --filter @arc/openbao-adapter test`.
+#
+# Run:
+#   docker compose -f integrations/arc-openbao-adapter/docker-compose.yml up -d
+#   export BAO_ADDR=http://127.0.0.1:8200 BAO_TOKEN=root
+#   pnpm --filter @arc/openbao-adapter test
+#
+# Dev mode auto-unseals, auto-initializes, and mounts KV v2 at `secret/`. The smoke test
+# in `tests/integration.test.ts` skips entirely when BAO_ADDR is not set, so plain
+# `pnpm test` from any working tree stays green without Docker.
+services:
+  openbao:
+    image: quay.io/openbao/openbao:latest
+    command: server -dev
+    ports:
+      - "8200:8200"
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: root
+      BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK

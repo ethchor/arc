@@ -20,10 +20,28 @@ await kv.put("app/config", { apiKey: "xyz" });
 ### Local dev
 
 ```sh
+# One-off:
 docker run --rm -p 8200:8200 -e BAO_DEV_ROOT_TOKEN_ID=root \
   quay.io/openbao/openbao:latest server -dev
+
+# Or use the included compose file:
+docker compose -f integrations/arc-openbao-adapter/docker-compose.yml up -d
+
 export BAO_ADDR="http://127.0.0.1:8200"
 export BAO_TOKEN="root"
+```
+
+### Smoke test
+
+`tests/integration.test.ts` exercises the full Engine-A round-trip against a real OpenBao
+dev server: `sealStatus()` (the `bao status` equivalent), `health()`, and a KV v2
+`put → get → list → soft-delete` cycle through `OpenBaoKvEngine`. The suite **skips
+entirely when `BAO_ADDR` is unset**, so the default `pnpm test` stays green without
+Docker. To run it:
+
+```sh
+docker compose -f integrations/arc-openbao-adapter/docker-compose.yml up -d
+BAO_ADDR=http://127.0.0.1:8200 BAO_TOKEN=root pnpm --filter @arc/openbao-adapter test
 ```
 
 > **License:** target is **OpenBao (MPL 2.0)** only. This adapter speaks the documented HTTP API
