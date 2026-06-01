@@ -90,6 +90,13 @@ Anything that ships *between* the phases gets folded into the closest one.
   algorithm / digits / period. `parseOtpauthUri` exported from `@arc/crypto`; 7 unit
   tests cover the canonical Google URI, label-prefix fallback for issuer, minimal URIs,
   base32 normalisation across the input, and three rejection paths.
+- [x] Server: real Postgres migrations. `src/migrations/1717200000000-init-schema.ts`
+  captures the full data model (users, vault keysets including the hybrid identity
+  columns, vaults, memberships, grants, items, devices, signed heads, audit log,
+  folders) with all indexes + unique constraints. `app.module.ts` wires `migrationsRun:
+  true` + `synchronize: false` when `NODE_ENV=production`. New `migration:generate /
+  run / revert / show` scripts in `apps/arc-server/package.json` + a CLI-side
+  `src/database/typeorm.config.ts` data source for them.
 
 ----
 
@@ -105,8 +112,6 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 1 finish
 
-- [ ] Server: drop the implicit `synchronize` on entity load; ship a real Postgres
-  migrations file so production deployments don't depend on TypeORM auto-DDL.
 - [ ] Server: real Postgres run profile alongside the sql.js test profile (currently a
   single AppModule branches on `NODE_ENV`; split it cleanly).
 - [ ] Server: structured logging (Pino or similar) + request-id correlation.

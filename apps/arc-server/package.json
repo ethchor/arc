@@ -7,7 +7,11 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/typeorm.config.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/typeorm.config.ts",
+    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/typeorm.config.ts",
+    "migration:show": "typeorm-ts-node-commonjs migration:show -d src/database/typeorm.config.ts"
   },
   "dependencies": {
     "@arc/crypto": "workspace:*",
