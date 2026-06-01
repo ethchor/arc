@@ -19,11 +19,14 @@ export class EnrollDto {
   @IsObject() argonParams!: Record<string, unknown>;
   @IsString() authHash!: string;
   @IsString() identityPublicKey!: string;
+  @IsString() identityPublicKeyMlkem!: string;
   @IsString() signingPublicKey!: string;
   @IsString() identitySelfAttestation!: string;
   @IsObject() encIdentityPriv!: EnvelopeJson;
+  @IsObject() encIdentityPrivMlkem!: EnvelopeJson;
   @IsObject() encSigningPriv!: EnvelopeJson;
   @IsObject() encIdentityPrivRecovery!: EnvelopeJson;
+  @IsObject() encIdentityPrivMlkemRecovery!: EnvelopeJson;
   /** Wrapped personal-vault VK for the enrolling user (seal to their own identity key). */
   @IsObject() ownerGrant!: EnvelopeJson;
   @IsOptional() @IsObject() personalVaultEncName?: EnvelopeJson | null;

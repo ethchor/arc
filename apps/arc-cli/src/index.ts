@@ -48,7 +48,18 @@ export async function runCli(io: CliIO): Promise<number> {
 
   const ensureSession = async (): Promise<void> => {
     if (io.env.ARC_IDENTITY_KEY) {
-      client.setIdentity(io.env.ARC_IDENTITY_KEY, io.env.ARC_SIGNING_KEY);
+      if (!io.env.ARC_IDENTITY_KEY_MLKEM) {
+        throw new Error(
+          "ARC_IDENTITY_KEY set without ARC_IDENTITY_KEY_MLKEM — hybrid identity requires both",
+        );
+      }
+      client.setIdentity(
+        {
+          identityPrivB64: io.env.ARC_IDENTITY_KEY,
+          identityPrivMlkemB64: io.env.ARC_IDENTITY_KEY_MLKEM,
+        },
+        io.env.ARC_SIGNING_KEY,
+      );
     } else if (io.env.ARC_MASTER_PASSWORD) {
       await client.unlock(io.env.ARC_MASTER_PASSWORD);
     } else {

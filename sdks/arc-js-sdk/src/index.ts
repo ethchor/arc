@@ -15,8 +15,10 @@ import {
   generateDeviceKeyPair,
   type JsonValue,
   type Keyset,
+  mlkemPubFromPriv,
   openVaultKeyGrant,
   rewrapItemKey,
+  seal,
   sealOpen,
   toB64u,
   unlock as cryptoUnlock,
@@ -47,6 +49,8 @@ export class VaultApiError extends Error {
 interface ClientSession {
   identityPriv: Uint8Array;
   identityPub: Uint8Array;
+  identityPrivMlkem: Uint8Array;
+  identityPubMlkem: Uint8Array;
   signingPriv?: Uint8Array;
   signingPub?: Uint8Array;
 }
@@ -111,12 +115,22 @@ export class VaultClient {
     this.token = token;
   }
 
-  /** Machine/service-account mode: provide the identity (and optionally signing) private key. */
-  setIdentity(identityPrivB64: string, signingPrivB64?: string): void {
-    const identityPriv = fromB64u(identityPrivB64);
+  /**
+   * Machine/service-account mode: provide the hybrid identity (X25519 + ML-KEM-768) and
+   * optionally the signing private key. Both identity privs are required so the client can
+   * open hybrid-wrapped grants (ADR-002).
+   */
+  setIdentity(
+    identity: { identityPrivB64: string; identityPrivMlkemB64: string },
+    signingPrivB64?: string,
+  ): void {
+    const identityPriv = fromB64u(identity.identityPrivB64);
+    const identityPrivMlkem = fromB64u(identity.identityPrivMlkemB64);
     this.session = {
       identityPriv,
       identityPub: x25519PubFromPriv(identityPriv),
+      identityPrivMlkem,
+      identityPubMlkem: mlkemPubFromPriv(identityPrivMlkem),
       signingPriv: signingPrivB64 ? fromB64u(signingPrivB64) : undefined,
       signingPub: signingPrivB64 ? edPubFromPriv(fromB64u(signingPrivB64)) : undefined,
     };
@@ -125,6 +139,20 @@ export class VaultClient {
 
   get identityPublicKeyB64(): string | undefined {
     return this.session ? toB64u(this.session.identityPub) : undefined;
+  }
+
+  get identityPublicKeyMlkemB64(): string | undefined {
+    return this.session ? toB64u(this.session.identityPubMlkem) : undefined;
+  }
+
+  private hybridPub(): { x25519Pub: Uint8Array; mlkemPub: Uint8Array } {
+    if (!this.session) throw new Error("not unlocked");
+    return { x25519Pub: this.session.identityPub, mlkemPub: this.session.identityPubMlkem };
+  }
+
+  private hybridPriv(): { x25519Priv: Uint8Array; mlkemPriv: Uint8Array } {
+    if (!this.session) throw new Error("not unlocked");
+    return { x25519Priv: this.session.identityPriv, mlkemPriv: this.session.identityPrivMlkem };
   }
 
   private async http<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -151,23 +179,31 @@ export class VaultClient {
 
   async enroll(masterPassword: string): Promise<{ recoveryKey: string }> {
     const e = cryptoEnroll(masterPassword, { profile: this.opts.profile });
-    const ownerGrant = wrapVaultKeyFor(e.personalVaultKey.vk, e.session.identityPub);
+    const ownerGrant = wrapVaultKeyFor(e.personalVaultKey.vk, {
+      x25519Pub: e.session.identityPub,
+      mlkemPub: e.session.identityPubMlkem,
+    });
     await this.http("POST", "/vault/enroll", {
       saltMk: e.keyset.saltMk,
       saltAuth: e.keyset.saltAuth,
       argonParams: e.keyset.argonParams,
       authHash: e.keyset.authHash,
       identityPublicKey: e.keyset.identityPublicKey,
+      identityPublicKeyMlkem: e.keyset.identityPublicKeyMlkem,
       signingPublicKey: e.keyset.signingPublicKey,
       identitySelfAttestation: e.keyset.identitySelfAttestation,
       encIdentityPriv: e.keyset.encIdentityPriv,
+      encIdentityPrivMlkem: e.keyset.encIdentityPrivMlkem,
       encSigningPriv: e.keyset.encSigningPriv,
       encIdentityPrivRecovery: e.keyset.encIdentityPrivRecovery,
+      encIdentityPrivMlkemRecovery: e.keyset.encIdentityPrivMlkemRecovery,
       ownerGrant,
     });
     this.session = {
       identityPriv: e.session.identityPriv,
       identityPub: e.session.identityPub,
+      identityPrivMlkem: e.session.identityPrivMlkem,
+      identityPubMlkem: e.session.identityPubMlkem,
       signingPriv: e.session.signingPriv,
       signingPub: e.session.signingPub,
     };
@@ -182,6 +218,8 @@ export class VaultClient {
     this.session = {
       identityPriv: s.identityPriv,
       identityPub: s.identityPub,
+      identityPrivMlkem: s.identityPrivMlkem,
+      identityPubMlkem: s.identityPubMlkem,
       signingPriv: s.signingPriv,
       signingPub: s.signingPub,
     };
@@ -205,7 +243,7 @@ export class VaultClient {
     for (const v of vaults) {
       let name: string | undefined;
       if (v.grant) {
-        const vk = openVaultKeyGrant(v.grant, this.session.identityPriv);
+        const vk = openVaultKeyGrant(v.grant, this.hybridPriv());
         this.vkCache.set(v.id, { vk, keyVersion: v.currentKeyVersion });
         if (v.encName) {
           try {
@@ -223,7 +261,7 @@ export class VaultClient {
   async createVault(type: VaultType = "team", name?: string): Promise<{ id: string; keyVersion: number }> {
     if (!this.session) throw new Error("not unlocked");
     const vkm = createVaultKey(1);
-    const ownerGrant = wrapVaultKeyFor(vkm.vk, this.session.identityPub);
+    const ownerGrant = wrapVaultKeyFor(vkm.vk, this.hybridPub());
     const encName = name ? encryptVaultName(vkm.vk, name, 1) : undefined;
     const r = await this.http<{ id: string; currentKeyVersion: number }>("POST", "/vaults", {
       type,
@@ -241,25 +279,29 @@ export class VaultClient {
   async getUserIdentityKey(userId: number): Promise<{
     userId: number;
     identityPublicKey: string;
+    identityPublicKeyMlkem: string;
     signingPublicKey: string;
     fingerprint: string;
   }> {
     return this.http("GET", `/vault/users/${userId}/identity-key`);
   }
 
-  /** Grant a member access by wrapping the vault's VK to their identity public key. */
+  /** Grant a member access by wrapping the vault's VK to their hybrid identity (ADR-002). */
   async addMember(
     vaultId: string,
     userId: number,
     role: string,
-    recipientIdentityPubB64: string,
+    recipient: { identityPubB64: string; identityPubMlkemB64: string },
   ): Promise<void> {
     const vk = this.requireVk(vaultId);
     await this.http("POST", `/vaults/${vaultId}/members`, {
       userId,
       role,
       keyVersion: vk.keyVersion,
-      wrappedVaultKey: wrapVaultKeyFor(vk.vk, fromB64u(recipientIdentityPubB64)),
+      wrappedVaultKey: wrapVaultKeyFor(vk.vk, {
+        x25519Pub: fromB64u(recipient.identityPubB64),
+        mlkemPub: fromB64u(recipient.identityPubMlkemB64),
+      }),
     });
   }
 
@@ -348,7 +390,11 @@ export class VaultClient {
    */
   async rotateKey(
     vaultId: string,
-    remainingMembers: Array<{ userId: number; identityPubB64: string }>,
+    remainingMembers: Array<{
+      userId: number;
+      identityPubB64: string;
+      identityPubMlkemB64: string;
+    }>,
   ): Promise<{ keyVersion: number }> {
     const current = this.requireVk(vaultId);
     const newKeyVersion = current.keyVersion + 1;
@@ -368,7 +414,10 @@ export class VaultClient {
 
     const grants = remainingMembers.map((m) => ({
       granteeUserId: m.userId,
-      wrappedVaultKey: wrapVaultKeyFor(newVk, fromB64u(m.identityPubB64)),
+      wrappedVaultKey: wrapVaultKeyFor(newVk, {
+        x25519Pub: fromB64u(m.identityPubB64),
+        mlkemPub: fromB64u(m.identityPubMlkemB64),
+      }),
     }));
 
     await this.http("POST", `/vaults/${vaultId}/rotate-key`, {
@@ -387,10 +436,14 @@ export class VaultClient {
   async rotateForAllMembers(vaultId: string): Promise<{ keyVersion: number }> {
     const members = (await this.listMembers(vaultId)).filter((m) => m.status === "active");
     const remaining = await Promise.all(
-      members.map(async (m) => ({
-        userId: m.userId,
-        identityPubB64: (await this.getUserIdentityKey(m.userId)).identityPublicKey,
-      })),
+      members.map(async (m) => {
+        const k = await this.getUserIdentityKey(m.userId);
+        return {
+          userId: m.userId,
+          identityPubB64: k.identityPublicKey,
+          identityPubMlkemB64: k.identityPublicKeyMlkem,
+        };
+      }),
     );
     return this.rotateKey(vaultId, remaining);
   }
@@ -414,13 +467,17 @@ export class VaultClient {
     return this.http("GET", "/vault/devices?pending=true");
   }
 
-  /** Trusted device: wrap every cached VK to the new device's public key and approve it. */
+  /**
+   * Trusted device: wrap every cached VK to the new device's public key and approve it.
+   * Devices use the classical X25519 `seal` envelope (ADR-002 Phase 4 will add hybrid
+   * device keys once the Rust core ships ML-KEM).
+   */
   async approveDevice(deviceId: string, devicePublicKeyB64: string): Promise<void> {
     const devicePub = fromB64u(devicePublicKeyB64);
     const grants = [...this.vkCache.entries()].map(([vaultId, { vk, keyVersion }]) => ({
       vaultId,
       keyVersion,
-      wrappedVaultKey: wrapVaultKeyFor(vk, devicePub),
+      wrappedVaultKey: seal(devicePub, vk),
     }));
     await this.http("POST", `/vault/devices/${deviceId}/approve`, { grants });
   }

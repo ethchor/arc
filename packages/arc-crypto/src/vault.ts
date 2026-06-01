@@ -15,7 +15,14 @@ import {
   generateSigningKeyPair,
 } from "./keys";
 import { aeadOpen, aeadSeal, type Envelope } from "./envelope";
-import { seal, sealOpen } from "./seal";
+import {
+  generateHybridIdentityKeyPair,
+  type HybridPriv,
+  type HybridPub,
+  pqSeal,
+  pqSealOpen,
+} from "./pq-hybrid";
+import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
 import { buildAad } from "./aad";
 import { signObject } from "./sign";
 import {
@@ -28,18 +35,31 @@ import { fromB64u, toB64u, utf8, fromUtf8, wipe } from "./bytes";
 import { jcs } from "./jcs";
 import { VaultCryptoError, type JsonValue } from "./types";
 
-/** Server-stored, non-secret keyset (all enc* are envelopes / ciphertext). */
+/**
+ * Server-stored, non-secret keyset (all enc* are envelopes / ciphertext).
+ *
+ * Hybrid identity (ADR-002): a recipient publishes *both* an X25519 public key and an
+ * ML-KEM-768 public key. Grants to this recipient are wrapped under the post-quantum
+ * hybrid sealed box (`pq-seal-x25519-mlkem768-hkdf-xc20p`), so an attacker who records
+ * the wrapped grants today and breaks ECC in 203X must *also* break ML-KEM-768 to
+ * recover any VK. The ML-KEM private key is wrapped under the same WK (master-password
+ * derived) and recovery wraps as the X25519 identity private — no new password-derived
+ * key, no extra recovery material.
+ */
 export interface Keyset {
   saltMk: string;
   saltAuth: string;
   argonParams: ArgonProfile;
   authHash: string;
   identityPublicKey: string;
+  identityPublicKeyMlkem: string;
   signingPublicKey: string;
   identitySelfAttestation: string;
   encIdentityPriv: Envelope;
+  encIdentityPrivMlkem: Envelope;
   encSigningPriv: Envelope;
   encIdentityPrivRecovery: Envelope;
+  encIdentityPrivMlkemRecovery: Envelope;
   keyVersion: number;
 }
 
@@ -48,6 +68,8 @@ export interface Session {
   wk: Uint8Array;
   identityPriv: Uint8Array;
   identityPub: Uint8Array;
+  identityPrivMlkem: Uint8Array;
+  identityPubMlkem: Uint8Array;
   signingPriv: Uint8Array;
   signingPub: Uint8Array;
 }
@@ -87,10 +109,16 @@ export function enroll(
   const authHash = deriveAuthHash(authSeed, saltAuth, params);
 
   const identity = generateIdentityKeyPair();
+  const hybrid = generateHybridIdentityKeyPair();
   const signing = generateSigningKeyPair();
   const keyVersion = 1;
 
   const encIdentityPriv = aeadSeal(wk, identity.priv, privAad("identity-priv", keyVersion));
+  const encIdentityPrivMlkem = aeadSeal(
+    wk,
+    hybrid.mlkem.secretKey,
+    privAad("identity-priv-mlkem", keyVersion),
+  );
   const encSigningPriv = aeadSeal(wk, signing.priv, privAad("signing-priv", keyVersion));
 
   const recovery = generateRecoveryKey();
@@ -100,10 +128,16 @@ export function enroll(
     identity.priv,
     privAad("identity-priv", keyVersion, "recovery"),
   );
+  const encIdentityPrivMlkemRecovery = aeadSeal(
+    recoveryWrap,
+    hybrid.mlkem.secretKey,
+    privAad("identity-priv-mlkem", keyVersion, "recovery"),
+  );
 
   const ts = new Date().toISOString();
   const attestation = signObject(signing.priv, {
     identityPub: toB64u(identity.pub),
+    identityPubMlkem: toB64u(hybrid.mlkem.publicKey),
     signingPub: toB64u(signing.pub),
     ts,
   });
@@ -117,11 +151,14 @@ export function enroll(
       argonParams: params,
       authHash: toB64u(authHash),
       identityPublicKey: toB64u(identity.pub),
+      identityPublicKeyMlkem: toB64u(hybrid.mlkem.publicKey),
       signingPublicKey: toB64u(signing.pub),
       identitySelfAttestation: JSON.stringify(attestation),
       encIdentityPriv,
+      encIdentityPrivMlkem,
       encSigningPriv,
       encIdentityPrivRecovery,
+      encIdentityPrivMlkemRecovery,
       keyVersion,
     },
     recoveryKey: recovery.encoded,
@@ -129,6 +166,8 @@ export function enroll(
       wk,
       identityPriv: identity.priv,
       identityPub: identity.pub,
+      identityPrivMlkem: hybrid.mlkem.secretKey,
+      identityPubMlkem: hybrid.mlkem.publicKey,
       signingPriv: signing.priv,
       signingPub: signing.pub,
     },
@@ -158,6 +197,11 @@ export function unlock(masterPassword: string, keyset: Keyset): Session {
     keyset.encIdentityPriv,
     privAad("identity-priv", keyset.keyVersion),
   );
+  const identityPrivMlkem = aeadOpen(
+    wk,
+    keyset.encIdentityPrivMlkem,
+    privAad("identity-priv-mlkem", keyset.keyVersion),
+  );
   const signingPriv = aeadOpen(
     wk,
     keyset.encSigningPriv,
@@ -167,19 +211,34 @@ export function unlock(masterPassword: string, keyset: Keyset): Session {
     wk,
     identityPriv,
     identityPub: x25519PubFromPriv(identityPriv),
+    identityPrivMlkem,
+    identityPubMlkem: ml_kem768.getPublicKey(identityPrivMlkem),
     signingPriv,
     signingPub: edPubFromPriv(signingPriv),
   };
 }
 
-/** Recover the identity private key from the recovery key (docs/05 §5.7). */
-export function recoverIdentityPriv(recoveryKeyEncoded: string, keyset: Keyset): Uint8Array {
+/**
+ * Recover the hybrid identity private keys from the recovery key (docs/05 §5.7, ADR-002).
+ * Returns both the X25519 priv and the ML-KEM-768 priv — they're a hybrid pair, you always
+ * need both to open hybrid-wrapped grants.
+ */
+export function recoverIdentityPriv(
+  recoveryKeyEncoded: string,
+  keyset: Keyset,
+): { x25519: Uint8Array; mlkem: Uint8Array } {
   const recoveryWrap = deriveRecoveryWrapKey(decodeRecoveryKey(recoveryKeyEncoded));
-  return aeadOpen(
+  const x25519 = aeadOpen(
     recoveryWrap,
     keyset.encIdentityPrivRecovery,
     privAad("identity-priv", keyset.keyVersion, "recovery"),
   );
+  const mlkem = aeadOpen(
+    recoveryWrap,
+    keyset.encIdentityPrivMlkemRecovery,
+    privAad("identity-priv-mlkem", keyset.keyVersion, "recovery"),
+  );
+  return { x25519, mlkem };
 }
 
 /**
@@ -217,13 +276,18 @@ export function createVaultKey(keyVersion = 1): VaultKeyMaterial {
   return { vk: randomBytes(32), keyVersion };
 }
 
-/** Wrap a VK to a recipient's identity public key (docs/07 §7.4). Confidentiality only. */
-export function wrapVaultKeyFor(vk: Uint8Array, recipientIdentityPub: Uint8Array): Envelope {
-  return seal(recipientIdentityPub, vk);
+/**
+ * Wrap a VK to a recipient's hybrid identity (docs/07 §7.4, ADR-002). Confidentiality only,
+ * post-quantum-resistant against harvest-now-decrypt-later. The signed grant tuple
+ * (`signGrant`) carries the X25519 pub as the recipient identifier; the ML-KEM material is
+ * bound into the envelope's HKDF transcript and need not appear in the signed tuple.
+ */
+export function wrapVaultKeyFor(vk: Uint8Array, recipient: HybridPub): Envelope {
+  return pqSeal(recipient, vk);
 }
 
-export function openVaultKeyGrant(grant: Envelope, identityPriv: Uint8Array): Uint8Array {
-  return sealOpen(identityPriv, grant);
+export function openVaultKeyGrant(grant: Envelope, recipient: HybridPriv): Uint8Array {
+  return pqSealOpen(grant, recipient);
 }
 
 /** Detached Ed25519 signature over a grant tuple (docs/03 §3.5 (c)) for the grant chain. */
@@ -331,5 +395,5 @@ export function decryptFolderName(vk: Uint8Array, env: Envelope, keyVersion = 1)
 }
 
 export function lockSession(session: Session): void {
-  wipe(session.wk, session.identityPriv, session.signingPriv);
+  wipe(session.wk, session.identityPriv, session.identityPrivMlkem, session.signingPriv);
 }

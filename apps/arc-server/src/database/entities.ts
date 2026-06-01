@@ -58,6 +58,10 @@ export class VaultUserKeysEntity {
   @Column({ type: "text" })
   identityPublicKey!: string;
 
+  /** ML-KEM-768 public key (base64url, 1184 bytes). ADR-002. */
+  @Column({ type: "text" })
+  identityPublicKeyMlkem!: string;
+
   @Column({ type: "text" })
   signingPublicKey!: string;
 
@@ -67,11 +71,19 @@ export class VaultUserKeysEntity {
   @Column({ type: "simple-json" })
   encIdentityPriv!: EnvelopeJson;
 
+  /** ML-KEM-768 private key wrapped under WK. ADR-002. */
+  @Column({ type: "simple-json" })
+  encIdentityPrivMlkem!: EnvelopeJson;
+
   @Column({ type: "simple-json" })
   encSigningPriv!: EnvelopeJson;
 
   @Column({ type: "simple-json" })
   encIdentityPrivRecovery!: EnvelopeJson;
+
+  /** ML-KEM-768 private key wrapped under the recovery-derived KEK. ADR-002. */
+  @Column({ type: "simple-json" })
+  encIdentityPrivMlkemRecovery!: EnvelopeJson;
 
   @Column({ type: "int", default: 1 })
   keyVersion!: number;

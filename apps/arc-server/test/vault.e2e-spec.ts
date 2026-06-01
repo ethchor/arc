@@ -17,6 +17,15 @@ import {
   wrapVaultKeyFor,
   ZERO_CHAIN,
 } from "@arc/crypto";
+
+const hybridPubFrom = (s: ReturnType<typeof enroll>["session"]) => ({
+  x25519Pub: s.identityPub,
+  mlkemPub: s.identityPubMlkem,
+});
+const hybridPrivFrom = (s: ReturnType<typeof enroll>["session"]) => ({
+  x25519Priv: s.identityPriv,
+  mlkemPriv: s.identityPrivMlkem,
+});
 import { AppModule } from "../src/app.module";
 
 const PW = "correct horse battery staple";
@@ -29,12 +38,15 @@ function enrollDtoFrom(e: ReturnType<typeof enroll>) {
     argonParams: e.keyset.argonParams,
     authHash: e.keyset.authHash,
     identityPublicKey: e.keyset.identityPublicKey,
+    identityPublicKeyMlkem: e.keyset.identityPublicKeyMlkem,
     signingPublicKey: e.keyset.signingPublicKey,
     identitySelfAttestation: e.keyset.identitySelfAttestation,
     encIdentityPriv: e.keyset.encIdentityPriv,
+    encIdentityPrivMlkem: e.keyset.encIdentityPrivMlkem,
     encSigningPriv: e.keyset.encSigningPriv,
     encIdentityPrivRecovery: e.keyset.encIdentityPrivRecovery,
-    ownerGrant: wrapVaultKeyFor(e.personalVaultKey.vk, e.session.identityPub),
+    encIdentityPrivMlkemRecovery: e.keyset.encIdentityPrivMlkemRecovery,
+    ownerGrant: wrapVaultKeyFor(e.personalVaultKey.vk, hybridPubFrom(e.session)),
   };
 }
 
@@ -79,7 +91,7 @@ describe("vault e2e (zero-knowledge round trip)", () => {
     const vaults = (await request(server).get("/vaults").set(auth(a.token)).expect(200)).body;
     expect(vaults).toHaveLength(1);
     const vaultId: string = vaults[0].id;
-    const vk = openVaultKeyGrant(vaults[0].grant, A.session.identityPriv);
+    const vk = openVaultKeyGrant(vaults[0].grant, hybridPrivFrom(A.session));
 
     // --- create an encrypted item (client-chosen UUID, version 1) ---
     const itemId = randomUUID();
@@ -157,7 +169,10 @@ describe("vault e2e (zero-knowledge round trip)", () => {
     const bKey = (
       await request(server).get(`/vault/users/${b.userId}/identity-key`).set(auth(a.token)).expect(200)
     ).body;
-    const wrappedForB = wrapVaultKeyFor(vk, fromB64u(bKey.identityPublicKey));
+    const wrappedForB = wrapVaultKeyFor(vk, {
+      x25519Pub: fromB64u(bKey.identityPublicKey),
+      mlkemPub: fromB64u(bKey.identityPublicKeyMlkem),
+    });
     await request(server)
       .post(`/vaults/${vaultId}/members`)
       .set(auth(a.token))
@@ -168,7 +183,7 @@ describe("vault e2e (zero-knowledge round trip)", () => {
     const bVaults = (await request(server).get("/vaults").set(auth(b.token)).expect(200)).body as any[];
     const bVault = bVaults.find((v) => v.id === vaultId);
     expect(bVault).toBeTruthy();
-    const bVk = openVaultKeyGrant(bVault.grant, B.session.identityPriv);
+    const bVk = openVaultKeyGrant(bVault.grant, hybridPrivFrom(B.session));
     const bPull = (
       await request(server).get(`/vaults/${vaultId}/items?since=0`).set(auth(b.token)).expect(200)
     ).body;

@@ -77,6 +77,14 @@ export function generateHybridIdentityKeyPair(): HybridKeyPair {
   };
 }
 
+/** Derive the ML-KEM-768 public key from its private. Cheap; useful for service-account flows. */
+export function mlkemPubFromPriv(secretKey: Uint8Array): Uint8Array {
+  if (secretKey.length !== PQ_HYBRID_LENGTHS.MLKEM_PRIV) {
+    throw new VaultCryptoError("ML-KEM-768 private key is the wrong length");
+  }
+  return ml_kem768.getPublicKey(secretKey);
+}
+
 function deriveKey(
   ssEc: Uint8Array,
   ssPq: Uint8Array,

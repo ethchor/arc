@@ -21,6 +21,7 @@ type Role = (typeof ROLES)[number];
 
 export interface IdentityLookup {
   identityPublicKey: string;
+  identityPublicKeyMlkem: string;
   fingerprint: string;
 }
 
@@ -29,7 +30,11 @@ export function ShareDialog({
   onShare,
 }: {
   onLookup: (userId: number) => Promise<IdentityLookup>;
-  onShare: (userId: number, role: Role, identityPubB64: string) => Promise<void>;
+  onShare: (
+    userId: number,
+    role: Role,
+    identity: { identityPubB64: string; identityPubMlkemB64: string },
+  ) => Promise<void>;
 }) {
   const [open, setOpen] = React.useState(false);
   const [userId, setUserId] = React.useState("");
@@ -56,7 +61,10 @@ export function ShareDialog({
     if (!found) return;
     setBusy(true);
     try {
-      await onShare(Number(userId), role, found.identityPublicKey);
+      await onShare(Number(userId), role, {
+        identityPubB64: found.identityPublicKey,
+        identityPubMlkemB64: found.identityPublicKeyMlkem,
+      });
       setOpen(false);
       reset();
     } finally {

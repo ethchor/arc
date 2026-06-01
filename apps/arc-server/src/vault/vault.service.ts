@@ -102,11 +102,14 @@ export class VaultService {
         authHashStored: serverHashAuth(dto.authHash, serverSalt),
         serverSalt,
         identityPublicKey: dto.identityPublicKey,
+        identityPublicKeyMlkem: dto.identityPublicKeyMlkem,
         signingPublicKey: dto.signingPublicKey,
         identitySelfAttestation: dto.identitySelfAttestation,
         encIdentityPriv: dto.encIdentityPriv,
+        encIdentityPrivMlkem: dto.encIdentityPrivMlkem,
         encSigningPriv: dto.encSigningPriv,
         encIdentityPrivRecovery: dto.encIdentityPrivRecovery,
+        encIdentityPrivMlkemRecovery: dto.encIdentityPrivMlkemRecovery,
         keyVersion: 1,
       }),
     );
@@ -152,10 +155,13 @@ export class VaultService {
       saltAuth: k.saltAuth,
       argonParams: k.argonParams,
       identityPublicKey: k.identityPublicKey,
+      identityPublicKeyMlkem: k.identityPublicKeyMlkem,
       signingPublicKey: k.signingPublicKey,
       encIdentityPriv: k.encIdentityPriv,
+      encIdentityPrivMlkem: k.encIdentityPrivMlkem,
       encSigningPriv: k.encSigningPriv,
       encIdentityPrivRecovery: k.encIdentityPrivRecovery,
+      encIdentityPrivMlkemRecovery: k.encIdentityPrivMlkemRecovery,
       keyVersion: k.keyVersion,
     };
   }
@@ -414,6 +420,7 @@ export class VaultService {
     return {
       userId: targetUserId,
       identityPublicKey: k.identityPublicKey,
+      identityPublicKeyMlkem: k.identityPublicKeyMlkem,
       signingPublicKey: k.signingPublicKey,
       identitySelfAttestation: k.identitySelfAttestation,
       fingerprint: fingerprint(fromB64u(k.identityPublicKey)),

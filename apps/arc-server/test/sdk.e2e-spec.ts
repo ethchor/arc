@@ -2,8 +2,33 @@ import { type INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { type AddressInfo } from "node:net";
 import { VaultClient } from "@arc/sdk";
-import { generateIdentityKeyPair, toB64u } from "@arc/crypto";
+import { generateHybridIdentityKeyPair, generateIdentityKeyPair, toB64u } from "@arc/crypto";
 import { AppModule } from "../src/app.module";
+
+/**
+ * Seed a service-account user's hybrid identity public keys directly into the server.
+ * In production this is the output of a service-account onboarding API; the e2e doesn't
+ * exercise that path, so we reach into the data source instead.
+ */
+async function ownerSeedIdentity(
+  app: INestApplication,
+  userId: number,
+  pubs: { identityPublicKey: string; identityPublicKeyMlkem: string },
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { DataSource } = require("typeorm");
+  const ds = app.get(DataSource);
+  await ds.query(
+    `INSERT INTO vault_user_keys (
+       "userId", "saltMk", "saltAuth", "argonParams", "authHashStored", "serverSalt",
+       "identityPublicKey", "identityPublicKeyMlkem", "signingPublicKey",
+       "identitySelfAttestation", "encIdentityPriv", "encIdentityPrivMlkem",
+       "encSigningPriv", "encIdentityPrivRecovery", "encIdentityPrivMlkemRecovery",
+       "keyVersion", "createdAt"
+     ) VALUES (?, '', '', '{}', '', '', ?, ?, '', '{}', '{}', '{}', '{}', '{}', '{}', 1, datetime('now'))`,
+    [userId, pubs.identityPublicKey, pubs.identityPublicKeyMlkem],
+  );
+}
 
 describe("vault SDK e2e (consumer + service account)", () => {
   let app: INestApplication;
@@ -58,18 +83,35 @@ describe("vault SDK e2e (consumer + service account)", () => {
       { type: "secret" },
     );
 
-    // Provision a service account: its identity keypair is generated out-of-band.
-    const sa = generateIdentityKeyPair();
+    // Provision a service account: its hybrid identity keypair is generated out-of-band.
+    // SAs use the same X25519 + ML-KEM-768 identity as consumer users so they receive
+    // post-quantum-resistant VK grants (ADR-002).
+    const saEc = generateIdentityKeyPair();
+    const saHybrid = generateHybridIdentityKeyPair();
     const saBootstrap = new VaultClient({ baseUrl });
     const saIds = await saBootstrap.devLogin("ci-bot@example.com");
+    // The service-account record on the server must publish both pubs so the owner can
+    // wrap to the hybrid identity. In a real provisioning flow this happens via a separate
+    // service-account onboarding API; here we reach into the test app to seed it.
+    await ownerSeedIdentity(app, saIds.userId, {
+      identityPublicKey: toB64u(saEc.pub),
+      identityPublicKeyMlkem: toB64u(saHybrid.mlkem.publicKey),
+    });
 
     await owner.listVaults();
-    await owner.addMember(vault.id, saIds.userId, "viewer", toB64u(sa.pub));
+    const saKey = await owner.getUserIdentityKey(saIds.userId);
+    await owner.addMember(vault.id, saIds.userId, "viewer", {
+      identityPubB64: saKey.identityPublicKey,
+      identityPubMlkemB64: saKey.identityPublicKeyMlkem,
+    });
 
-    // The machine client holds ONLY the SA identity key + a token — no password, no Argon2id.
+    // The machine client holds the SA hybrid identity + a token — no password, no Argon2id.
     const machine = new VaultClient({ baseUrl });
     machine.setToken(saIds.token);
-    machine.setIdentity(toB64u(sa.priv));
+    machine.setIdentity({
+      identityPrivB64: toB64u(saEc.priv),
+      identityPrivMlkemB64: toB64u(saHybrid.mlkem.secretKey),
+    });
     await machine.listVaults();
     const secrets = await machine.pull(vault.id, 0);
     expect(secrets.items[0]!.data).toMatchObject({ key: "API_KEY", value: "sk-live-xyz" });
@@ -88,7 +130,10 @@ describe("vault SDK e2e (consumer + service account)", () => {
     await B.enroll("b-pw");
     await owner.listVaults();
     const bKey = await owner.getUserIdentityKey(b.userId);
-    await owner.addMember(vault.id, b.userId, "viewer", bKey.identityPublicKey);
+    await owner.addMember(vault.id, b.userId, "viewer", {
+      identityPubB64: bKey.identityPublicKey,
+      identityPubMlkemB64: bKey.identityPublicKeyMlkem,
+    });
 
     // B reads at v1
     await B.listVaults();
@@ -96,7 +141,13 @@ describe("vault SDK e2e (consumer + service account)", () => {
 
     // owner rotates the VK, granting only itself (B excluded)
     await owner.listVaults();
-    await owner.rotateKey(vault.id, [{ userId: o.userId, identityPubB64: owner.identityPublicKeyB64! }]);
+    await owner.rotateKey(vault.id, [
+      {
+        userId: o.userId,
+        identityPubB64: owner.identityPublicKeyB64!,
+        identityPubMlkemB64: owner.identityPublicKeyMlkemB64!,
+      },
+    ]);
 
     // owner still reads the same payload (IK re-wrapped, not re-encrypted)
     await owner.listVaults();

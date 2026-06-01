@@ -40,11 +40,11 @@ describe("enroll + unlock", () => {
 });
 
 describe("recovery", () => {
-  it("recovers the identity key from the recovery key", () => {
+  it("recovers both the X25519 and ML-KEM-768 identity privs from the recovery key", () => {
     const e = enroll(PW, { profile });
-    expect(toHex(recoverIdentityPriv(e.recoveryKey, e.keyset))).toBe(
-      toHex(e.session.identityPriv),
-    );
+    const recovered = recoverIdentityPriv(e.recoveryKey, e.keyset);
+    expect(toHex(recovered.x25519)).toBe(toHex(e.session.identityPriv));
+    expect(toHex(recovered.mlkem)).toBe(toHex(e.session.identityPrivMlkem));
   });
 });
 
@@ -116,13 +116,28 @@ describe("VK rotation (IK re-wrap, payload untouched)", () => {
   });
 });
 
-describe("vault key grants", () => {
-  it("wraps a VK to a member who opens it; others cannot", () => {
+describe("vault key grants (post-quantum hybrid)", () => {
+  it("wraps a VK to a member's hybrid identity; member opens, non-member cannot", () => {
     const admin = enroll(PW, { profile });
     const member = enroll("a different password", { profile });
     const vk = createVaultKey(1);
-    const grant = wrapVaultKeyFor(vk.vk, member.session.identityPub);
-    expect(toHex(openVaultKeyGrant(grant, member.session.identityPriv))).toBe(toHex(vk.vk));
-    expect(() => openVaultKeyGrant(grant, admin.session.identityPriv)).toThrow();
+    const grant = wrapVaultKeyFor(vk.vk, {
+      x25519Pub: member.session.identityPub,
+      mlkemPub: member.session.identityPubMlkem,
+    });
+    expect(
+      toHex(
+        openVaultKeyGrant(grant, {
+          x25519Priv: member.session.identityPriv,
+          mlkemPriv: member.session.identityPrivMlkem,
+        }),
+      ),
+    ).toBe(toHex(vk.vk));
+    expect(() =>
+      openVaultKeyGrant(grant, {
+        x25519Priv: admin.session.identityPriv,
+        mlkemPriv: admin.session.identityPrivMlkem,
+      }),
+    ).toThrow();
   });
 });
