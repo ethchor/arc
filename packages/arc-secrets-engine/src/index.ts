@@ -7,6 +7,15 @@ export type {
   IssueOptions,
   IssuedCredential,
 } from "./types";
-export type { SecretsEngine, KvEngine, DynamicSecretsEngine } from "./engine";
+export type {
+  DynamicSecretsEngine,
+  KvEngine,
+  SecretsEngine,
+  TransitCiphertext,
+  TransitCreateKeyOptions,
+  TransitDecryptOptions,
+  TransitEncryptOptions,
+  TransitEngine,
+} from "./engine";
 export { MountRegistry } from "./mount-registry";
 export type { ResolvedMount } from "./mount-registry";

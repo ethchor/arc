@@ -7,6 +7,11 @@ Raft HA, PKI, transit, and KV v2; arc drives it through this adapter.
 - `OpenBaoClient` — thin HTTP client (`sealStatus()` = the `bao status` round-trip, plus
   read/write/list/delete). Fetch is injectable for tests.
 - `OpenBaoKvEngine` — maps arc's `KvEngine` onto OpenBao's `<mount>/data|metadata/<path>` layout.
+- `OpenBaoTransitEngine` — maps arc's `TransitEngine` onto `<mount>/keys/<name>`,
+  `<mount>/encrypt/<name>`, `<mount>/decrypt/<name>`. Encryption-as-a-service: the engine
+  holds the key, your app sends `Uint8Array` plaintext and gets back the portable
+  `vault:vN:...` ciphertext string. Key rotation advances `latestVersion`; older versions
+  remain valid for decrypt until they're explicitly trimmed.
 
 ```ts
 import { OpenBaoClient, OpenBaoKvEngine } from "@arc/openbao-adapter";

@@ -8,3 +8,4 @@ export type {
   FetchResponseLike,
 } from "./client";
 export { OpenBaoKvEngine } from "./kv-engine";
+export { OpenBaoTransitEngine, TransitProtocolError } from "./transit-engine";

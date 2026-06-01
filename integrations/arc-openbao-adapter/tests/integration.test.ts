@@ -13,6 +13,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { OpenBaoClient } from "../src/client";
 import { OpenBaoKvEngine } from "../src/kv-engine";
+import { OpenBaoTransitEngine } from "../src/transit-engine";
 
 const addr = process.env.BAO_ADDR;
 const token = process.env.BAO_TOKEN ?? "root";
@@ -66,5 +67,37 @@ integration("OpenBao smoke test (BAO_ADDR set)", () => {
     await kv.deleteLatest(key);
     const afterDelete = await kv.get(key);
     expect(afterDelete.metadata.deleted).toBe(true);
+  });
+
+  it("transit: create key → encrypt → decrypt → rotate → still decrypts old ciphertext", async () => {
+    // Mounting transit requires the root token, which dev mode provides.
+    await client.write("sys/mounts/transit", { type: "transit" }).catch((err: { status?: number }) => {
+      // Re-running the suite leaves the mount in place; OpenBao returns 400 with
+      // 'path is already in use' which we treat as a no-op.
+      if (err.status !== 400) throw err;
+    });
+    const transit = new OpenBaoTransitEngine(client);
+    const keyName = `arc-smoke-${Date.now()}`;
+
+    await transit.createKey(keyName);
+
+    const plaintext = new TextEncoder().encode("encryption-as-a-service");
+    const ct1 = await transit.encrypt(keyName, plaintext);
+    expect(ct1.ciphertext.startsWith(`vault:v1:`)).toBe(true);
+    expect(ct1.keyVersion).toBe(1);
+
+    const pt1 = await transit.decrypt(keyName, ct1.ciphertext);
+    expect(new TextDecoder().decode(pt1)).toBe("encryption-as-a-service");
+
+    const { latestVersion } = await transit.rotateKey(keyName);
+    expect(latestVersion).toBe(2);
+
+    // Old v1 ciphertext still decrypts under the rotated key (engine retains prior versions).
+    const ptAfterRotate = await transit.decrypt(keyName, ct1.ciphertext);
+    expect(new TextDecoder().decode(ptAfterRotate)).toBe("encryption-as-a-service");
+
+    // New ciphertext now uses v2.
+    const ct2 = await transit.encrypt(keyName, plaintext);
+    expect(ct2.keyVersion).toBe(2);
   });
 });
