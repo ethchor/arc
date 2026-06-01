@@ -105,6 +105,16 @@ Anything that ships *between* the phases gets folded into the closest one.
   device_revoked, vault_key_rotated). E2E test asserts events show up after a real
   enroll → create → put cycle AND that no ciphertext or plaintext leaks into the
   metadata log.
+- [x] Server: production env validation. `NODE_ENV=production` without `DATABASE_URL`
+  now refuses to start (would have silently fallen back to sql.js + lost every write).
+  Three explicit data-source profiles (prod = postgres + migrations only, dev with
+  `DATABASE_URL` = postgres + synchronize, dev/test fallback = sql.js + synchronize).
+  Same posture as the existing `JWT_SECRET` prod-required check.
+- [x] Server: structured logging via `nestjs-pino`. JSON output + `x-request-id`
+  correlation in production (honours an upstream header, generates a UUID otherwise);
+  `pino-pretty` single-line colored output in dev. `bufferLogs` so even Nest's own
+  bootstrap lines come out in the same shape. Configurable via `LOG_LEVEL` (default
+  `info` in prod, `debug` in dev).
 
 ----
 
@@ -120,9 +130,6 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 1 finish
 
-- [ ] Server: real Postgres run profile alongside the sql.js test profile (currently a
-  single AppModule branches on `NODE_ENV`; split it cleanly).
-- [ ] Server: structured logging (Pino or similar) + request-id correlation.
 - [ ] Cloud blob storage adapter for item ciphertext payloads (the entity column today
   stores the envelope inline as JSONB — fine for now, will hit row-size limits on
   attachments).

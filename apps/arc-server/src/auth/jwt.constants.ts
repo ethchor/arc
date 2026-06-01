@@ -11,8 +11,11 @@ function resolveSecret(): string {
   if (process.env.NODE_ENV === "production") {
     throw new Error("JWT_SECRET is required in production");
   }
-  // eslint-disable-next-line no-console
-  console.warn("[arc-vault] JWT_SECRET not set; using an ephemeral random secret (dev/test only).");
+  // Bootstrap-time, before the Nest container builds the pino Logger — fall back to
+  // stderr so the warning still surfaces when running in dev without JWT_SECRET set.
+  process.stderr.write(
+    "[arc-vault] JWT_SECRET not set; using an ephemeral random secret (dev/test only).\n",
+  );
   return randomBytes(32).toString("hex");
 }
 
