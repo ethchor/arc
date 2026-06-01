@@ -214,6 +214,9 @@ pub struct Envelope {
     pub ct: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ep: Option<String>,
+    /// ML-KEM-768 ciphertext (pq-seal envelopes only, ADR-002).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kc: Option<String>,
     #[serde(default)]
     pub pad: u32,
 }
@@ -245,6 +248,7 @@ pub fn aead_seal_envelope(
         n: b64u_encode(&nonce),
         ct: b64u_encode(&ct),
         ep: None,
+        kc: None,
         pad,
     }
 }
@@ -279,6 +283,7 @@ pub fn seal_to_envelope(recipient_pub: &[u8; 32], plaintext: &[u8]) -> Envelope 
         n: b64u_encode(&s.nonce),
         ct: b64u_encode(&s.ct),
         ep: Some(b64u_encode(&s.eph_pub)),
+        kc: None,
         pad: 0,
     }
 }
@@ -353,4 +358,161 @@ pub fn decrypt_item(
     let ik_vec = aead_open_envelope(vek, wrapped_item_key, &item_key_aad(vault_id, item_id, key_version))?;
     let ik: [u8; 32] = ik_vec.try_into().map_err(|_| ())?;
     aead_open_envelope(&ik, ciphertext, &item_payload_aad(vault_id, item_id, version))
+}
+
+
+// --- post-quantum hybrid sealed box (X25519 + ML-KEM-768 + HKDF-SHA256 + XChaCha20-Poly1305) ---
+//
+// Byte-compatible with packages/arc-crypto/src/pq-hybrid.ts. ADR-002.
+//
+// Combiner: K = HKDF-SHA256(
+//             ikm  = ss_ec || ss_pq,
+//             salt = eph_x25519.pub || kem_ct || recipient.x25519Pub || recipient.mlkemPub,
+//             info = "arc/pq-seal/v1", L = 32)
+//
+// ML-KEM private key encoding: the TS side (`@noble/post-quantum`) returns and consumes the
+// 2400-byte expanded form, so we interoperate via the (deprecated-but-correct)
+// `DecapsulationKey::from_expanded` path. Switch to seed-based encoding when both libraries
+// agree on the 64-byte seed format.
+
+use ml_kem::{
+    array::Array,
+    kem::{Decapsulate, Encapsulate, KeyExport},
+    ExpandedDecapsulationKey, MlKem768,
+};
+
+const PQ_SEAL_ALG: &str = "pq-seal-x25519-mlkem768-hkdf-xc20p";
+pub const MLKEM_PUB_LEN: usize = 1184;
+pub const MLKEM_PRIV_LEN: usize = 2400;
+pub const MLKEM_CT_LEN: usize = 1088;
+
+pub struct HybridPub<'a> {
+    pub x25519: &'a [u8; 32],
+    pub mlkem: &'a [u8; MLKEM_PUB_LEN],
+}
+
+pub struct HybridPriv<'a> {
+    pub x25519: &'a [u8; 32],
+    pub mlkem: &'a [u8; MLKEM_PRIV_LEN],
+}
+
+fn pq_derive_key(
+    ss_ec: &[u8; 32],
+    ss_pq: &[u8; 32],
+    eph_pub: &[u8; 32],
+    kem_ct: &[u8; MLKEM_CT_LEN],
+    recipient_x25519_pub: &[u8; 32],
+    recipient_mlkem_pub: &[u8; MLKEM_PUB_LEN],
+) -> [u8; 32] {
+    let mut ikm = [0u8; 64];
+    ikm[..32].copy_from_slice(ss_ec);
+    ikm[32..].copy_from_slice(ss_pq);
+    let mut salt = Vec::with_capacity(32 + MLKEM_CT_LEN + 32 + MLKEM_PUB_LEN);
+    salt.extend_from_slice(eph_pub);
+    salt.extend_from_slice(kem_ct);
+    salt.extend_from_slice(recipient_x25519_pub);
+    salt.extend_from_slice(recipient_mlkem_pub);
+    let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
+    let mut out = [0u8; 32];
+    hk.expand(b"arc/pq-seal/v1", &mut out).unwrap();
+    out
+}
+
+fn ek_from_bytes(bytes: &[u8; MLKEM_PUB_LEN]) -> Result<ml_kem::EncapsulationKey<MlKem768>, ()> {
+    ml_kem::EncapsulationKey::<MlKem768>::new(&Array(*bytes)).map_err(|_| ())
+}
+
+#[allow(deprecated)] // expanded form is required for interop with @noble/post-quantum.
+fn dk_from_expanded(
+    bytes: &[u8; MLKEM_PRIV_LEN],
+) -> Result<ml_kem::DecapsulationKey<MlKem768>, ()> {
+    let expanded: ExpandedDecapsulationKey<MlKem768> = Array(*bytes);
+    ml_kem::DecapsulationKey::<MlKem768>::from_expanded(&expanded).map_err(|_| ())
+}
+
+pub fn pq_seal_to_envelope(recipient: HybridPub<'_>, plaintext: &[u8], aad: &str) -> Envelope {
+    let mut eph_priv = [0u8; 32];
+    OsRng.fill_bytes(&mut eph_priv);
+    let eph_static = StaticSecret::from(eph_priv);
+    let eph_pub = PublicKey::from(&eph_static).to_bytes();
+    let ss_ec = eph_static
+        .diffie_hellman(&PublicKey::from(*recipient.x25519))
+        .to_bytes();
+
+    let ek = ek_from_bytes(recipient.mlkem).expect("valid ML-KEM-768 encapsulation key");
+    // System-RNG variant: avoids the rand_core 0.6 vs 0.9 trait-version mismatch between our
+    // existing OsRng and ml-kem's required CryptoRng bound.
+    let (kem_ct, ss_pq) = ek.encapsulate();
+    let kem_ct_bytes: [u8; MLKEM_CT_LEN] =
+        kem_ct.as_slice().try_into().expect("ML-KEM-768 ct length");
+    let ss_pq_bytes: [u8; 32] = ss_pq.as_slice().try_into().expect("ML-KEM-768 ss length");
+
+    let key = pq_derive_key(
+        &ss_ec,
+        &ss_pq_bytes,
+        &eph_pub,
+        &kem_ct_bytes,
+        recipient.x25519,
+        recipient.mlkem,
+    );
+
+    let mut nonce = [0u8; 24];
+    OsRng.fill_bytes(&mut nonce);
+    let ct = aead_encrypt(&key, &nonce, plaintext, aad.as_bytes());
+
+    Envelope {
+        v: 1,
+        alg: PQ_SEAL_ALG.into(),
+        kdf: None,
+        kv: None,
+        aad: if aad.is_empty() { None } else { Some(aad.to_string()) },
+        n: b64u_encode(&nonce),
+        ct: b64u_encode(&ct),
+        ep: Some(b64u_encode(&eph_pub)),
+        kc: Some(b64u_encode(&kem_ct_bytes)),
+        pad: 0,
+    }
+}
+
+pub fn pq_seal_open_envelope(env: &Envelope, recipient: HybridPriv<'_>) -> Result<Vec<u8>, ()> {
+    if env.alg != PQ_SEAL_ALG {
+        return Err(());
+    }
+    let eph_pub: [u8; 32] = b64u_decode(env.ep.as_deref().ok_or(())?)?
+        .try_into()
+        .map_err(|_| ())?;
+    let kem_ct_vec = b64u_decode(env.kc.as_deref().ok_or(())?)?;
+    if kem_ct_vec.len() != MLKEM_CT_LEN {
+        return Err(());
+    }
+    let kem_ct_bytes: [u8; MLKEM_CT_LEN] = kem_ct_vec.as_slice().try_into().map_err(|_| ())?;
+
+    let recipient_static = StaticSecret::from(*recipient.x25519);
+    let ss_ec = recipient_static
+        .diffie_hellman(&PublicKey::from(eph_pub))
+        .to_bytes();
+
+    let dk = dk_from_expanded(recipient.mlkem)?;
+    let kem_ct_arr: Array<u8, _> = Array(kem_ct_bytes);
+    let ss_pq = dk.decapsulate(&kem_ct_arr);
+    let ss_pq_bytes: [u8; 32] = ss_pq.as_slice().try_into().map_err(|_| ())?;
+
+    let recipient_x25519_pub = PublicKey::from(&recipient_static).to_bytes();
+    let ek_bytes_arr = dk.encapsulation_key().to_bytes();
+    let recipient_mlkem_pub: [u8; MLKEM_PUB_LEN] =
+        ek_bytes_arr.as_slice().try_into().map_err(|_| ())?;
+
+    let key = pq_derive_key(
+        &ss_ec,
+        &ss_pq_bytes,
+        &eph_pub,
+        &kem_ct_bytes,
+        &recipient_x25519_pub,
+        &recipient_mlkem_pub,
+    );
+
+    let nonce: [u8; 24] = b64u_decode(&env.n)?.try_into().map_err(|_| ())?;
+    let ct = b64u_decode(&env.ct)?;
+    let expected_aad = env.aad.as_deref().unwrap_or("");
+    aead_decrypt(&key, &nonce, &ct, expected_aad.as_bytes())
 }

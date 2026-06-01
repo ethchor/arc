@@ -1,6 +1,6 @@
 # ADR-002 — Post-quantum hybrid for vault-key grants
 
-- **Status:** Accepted (primitive landed) · migration in progress
+- **Status:** Accepted · all four phases shipped
 - **Date:** 2026-05-31
 - **Deciders:** ethchor
 - **Depends on:** ADR-001 §"Open questions" #1
@@ -98,19 +98,42 @@ retired.
 The signed `grant_chain` (docs/03 §3.5 (c)) signs the grant tuple, not the
 envelope bytes, so the signature scheme is unaffected. Ed25519 stays.
 
-### Phase 4 — Rust parity (PLANNED)
+### Phase 4 — Rust parity (DONE)
 
-The Rust core in `crates/arc-vault-crypto` adds an `ml-kem` dependency
-(`ml-kem` crate from RustCrypto, same family as the existing `chacha20poly1305`
-and `x25519-dalek` crates) and a `pq_seal` / `pq_seal_open` module mirroring
-the TS path byte-for-byte. The TS↔Rust parity vectors
-(`packages/arc-crypto/scripts/gen-vectors.mjs` →
-`crates/arc-vault-crypto/tests/parity.rs`) gain hybrid-seal entries.
+The Rust core in `crates/vault-crypto-rs` now depends on `ml-kem = "0.3"`
+(RustCrypto, same audit lineage as the existing `chacha20poly1305`,
+`x25519-dalek`, and `ed25519-dalek` crates) and ships
+`pq_seal_to_envelope` / `pq_seal_open_envelope` mirroring the TS path
+byte-for-byte:
 
-Until Phase 4 lands, the desktop client (the only Rust consumer of
-sealed-grants) can fall through to the classical X25519 path; users on the
-v2 keyset get classical grants for desktop use and hybrid grants for
-web/extension/CLI. This is documented as a known gap in `docs/16`.
+- Same KEM (`ML-KEM-768`).
+- Same combiner: `HKDF-SHA256(ss_ec || ss_pq, eph_pub || kem_ct ||
+  recip_x25519_pub || recip_mlkem_pub, "arc/pq-seal/v1")`.
+- Same envelope shape (`alg = "pq-seal-x25519-mlkem768-hkdf-xc20p"`,
+  carrying `ep`, `kc`, `n`, `ct`, `aad`).
+- Same ML-KEM private-key wire format (2400-byte expanded form, matching
+  what `@noble/post-quantum`'s `keygen` returns and what the keyset stores
+  on the server). The Rust side loads it via `DecapsulationKey::from_expanded`;
+  switching to the 64-byte seed format is a future cleanup that requires
+  both libraries to expose seed-based APIs at the same audit bar.
+
+The TS↔Rust parity vectors (`packages/arc-crypto/scripts/gen-vectors.mjs`
+→ `crates/vault-crypto-rs/tests/parity.rs`) gain a `pqSeal` entry. The
+parity test (`pq_seal_opens_a_ts_produced_envelope`) loads a TS-produced
+envelope plus the hybrid recipient private key and asserts the Rust open
+path recovers the same plaintext. Once decap + HKDF agree, the whole
+X-Wing combiner is verified across both stacks. A second Rust-only
+round-trip test (`pq_seal_round_trips_within_rust`) exercises the seal
+path so it doesn't go un-tested by the open-only vector.
+
+Desktop grant wrapping is now hybrid-capable. Whether the desktop client
+*uses* hybrid for the device grants stored under
+`/vault/devices/.../approve` is a separate decision; today they still use
+the classical X25519 `seal` envelope because device keypairs are X25519
+only (no ML-KEM half). The next step is a small extension: have the
+desktop client also publish an ML-KEM device pub at registration so
+`approveDevice` can switch to `pqSeal` too. Tracked in ADR-003 (TODO) if
+the device-grant HNDL exposure turns out to matter at our threat model.
 
 ## Explicitly rejected alternatives
 

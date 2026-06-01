@@ -12,6 +12,8 @@ import {
   aeadEncrypt,
   edSign,
   edPubFromPriv,
+  generateHybridIdentityKeyPair,
+  pqSeal,
   toHex,
   toB64u,
   fromHex,
@@ -48,6 +50,21 @@ const jcsCases = [
   { value: { t: true, f: false, n: null, s: "a\"b" }, out: jcs({ t: true, f: false, n: null, s: 'a"b' }) },
 ];
 
+// ADR-002 hybrid sealed-box vector. The construction uses a fresh ephemeral keypair, a
+// fresh ML-KEM encapsulation message, and a random AEAD nonce, so the envelope is
+// non-deterministic — the parity test verifies that the Rust core can OPEN this envelope
+// byte-for-byte. Once open agrees, both sides reach the same HKDF-derived AEAD key, which
+// transitively validates the whole construction (X25519 ECDH + ML-KEM-768 decaps + the
+// binding salt + XChaCha20-Poly1305 open).
+const pqRecipient = generateHybridIdentityKeyPair();
+const pqAad = buildAad([["vaultId", "v1"], ["keyVersion", "1"]]);
+const pqPlaintext = utf8("vault-key-material-32-byte-pa--y");
+const pqEnvelope = pqSeal(
+  { x25519Pub: pqRecipient.x25519.pub, mlkemPub: pqRecipient.mlkem.publicKey },
+  pqPlaintext,
+  pqAad,
+);
+
 const vectors = {
   argon2id: { passwordHex: pwHex, saltHex, ...argonParams, outHex: toHex(mk) },
   hkdfSplit: { ikmHex: toHex(mk), authSeedHex: toHex(split.authSeed), wkHex: toHex(split.wk) },
@@ -80,6 +97,15 @@ const vectors = {
     pubHex: toHex(edPub),
     messageHex: edMsgHex,
     sigHex: toHex(edSig),
+  },
+  pqSeal: {
+    x25519PrivHex: toHex(pqRecipient.x25519.priv),
+    x25519PubHex: toHex(pqRecipient.x25519.pub),
+    mlkemPrivHex: toHex(pqRecipient.mlkem.secretKey),
+    mlkemPubHex: toHex(pqRecipient.mlkem.publicKey),
+    aad: pqAad,
+    plaintextHex: toHex(pqPlaintext),
+    envelope: pqEnvelope,
   },
 };
 

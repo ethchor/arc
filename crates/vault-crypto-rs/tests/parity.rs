@@ -151,3 +151,91 @@ fn seal_round_trips_and_rejects_wrong_recipient() {
     let (wrong_priv, _) = x25519_keypair();
     assert!(seal_open(&wrong_priv, &rpub, &sealed.eph_pub, &sealed.nonce, &sealed.ct).is_err());
 }
+
+#[test]
+fn pq_seal_opens_a_ts_produced_envelope() {
+    // The core ADR-002 parity check: the TS core seals a known plaintext to a known hybrid
+    // identity, and the Rust core unwraps it byte-for-byte. Once decapsulate+HKDF agrees
+    // across both stacks, the entire X-Wing combiner (binding salt + AEAD key) does too.
+    let v = vectors();
+    let p = &v["pqSeal"];
+    let mlkem_priv_vec = hx(p["mlkemPrivHex"].as_str().unwrap());
+    let mlkem_priv: [u8; 2400] = mlkem_priv_vec.try_into().expect("mlkem priv length");
+    let x25519_priv = a32(p["x25519PrivHex"].as_str().unwrap());
+
+    let env: Envelope = serde_json::from_value(p["envelope"].clone()).unwrap();
+    let pt = pq_seal_open_envelope(
+        &env,
+        HybridPriv {
+            x25519: &x25519_priv,
+            mlkem: &mlkem_priv,
+        },
+    )
+    .expect("pq-seal open against the TS-produced envelope");
+    assert_eq!(hex::encode(&pt), p["plaintextHex"].as_str().unwrap());
+
+    // Tampering the KEM ciphertext changes the derived AEAD key (the kem_ct is bound
+    // into the HKDF salt), so the open MUST fail closed.
+    let mut tampered = env.clone();
+    let mut kc_bytes = base64_urlsafe_decode(tampered.kc.as_ref().unwrap());
+    kc_bytes[0] ^= 0xff;
+    tampered.kc = Some(base64_urlsafe_encode(&kc_bytes));
+    assert!(pq_seal_open_envelope(
+        &tampered,
+        HybridPriv {
+            x25519: &x25519_priv,
+            mlkem: &mlkem_priv,
+        },
+    )
+    .is_err());
+}
+
+#[test]
+fn pq_seal_round_trips_within_rust() {
+    // Rust generates a hybrid keypair via the TS-compatible APIs and round-trips a payload.
+    // This catches breakage in our own Rust impl that the TS-only parity vector wouldn't:
+    // if the Rust seal path produced garbage, the open path could still pass the TS vector
+    // (since open only exercises decap+HKDF). The round-trip exercises encaps+HKDF too.
+    use ml_kem::{
+        kem::{Generate, KeyExport},
+        ExpandedKeyEncoding, MlKem768,
+    };
+    let dk = ml_kem::DecapsulationKey::<MlKem768>::generate();
+    let mlkem_pub_array = dk.encapsulation_key().to_bytes();
+    #[allow(deprecated)]
+    let mlkem_priv_array = dk.to_expanded_bytes();
+
+    let (x25519_priv, x25519_pub) = x25519_keypair();
+    let mlkem_pub: [u8; 1184] = mlkem_pub_array.as_slice().try_into().unwrap();
+    let mlkem_priv: [u8; 2400] = mlkem_priv_array.as_slice().try_into().unwrap();
+
+    let env = pq_seal_to_envelope(
+        HybridPub {
+            x25519: &x25519_pub,
+            mlkem: &mlkem_pub,
+        },
+        b"a-known-secret",
+        "vault/x#kv1",
+    );
+    let opened = pq_seal_open_envelope(
+        &env,
+        HybridPriv {
+            x25519: &x25519_priv,
+            mlkem: &mlkem_priv,
+        },
+    )
+    .expect("round-trip open");
+    assert_eq!(opened, b"a-known-secret");
+}
+
+// --- small base64url helpers for the tampering check above ---
+fn base64_urlsafe_decode(s: &str) -> Vec<u8> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine as _;
+    URL_SAFE_NO_PAD.decode(s).unwrap()
+}
+fn base64_urlsafe_encode(b: &[u8]) -> String {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine as _;
+    URL_SAFE_NO_PAD.encode(b)
+}
