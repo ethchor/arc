@@ -74,11 +74,11 @@ describe("grants e2e — ARC_DEFAULT_POLICY=deny enforces per-mount ACL", () => 
   });
 
   it("allows exactly the scoped paths once a policy is attached", async () => {
-    grants.upsertPolicy({
+    await grants.upsertPolicy({
       name: "reader",
       scopes: [scope("sys/", ["read"])],
     });
-    grants.attach(String(userId), "reader");
+    await grants.attach(String(userId), "reader");
 
     // Covered: GET /v1/sys/mounts — read on sys/
     await request(server).get("/v1/sys/mounts").set(auth(token)).expect(200);
@@ -93,20 +93,20 @@ describe("grants e2e — ARC_DEFAULT_POLICY=deny enforces per-mount ACL", () => 
   });
 
   it("requires `list` capability for `?list=true` (read alone is not enough)", async () => {
-    grants.upsertPolicy({
+    await grants.upsertPolicy({
       name: "pki-reader",
       scopes: [scope("pki/", ["read"])],
     });
-    grants.attach(String(userId), "pki-reader");
+    await grants.attach(String(userId), "pki-reader");
 
     // Read-only on pki: a cert read would be allowed, but a list still 403s.
     await request(server).get("/v1/pki/certs?list=true").set(auth(token)).expect(403);
 
-    grants.upsertPolicy({
+    await grants.upsertPolicy({
       name: "pki-lister",
       scopes: [scope("pki/", ["list"])],
     });
-    grants.attach(String(userId), "pki-lister");
+    await grants.attach(String(userId), "pki-lister");
     // With `list` added, the same request passes the ACL (will then fall through to a
     // 404/503 since pki isn't backed by anything in this test). Asserting "not 403" is
     // sufficient.

@@ -4,9 +4,9 @@
  * narrow on the guard's own logic so a regression here points at the right line.
  */
 import { ExecutionContext, ForbiddenException } from "@nestjs/common";
+import { InMemoryPolicyStore, scope } from "@arc/grants";
 import { CapabilityGuard, pickCapability, stripV1Prefix } from "./capability.guard";
 import { GrantsService } from "./grants.service";
-import { scope } from "@arc/grants";
 
 function fakeCtx(req: {
   method: string;
@@ -56,9 +56,10 @@ describe("pickCapability", () => {
 
 describe("CapabilityGuard", () => {
   function makeGuard(defaultMode: "allow" | "deny" = "deny") {
-    const grants = new GrantsService(defaultMode);
+    const store = new InMemoryPolicyStore();
+    const grants = new GrantsService(store, defaultMode);
     const guard = new CapabilityGuard(grants);
-    return { grants, guard };
+    return { grants, guard, store };
   }
 
   it("skips non-/v1 paths entirely (the Vault membership ACL handles those)", async () => {
@@ -81,8 +82,8 @@ describe("CapabilityGuard", () => {
 
   it("allows when a covering scope is attached, even under defaultMode=deny", async () => {
     const { guard, grants } = makeGuard("deny");
-    grants.upsertPolicy({ name: "reader", scopes: [scope("secret/", ["read"])] });
-    grants.attach("1", "reader");
+    await grants.upsertPolicy({ name: "reader", scopes: [scope("secret/", ["read"])] });
+    await grants.attach("1", "reader");
 
     const ctx = fakeCtx({ method: "GET", url: "/v1/secret/data/x", user: { userId: 1, email: "a" } });
     expect(await guard.canActivate(ctx)).toBe(true);
@@ -90,8 +91,8 @@ describe("CapabilityGuard", () => {
 
   it("denies covered path with uncovered capability (the scope only grants read, not delete)", async () => {
     const { guard, grants } = makeGuard("deny");
-    grants.upsertPolicy({ name: "reader", scopes: [scope("secret/", ["read"])] });
-    grants.attach("1", "reader");
+    await grants.upsertPolicy({ name: "reader", scopes: [scope("secret/", ["read"])] });
+    await grants.attach("1", "reader");
 
     const ctx = fakeCtx({ method: "DELETE", url: "/v1/secret/data/x", user: { userId: 1, email: "a" } });
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
@@ -99,8 +100,8 @@ describe("CapabilityGuard", () => {
 
   it("denies covered capability on uncovered path (reader can't touch database/)", async () => {
     const { guard, grants } = makeGuard("deny");
-    grants.upsertPolicy({ name: "reader", scopes: [scope("secret/", ["read"])] });
-    grants.attach("1", "reader");
+    await grants.upsertPolicy({ name: "reader", scopes: [scope("secret/", ["read"])] });
+    await grants.attach("1", "reader");
 
     const ctx = fakeCtx({ method: "GET", url: "/v1/database/creds/app", user: { userId: 1, email: "a" } });
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
@@ -108,8 +109,8 @@ describe("CapabilityGuard", () => {
 
   it("`?list=true` requires the `list` capability (not just `read`)", async () => {
     const { guard, grants } = makeGuard("deny");
-    grants.upsertPolicy({ name: "reader-only", scopes: [scope("pki/", ["read"])] });
-    grants.attach("1", "reader-only");
+    await grants.upsertPolicy({ name: "reader-only", scopes: [scope("pki/", ["read"])] });
+    await grants.attach("1", "reader-only");
 
     const ctx = fakeCtx({
       method: "GET",

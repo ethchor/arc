@@ -1,4 +1,4 @@
-import type { Policy, PolicyStore } from "./types";
+import type { MutablePolicyStore, Policy } from "./types";
 
 /**
  * Process-local {@link PolicyStore}. Persistence is a follow-up (Postgres-backed store
@@ -9,7 +9,7 @@ import type { Policy, PolicyStore } from "./types";
  * shape Vault/OpenBao use ("attach policy `foo` to entity `e1`") — so a single policy
  * can be reused across many subjects without copying its scopes.
  */
-export class InMemoryPolicyStore implements PolicyStore {
+export class InMemoryPolicyStore implements MutablePolicyStore {
   private readonly policies = new Map<string, Policy>();
   private readonly bySubject = new Map<string, Set<string>>();
 

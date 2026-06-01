@@ -135,7 +135,8 @@ Anything that ships *between* the phases gets folded into the closest one.
 ## In progress (this branch)
 
 - (nothing — Phase 3 priority queue (PKI adapter, DB dynamic creds, plugin host, per-mount
-  ACL) all shipped this branch. Next pick from the Pending block.)
+  ACL) all shipped, plus the persistent grants store + admin API follow-ups. Next pick from
+  the Pending block — policy cache, group attachments, or the first real plugin.)
 
 ----
 
@@ -166,15 +167,35 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 3 — Engine A + plugin host
 
-- [ ] Persisted policy store. Today `@arc/grants`'s `InMemoryPolicyStore` lives in
-  arc-server's process memory; policies and attachments don't survive restart. A
-  Postgres-backed store (TypeORM entities `PolicyEntity` + `PolicyAttachmentEntity`)
-  implementing the same `PolicyStore` contract is the follow-up — the `PolicyEngine`
-  doesn't need to change.
-- [ ] Admin HTTP API for grant management (`POST /v1/sys/policy`, `POST /v1/sys/policy/users/:id/attach`,
-  etc). `GrantsService.upsertPolicy` / `attach` / `detach` exist; the controller + the
-  bootstrap-admin chicken-and-egg landing is the follow-up. Until then, prod deployments
-  seed policies programmatically at boot.
+- [ ] Policy lookup cache. `CapabilityGuard` calls `TypeOrmPolicyStore.getPoliciesForSubject`
+  on every `/v1/*` request (two indexed queries). A short-TTL per-subject cache with
+  invalidation on attach/detach/upsert/remove is the obvious optimization; the
+  `MutablePolicyStore` contract makes it a decorator around the existing store.
+- [ ] Group / role attachments. Today policies attach to a subject string (user id). Vault-style
+  group membership (attach a policy to a group, add users to groups) is the next expansion —
+  `@arc/identity` territory; the `PolicyStore.getPoliciesForSubject` would union direct + group
+  policies.
+- [x] Persisted policy store. New `MutablePolicyStore` contract in `@arc/grants` (read +
+  upsert/remove/attach/detach/list; sync-or-async so both stores satisfy it; `InMemoryPolicyStore`
+  now declares it). `TypeOrmPolicyStore` in `apps/arc-server/src/grants/` implements it against
+  two new entities — `PolicyEntity` (name PK, `simple-json` scopes) + `PolicyAttachmentEntity`
+  (unique (subject, policyName), indexed by subject, no FK so stale attachments are tolerated).
+  `GrantsService` injects the store via a `POLICY_STORE` token (in-memory in unit tests, TypeORM
+  in the app) and its mutators are async now. New migration `1717300000000-grants-schema.ts`
+  creates `policies` + `policy_attachments`; registered in `app.module.ts` + `typeorm.config.ts`.
+  The `PolicyEngine` didn't change — only the store behind it.
+- [x] Admin HTTP API for grant management. `GrantsController` at `/v1/sys/policy`: `GET` (list),
+  `POST` (upsert `{name, scopes:[{pathPrefix, capabilities}]}` with class-validator nested
+  validation + capability enum), `DELETE /:name`, `POST /:name/attach` + `/:name/detach`
+  (`{subject}`). Gated by the same `JwtAuthGuard + CapabilityGuard` as the rest of `/v1/*`, so
+  the ACL surface protects itself — managing policies needs create/read/delete on `sys/policy/`.
+  Bootstrap solved via `ARC_ROOT_USERS=1,2`: `GrantsService.onModuleInit` seeds a `root` policy
+  (`sudo` on the empty prefix = all paths) and attaches it to those user ids, so `deny` mode is
+  usable from a cold start. 7 admin e2e tests (root bootstrap reaches the API under deny, non-root
+  denied everywhere, create→attach→access→detach→revoke→delete loop, unknown-policy 404,
+  malformed-policy 400, non-root can't self-grant) + 8 service unit-specs (store delegation,
+  parseRootUsers, onModuleInit seeding). Persistent path exercised through the real TypeORM store
+  on sql.js.
 - [x] PKI engine adapter. `PkiEngine` contract in `@arc/secrets-engine` (issue/sign/revoke
   /read/list certs + CA cert + CA chain), `OpenBaoPkiEngine` in
   `integrations/arc-openbao-adapter/src/pki-engine.ts` mapping arc's contract onto OpenBao's

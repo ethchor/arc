@@ -352,6 +352,55 @@ export class VaultFolderEntity {
   updatedAt!: Date;
 }
 
+/** Scope shape stored inside a {@link PolicyEntity} (matches `@arc/grants`' `Scope`). */
+export interface StoredScope {
+  pathPrefix: string;
+  capabilities: string[];
+}
+
+/**
+ * A named policy bundle (Engine-A ACL). Mirrors `@arc/grants`' `Policy`: a name + a list of
+ * path/capability scopes, serialized as JSON. The `name` is the natural primary key — policy
+ * names are the handle admins attach to subjects, the same model Vault/OpenBao use.
+ */
+@Entity("policies")
+export class PolicyEntity {
+  @PrimaryColumn({ type: "text" })
+  name!: string;
+
+  @Column({ type: "simple-json" })
+  scopes!: StoredScope[];
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
+}
+
+/**
+ * Attaches a policy to a subject (today: a user id as a string; later: a service-account or
+ * plugin identity). The (subject, policyName) pair is unique — attaching twice is a no-op.
+ * No FK to `policies` on purpose: a removed policy with a lingering attachment is tolerated
+ * (the lookup filters it out), matching the in-memory store's behavior.
+ */
+@Entity("policy_attachments")
+@Unique(["subject", "policyName"])
+export class PolicyAttachmentEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "text" })
+  subject!: string;
+
+  @Column({ type: "text" })
+  policyName!: string;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+}
+
 export const entities = [
   UserEntity,
   VaultUserKeysEntity,
@@ -363,4 +412,6 @@ export const entities = [
   VaultHeadEntity,
   VaultAuditLogEntity,
   VaultFolderEntity,
+  PolicyEntity,
+  PolicyAttachmentEntity,
 ];

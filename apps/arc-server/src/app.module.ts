@@ -4,13 +4,14 @@ import { LoggerModule } from "nestjs-pino";
 import { randomUUID } from "node:crypto";
 import { entities } from "./database/entities";
 import { InitSchema1717200000000 } from "./migrations/1717200000000-init-schema";
+import { GrantsSchema1717300000000 } from "./migrations/1717300000000-grants-schema";
 import { AuthModule } from "./auth/auth.module";
 import { EnginesModule } from "./engines/engines.module";
 import { GrantsModule } from "./grants/grants.module";
 import { PluginsModule } from "./plugins/plugins.module";
 import { VaultModule } from "./vault/vault.module";
 
-const migrations = [InitSchema1717200000000];
+const migrations = [InitSchema1717200000000, GrantsSchema1717300000000];
 
 /**
  * pino-http config: structured JSON in prod (one log line per request, correlation id

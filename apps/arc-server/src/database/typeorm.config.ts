@@ -16,6 +16,7 @@ import "reflect-metadata";
 import { DataSource } from "typeorm";
 import { entities } from "./entities";
 import { InitSchema1717200000000 } from "../migrations/1717200000000-init-schema";
+import { GrantsSchema1717300000000 } from "../migrations/1717300000000-grants-schema";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -26,5 +27,5 @@ export default new DataSource({
   type: "postgres",
   url,
   entities,
-  migrations: [InitSchema1717200000000],
+  migrations: [InitSchema1717200000000, GrantsSchema1717300000000],
 });
