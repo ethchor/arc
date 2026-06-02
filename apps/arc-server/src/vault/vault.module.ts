@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import {
+  UserEntity,
   VaultAuditLogEntity,
   VaultDeviceEntity,
   VaultEntity,
@@ -10,13 +11,16 @@ import {
   VaultKeyGrantEntity,
   VaultMembershipEntity,
   VaultUserKeysEntity,
+  VaultUserPasskeyEntity,
 } from "../database/entities";
+import { PasskeyService } from "./passkey.service";
 import { VaultController } from "./vault.controller";
 import { VaultService } from "./vault.service";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
+      UserEntity,
       VaultUserKeysEntity,
       VaultEntity,
       VaultMembershipEntity,
@@ -26,9 +30,10 @@ import { VaultService } from "./vault.service";
       VaultHeadEntity,
       VaultAuditLogEntity,
       VaultFolderEntity,
+      VaultUserPasskeyEntity,
     ]),
   ],
   controllers: [VaultController],
-  providers: [VaultService],
+  providers: [VaultService, PasskeyService],
 })
 export class VaultModule {}

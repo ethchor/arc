@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type CurrentUserData } from "../auth/current-user.decorator";
+import { PasskeyService } from "./passkey.service";
 import { VaultService } from "./vault.service";
 import {
   AddMemberDto,
@@ -19,17 +20,26 @@ import {
   CreateFolderDto,
   CreateVaultDto,
   EnrollDto,
+  PasskeyRegisterDto,
+  PasskeyUnlockDto,
   PutHeadDto,
   RegisterDeviceDto,
   RotateKeyDto,
   UnlockDto,
   UpsertItemDto,
 } from "./dto";
+import type {
+  AuthenticationResponseJSON,
+  RegistrationResponseJSON,
+} from "@simplewebauthn/types";
 
 @UseGuards(JwtAuthGuard)
 @Controller()
 export class VaultController {
-  constructor(private readonly vault: VaultService) {}
+  constructor(
+    private readonly vault: VaultService,
+    private readonly passkey: PasskeyService,
+  ) {}
 
   @Post("vault/enroll")
   enroll(@CurrentUser() u: CurrentUserData, @Body() dto: EnrollDto) {
@@ -44,6 +54,47 @@ export class VaultController {
   @Post("vault/unlock")
   unlock(@CurrentUser() u: CurrentUserData, @Body() dto: UnlockDto) {
     return this.vault.unlock(u.userId, dto.authHash);
+  }
+
+  // --- Passkey unlock (docs/13) — additive to master-password ---
+
+  @Post("vault/passkey/register-challenge")
+  passkeyRegisterChallenge(@CurrentUser() u: CurrentUserData) {
+    return this.passkey.beginRegistration(u.userId);
+  }
+
+  @Post("vault/passkey/register")
+  passkeyRegister(@CurrentUser() u: CurrentUserData, @Body() dto: PasskeyRegisterDto) {
+    return this.passkey.finishRegistration(
+      u.userId,
+      dto.registration as unknown as RegistrationResponseJSON,
+      dto.encIdentityPrivPasskey,
+      dto.encIdentityPrivMlkemPasskey,
+      dto.label,
+    );
+  }
+
+  @Get("vault/passkeys")
+  passkeys(@CurrentUser() u: CurrentUserData) {
+    return this.passkey.list(u.userId);
+  }
+
+  @Delete("vault/passkeys/:id")
+  passkeyRemove(@CurrentUser() u: CurrentUserData, @Param("id") id: string) {
+    return this.passkey.remove(u.userId, id);
+  }
+
+  @Post("vault/passkey/unlock-challenge")
+  passkeyUnlockChallenge(@CurrentUser() u: CurrentUserData) {
+    return this.passkey.beginUnlock(u.userId);
+  }
+
+  @Post("vault/passkey/unlock")
+  passkeyUnlock(@CurrentUser() u: CurrentUserData, @Body() dto: PasskeyUnlockDto) {
+    return this.passkey.finishUnlock(
+      u.userId,
+      dto.assertion as unknown as AuthenticationResponseJSON,
+    );
   }
 
   @Get("vaults")

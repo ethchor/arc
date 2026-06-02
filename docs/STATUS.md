@@ -160,9 +160,24 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   `pqSeal` too (closes the device-grant HNDL footnote in ADR-002 — possibly ADR-003).
 - [ ] Browser extension: real autofill flow against the live origin-bound capability
   model in `docs/12`. Today is a scaffold of the messaging layer only.
-- [ ] Passkey unlock — server endpoint to store the `encIdentityPrivPasskey` wrap per
-  credential (the crypto helper `wrapIdentityForPasskey` already exists), web UI for
-  WebAuthn register + unlock-with-passkey.
+- [~] Passkey unlock — **server + e2e shipped; web UI is the follow-up.** New
+  `vault_user_passkeys` table (userId + credentialId unique, public key, counter,
+  per-credential PRF-wrap envelopes for both X25519 and ML-KEM identity privs, optional
+  label + transports). `PasskeyService` drives the WebAuthn flow via
+  `@simplewebauthn/server` (RP / origin / RP-name from env: `ARC_PASSKEY_RP_ID`,
+  `ARC_PASSKEY_RP_NAME`, `ARC_PASSKEY_ORIGIN`). Six endpoints under `/vault/passkey/*`:
+  `register-challenge` (with PRF salt), `register` (verifies attestation + stores wraps),
+  `GET /vault/passkeys` (list), `DELETE /vault/passkeys/:id`, `unlock-challenge` (with
+  `allowCredentials` + PRF salt), `unlock` (verifies assertion + advances signature counter
+  + returns the wraps). Counter regression is rejected with 401 (anti-clone); challenges
+  are in-memory keyed by userId with a 5-min TTL (Redis-backed store is the multi-instance
+  follow-up). New migration `1717400000000-passkey-schema.ts`. The server *never* sees the
+  PRF output, identity key, or master key — zero-knowledge posture identical to
+  master-password unlock; passkey is additive, not a replacement. 6 hermetic e2e tests
+  drive a self-contained `FakeAuthenticator` (real ES256 P-256 keypair, hand-rolled CBOR
+  attestation, real signed assertions) through register → list → unlock → signCount-replay
+  rejected → 404 for no-passkey user → corrupted-sig rejected → delete. Workspace total:
+  295 tests passing.
 - [ ] Multi-device key rotation including auto-revoke for retired devices (the
   manual-rotate path works today; needs UX + audit hooks).
 

@@ -87,3 +87,21 @@ export class RotateKeyDto {
   @IsArray() grants!: Array<{ granteeUserId: number; wrappedVaultKey: EnvelopeJson; signature?: EnvelopeJson }>;
   @IsArray() rewrappedItemKeys!: Array<{ itemId: string; wrappedItemKey: EnvelopeJson }>;
 }
+
+// --- Passkey unlock (docs/13) ---
+
+export class PasskeyRegisterDto {
+  /** WebAuthn attestation response JSON, exactly as `navigator.credentials.create` returns it. */
+  @IsObject() registration!: Record<string, unknown>;
+  /** Optional human-readable label, e.g. "MacBook Touch ID". */
+  @IsOptional() @IsString() label?: string;
+  /** Identity X25519 private key wrapped under the PRF-derived KEK (client-side). */
+  @IsObject() encIdentityPrivPasskey!: EnvelopeJson;
+  /** Identity ML-KEM-768 private key wrapped under the same KEK. */
+  @IsObject() encIdentityPrivMlkemPasskey!: EnvelopeJson;
+}
+
+export class PasskeyUnlockDto {
+  /** WebAuthn assertion response JSON, exactly as `navigator.credentials.get` returns it. */
+  @IsObject() assertion!: Record<string, unknown>;
+}

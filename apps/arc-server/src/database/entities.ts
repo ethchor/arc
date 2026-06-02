@@ -352,6 +352,64 @@ export class VaultFolderEntity {
   updatedAt!: Date;
 }
 
+/**
+ * One row per registered passkey credential. The server holds the credential's public
+ * key + signature counter (anti-clone), and the identity-private-key envelopes wrapped
+ * under the per-credential PRF-derived KEK (see `wrapIdentityForPasskey` in arc-crypto).
+ *
+ * On unlock: client produces a WebAuthn assertion + extracts the PRF output, the server
+ * verifies the assertion and returns the wrapped envelopes; the client unwraps them with
+ * its PRF output entirely client-side — the server never sees the PRF output, the
+ * identity key, or the master key. Same zero-knowledge posture as master-password unlock.
+ */
+@Entity("vault_user_passkeys")
+@Unique(["userId", "credentialId"])
+export class VaultUserPasskeyEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "int" })
+  userId!: number;
+
+  /** Base64url credential ID from the WebAuthn registration response. */
+  @Column({ type: "text" })
+  credentialId!: string;
+
+  /** Base64url COSE public key. Stored exactly as `@simplewebauthn/server` returns it. */
+  @Column({ type: "text" })
+  publicKey!: string;
+
+  /** Monotonic signature counter — anti-clone. Must strictly increase on each unlock. */
+  @Column({ type: "bigint" })
+  counter!: string;
+
+  /**
+   * Optional friendly label (e.g. "MacBook Touch ID", "YubiKey 5"). Returned in the
+   * listing so the user can pick which passkey to unenroll.
+   */
+  @Column({ type: "text", nullable: true })
+  label!: string | null;
+
+  /** Identity X25519 private key wrapped under the PRF-derived KEK (per-credential). */
+  @Column({ type: "simple-json" })
+  encIdentityPrivPasskey!: EnvelopeJson;
+
+  /** Identity ML-KEM-768 private key wrapped under the same KEK (PQ-hybrid path). */
+  @Column({ type: "simple-json" })
+  encIdentityPrivMlkemPasskey!: EnvelopeJson;
+
+  /** Transports hint from the registration response — used to populate `allowCredentials`. */
+  @Column({ type: "simple-json", nullable: true })
+  transports!: string[] | null;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
+}
+
 /** Scope shape stored inside a {@link PolicyEntity} (matches `@arc/grants`' `Scope`). */
 export interface StoredScope {
   pathPrefix: string;
@@ -412,6 +470,7 @@ export const entities = [
   VaultHeadEntity,
   VaultAuditLogEntity,
   VaultFolderEntity,
+  VaultUserPasskeyEntity,
   PolicyEntity,
   PolicyAttachmentEntity,
 ];
