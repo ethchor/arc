@@ -18,6 +18,7 @@ module.exports = {
     "^@arc/plugin-sdk$": "<rootDir>/../../packages/arc-plugin-sdk/dist/index.cjs",
     "^@arc/secrets-engine$": "<rootDir>/../../packages/arc-secrets-engine/dist/index.cjs",
     "^@arc/openbao-adapter$": "<rootDir>/../../integrations/arc-openbao-adapter/dist/index.cjs",
+    "^@arc/plugin-aws$": "<rootDir>/../../plugins/cloud/arc-plugin-aws/dist/index.cjs",
     "^@arc/sdk$": "<rootDir>/../../sdks/arc-js-sdk/src/index.ts",
     "^@arc/cli$": "<rootDir>/../../apps/arc-cli/src/index.ts",
   },

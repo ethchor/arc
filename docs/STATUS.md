@@ -135,8 +135,9 @@ Anything that ships *between* the phases gets folded into the closest one.
 ## In progress (this branch)
 
 - (nothing — Phase 3 priority queue (PKI adapter, DB dynamic creds, plugin host, per-mount
-  ACL) all shipped, plus the persistent grants store + admin API follow-ups. Next pick from
-  the Pending block — policy cache, group attachments, or the first real plugin.)
+  ACL) all shipped, plus persistent grants store + admin API + first real plugin
+  (`arc-plugin-aws`). Next pick from Pending — policy cache, group attachments, GCP/Azure
+  plugins, or move to Phase 2 (desktop / passkey).)
 
 ----
 
@@ -184,6 +185,29 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   in the app) and its mutators are async now. New migration `1717300000000-grants-schema.ts`
   creates `policies` + `policy_attachments`; registered in `app.module.ts` + `typeorm.config.ts`.
   The `PolicyEngine` didn't change — only the store behind it.
+- [x] First real plugin: `@arc/plugin-aws`. New workspace at `plugins/cloud/arc-plugin-aws/`,
+  implementing `SecretsPlugin` for dynamic IAM credentials via STS AssumeRole. Lifecycle
+  matches Vault's `aws` engine for `assumed_role`: `issue` → AssumeRole returning
+  `{access_key, secret_key, session_token, assumed_role_arn}` + the seconds-until-expiration
+  as the lease TTL; `renew` always throws (STS creds are not renewable, re-issue instead);
+  `revoke` is a no-op at AWS (matches Vault — cannot force-expire short of an IAM Deny) but
+  drops local tracking so the arc LeaseManager records the revocation. Plugin accepts any
+  `StsClient` impl at construction, so tests inject a fake; the shipped
+  `@arc/plugin-aws/aws-sdk` subpath provides a `createSdkStsClient(opts)` factory backed by
+  `@aws-sdk/client-sts` (declared as an **optional peer dep** so callers with their own SigV4
+  / IMDSv2 / web-identity transport don't pay for the SDK install). Config validation guards
+  the admin-side wiring: unknown roles throw at `issue` time; `defaultTtlSeconds >
+  maxTtlSeconds` is a configure-time error; caller-supplied TTL is clamped to
+  `role.maxTtlSeconds` before the STS request so a runaway caller can't out-request the
+  operator. 19 plugin unit tests cover configure / issue / renew / revoke + the `clampTtl`
+  helper, all hermetic via the fake StsClient. 5 server integration specs prove the full
+  loop end-to-end: `PluginsService.mountSecretsPlugin` registers + configures + mounts the
+  AWS plugin → `EnginesService.listMounts` shows `plugin:arc-plugin-aws` → `GET /v1/aws/creds/<role>`
+  dispatches through the existing `DynamicSecretsEngine` branch → returns the Vault wire
+  shape with `renewable: false` → `renewLease` correctly refuses with 400 → `revokeLease`
+  marks the arc lease revoked → invalid config rejects at mount with the plugin staying
+  unregistered → unmount drops the registry entry and revokes outstanding leases. First
+  non-OpenBao mount in the test matrix; proves the plugin host runtime actually works.
 - [x] Admin HTTP API for grant management. `GrantsController` at `/v1/sys/policy`: `GET` (list),
   `POST` (upsert `{name, scopes:[{pathPrefix, capabilities}]}` with class-validator nested
   validation + capability enum), `DELETE /:name`, `POST /:name/attach` + `/:name/detach`
@@ -268,7 +292,7 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   so Jest can `require()` `LeaseError` / `LeaseManager` directly.
 - [ ] `arc-server`: out-of-process plugin host (gRPC / WASM backend). The in-process
   module shipped above; out-of-process transport for sandboxed plugins is the follow-up.
-- [ ] Cloud plugins: `arc-plugin-aws`, `arc-plugin-gcp`, `arc-plugin-azure`.
+- [ ] Cloud plugins: `arc-plugin-gcp`, `arc-plugin-azure` (AWS landed below).
 - [ ] SCM plugins: `arc-plugin-github`, `arc-plugin-gitlab`, `arc-plugin-bitbucket`.
 - [ ] Auth plugins: `arc-plugin-oidc`, `arc-plugin-kubernetes`.
 

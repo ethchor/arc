@@ -1,0 +1,48 @@
+{
+  "name": "@arc/plugin-aws",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AWS cloud plugin: dynamic IAM credentials via STS AssumeRole. Implements @arc/plugin-sdk's SecretsPlugin contract.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./aws-sdk": {
+      "types": "./dist/aws-sdk-sts-client.d.ts",
+      "import": "./dist/aws-sdk-sts-client.js",
+      "require": "./dist/aws-sdk-sts-client.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arc/plugin-sdk": "workspace:*",
+    "@arc/types": "workspace:*"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-sts": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-sts": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@aws-sdk/client-sts": "^3.700.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
