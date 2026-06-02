@@ -1,0 +1,47 @@
+{
+  "name": "@arc/plugin-gcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "GCP cloud plugin: dynamic OAuth2 access tokens via IAM Credentials generateAccessToken. Implements @arc/plugin-sdk's SecretsPlugin contract.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./google-auth-library": {
+      "types": "./dist/google-auth-client.d.ts",
+      "import": "./dist/google-auth-client.js",
+      "require": "./dist/google-auth-client.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arc/plugin-sdk": "workspace:*",
+    "@arc/types": "workspace:*"
+  },
+  "peerDependencies": {
+    "google-auth-library": "^9.0.0"
+  },
+  "peerDependenciesMeta": {
+    "google-auth-library": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

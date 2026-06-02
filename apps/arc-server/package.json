@@ -45,6 +45,8 @@
   "devDependencies": {
     "@arc/cli": "workspace:*",
     "@arc/plugin-aws": "workspace:*",
+    "@arc/plugin-gcp": "workspace:*",
+    "@arc/plugin-github": "workspace:*",
     "@arc/sdk": "workspace:*",
     "@nestjs/testing": "^11.0.0",
     "@types/jest": "^29.5.14",

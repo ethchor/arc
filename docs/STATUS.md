@@ -193,6 +193,29 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   factory under `POLICY_STORE`. `ARC_POLICY_CACHE_TTL_MS` overrides the 30s default (set to
   0 to bypass entirely). `CapabilityGuard` is unchanged — it sees the same `MutablePolicyStore`
   interface, just one with the two DB queries memoized.
+- [x] GCP cloud plugin: `@arc/plugin-gcp`. New workspace at `plugins/cloud/arc-plugin-gcp/`.
+  Implements `SecretsPlugin` over IAM Credentials `generateAccessToken`: configure with a
+  `roles` map (`targetServiceAccount`, `scopes[]`, optional `defaultTtlSeconds`,
+  `maxTtlSeconds`, `delegates`); `issue` POSTs `…/serviceAccounts/<sa>:generateAccessToken`
+  and returns the OAuth2 bearer + GCP-reported expiration as the lease TTL; `renew` throws
+  (not renewable, re-issue instead); `revoke` is a no-op at GCP (IAM Credentials has no
+  per-token revocation) but drops local tracking. Default `IamCredentialsClient` lives behind
+  the `@arc/plugin-gcp/google-auth-library` subpath using `google-auth-library` as an optional
+  peer dep — tests inject a fake. 18 unit tests + 3 server integration specs through
+  `PluginsService`+`EnginesService` (mount/dispatch/renewable=false propagation/unmount-revokes-leases/invalid-config-stays-unregistered).
+- [x] GitHub SCM plugin: `@arc/plugin-github`. New workspace at `plugins/scm/arc-plugin-github/`.
+  Implements `SecretsPlugin` over the GitHub App installation-token endpoint. Configure with
+  `appId` + `privateKeyPem` + a `roles` map (`installationId`, optional `repositories[]`,
+  `repositoryIds[]`, `permissions {read|write|admin}`); `issue` POSTs
+  `/app/installations/<id>/access_tokens` and returns the bearer token + 1h expiration;
+  `renew` throws; `revoke` is a no-op (the DELETE endpoint would round-trip the token through
+  audit). Default `GitHubAppClient` lives at `@arc/plugin-github/node` using Node built-ins
+  only (`node:crypto` for RS256 JWT signing of the App-level JWT + global `fetch` — no
+  external deps). 13 plugin unit tests + 7 node-client tests (real RSA keypair generated
+  per test file, JWT signature verified with public key, request shape + GHES base override
+  + error paths) + 3 server integration specs. Cross-plugin spec confirms AWS / GCP /
+  GitHub-style plugins all dispatch independently from the same MountRegistry. Workspace
+  total: 289 tests passing.
 - [x] First real plugin: `@arc/plugin-aws`. New workspace at `plugins/cloud/arc-plugin-aws/`,
   implementing `SecretsPlugin` for dynamic IAM credentials via STS AssumeRole. Lifecycle
   matches Vault's `aws` engine for `assumed_role`: `issue` → AssumeRole returning
@@ -300,8 +323,8 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   so Jest can `require()` `LeaseError` / `LeaseManager` directly.
 - [ ] `arc-server`: out-of-process plugin host (gRPC / WASM backend). The in-process
   module shipped above; out-of-process transport for sandboxed plugins is the follow-up.
-- [ ] Cloud plugins: `arc-plugin-gcp`, `arc-plugin-azure` (AWS landed below).
-- [ ] SCM plugins: `arc-plugin-github`, `arc-plugin-gitlab`, `arc-plugin-bitbucket`.
+- [ ] Cloud plugins: `arc-plugin-azure` (AWS + GCP landed below).
+- [ ] SCM plugins: `arc-plugin-gitlab`, `arc-plugin-bitbucket` (GitHub landed below).
 - [ ] Auth plugins: `arc-plugin-oidc`, `arc-plugin-kubernetes`.
 
 ### Phase 4 — deployment + ops
