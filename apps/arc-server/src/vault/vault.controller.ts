@@ -70,6 +70,7 @@ export class VaultController {
       dto.registration as unknown as RegistrationResponseJSON,
       dto.encIdentityPrivPasskey,
       dto.encIdentityPrivMlkemPasskey,
+      dto.encSigningPrivPasskey,
       dto.label,
     );
   }

@@ -99,6 +99,8 @@ export class PasskeyRegisterDto {
   @IsObject() encIdentityPrivPasskey!: EnvelopeJson;
   /** Identity ML-KEM-768 private key wrapped under the same KEK. */
   @IsObject() encIdentityPrivMlkemPasskey!: EnvelopeJson;
+  /** Signing Ed25519 private key wrapped under the same KEK — enables write ops on unlock. */
+  @IsObject() encSigningPrivPasskey!: EnvelopeJson;
 }
 
 export class PasskeyUnlockDto {

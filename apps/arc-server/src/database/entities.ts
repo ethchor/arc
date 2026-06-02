@@ -399,9 +399,26 @@ export class VaultUserPasskeyEntity {
   @Column({ type: "simple-json" })
   encIdentityPrivMlkemPasskey!: EnvelopeJson;
 
+  /**
+   * Signing (Ed25519) private key wrapped under the PRF-derived KEK. Wrapping all three
+   * keys lets passkey unlock produce a full-capability session — decrypt VKs via identity
+   * keys *and* sign vault-head updates. Without this, passkey unlock would be read-only.
+   */
+  @Column({ type: "simple-json" })
+  encSigningPrivPasskey!: EnvelopeJson;
+
   /** Transports hint from the registration response — used to populate `allowCredentials`. */
   @Column({ type: "simple-json", nullable: true })
   transports!: string[] | null;
+
+  /**
+   * Per-user PRF salt (base64url). Stable across all of a user's credentials — without
+   * this, each register would mint a different salt and the unlock-time PRF output
+   * wouldn't match the register-time wrap key. The salt itself is non-secret; rotating
+   * it requires re-registering every credential under the new salt.
+   */
+  @Column({ type: "text" })
+  prfSalt!: string;
 
   @CreateDateColumn()
   createdAt!: Date;

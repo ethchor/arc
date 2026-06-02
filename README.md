@@ -131,10 +131,25 @@ arc/
   source is copied, ported, or read for translation. The licensing rules live in
   [`docs/CLAUDE.md`](docs/CLAUDE.md) and [`integrations/arc-openbao-adapter/CLAUDE.md`](integrations/arc-openbao-adapter/CLAUDE.md).
 
+## Manual testing
+
+A step-by-step playbook for running the whole stack locally and exercising every shipped
+feature by hand lives in [`docs/manual-testing/`](docs/manual-testing/). It pairs with
+the 300-test automated suite (`pnpm -r test`) — automation covers the wire shapes and
+unit boundaries; the manual guide covers cross-engine UX, the live OpenBao backend,
+browser passkey flows, and the kind of "does this still feel like one product" check
+that's hard to assert in code.
+
+Start with [`docs/manual-testing/README.md`](docs/manual-testing/README.md) for the TOC.
+For a release-tag checklist:
+[`docs/manual-testing/checklist.md`](docs/manual-testing/checklist.md).
+
 ## Where to learn more
 
 - [`docs/STATUS.md`](docs/STATUS.md) — what's done, what's in progress, what's pending, in
   implementation order. Updated every commit.
+- [`docs/manual-testing/`](docs/manual-testing/) — step-by-step local-bootstrap +
+  per-feature manual flows + cross-engine e2e scripts.
 - [`docs/CLAUDE.md`](docs/CLAUDE.md) — the canonical "where does code belong" map, the
   dependency rules, and the licensing posture.
 - [`docs/MONOREPO_PLAN.md`](docs/MONOREPO_PLAN.md) — the full platform plan and phasing.

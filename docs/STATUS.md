@@ -135,9 +135,11 @@ Anything that ships *between* the phases gets folded into the closest one.
 ## In progress (this branch)
 
 - (nothing — Phase 3 priority queue (PKI adapter, DB dynamic creds, plugin host, per-mount
-  ACL) all shipped, plus persistent grants store + admin API + first real plugin
-  (`arc-plugin-aws`). Next pick from Pending — policy cache, group attachments, GCP/Azure
-  plugins, or move to Phase 2 (desktop / passkey).)
+  ACL) all shipped, plus persistent grants store + admin API + policy cache + AWS / GCP /
+  GitHub plugins + passkey server&SDK. Manual-testing playbook now lives at
+  [`docs/manual-testing/`](manual-testing/README.md) and is referenced from the root
+  `README.md`. Next pick from Pending — Passkey web UI, group attachments, Azure / GitLab /
+  Bitbucket plugins, Tauri desktop wire-up.)
 
 ----
 
@@ -160,9 +162,18 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   `pqSeal` too (closes the device-grant HNDL footnote in ADR-002 — possibly ADR-003).
 - [ ] Browser extension: real autofill flow against the live origin-bound capability
   model in `docs/12`. Today is a scaffold of the messaging layer only.
-- [~] Passkey unlock — **server + e2e shipped; web UI is the follow-up.** New
-  `vault_user_passkeys` table (userId + credentialId unique, public key, counter,
-  per-credential PRF-wrap envelopes for both X25519 and ML-KEM identity privs, optional
+- [~] Passkey unlock — **server + SDK + cross-client e2e shipped; web UI is the
+  follow-up.** Per-user-stable `prfSalt` persisted so register + unlock derive the same
+  wrap key. `@arc/crypto` adds wrap/unwrap pairs for ML-KEM identity priv *and* signing
+  priv under distinct AAD labels — so passkey unlock unwraps all three privs and produces
+  a full read+write session, not read-only. `@arc/sdk` ships `registerPasskey` /
+  `unlockWithPasskey` / `listPasskeys` / `removePasskey` + a `browserPasskeyAuthenticator()`
+  factory; tests inject a fake authenticator (real ES256 signatures + HKDF-derived PRF).
+  New `sdk-passkey.e2e-spec.ts` boots the real server, registers on client A, unlocks a
+  *fresh* client B with the same authenticator, round-trips an item write (proving the
+  signing priv unwrapped too), and asserts removePasskey invalidates subsequent unlock.
+  Original `vault_user_passkeys` table (userId + credentialId unique, public key, counter,
+  per-credential PRF-wrap envelopes for X25519, ML-KEM, signing identity privs, optional
   label + transports). `PasskeyService` drives the WebAuthn flow via
   `@simplewebauthn/server` (RP / origin / RP-name from env: `ARC_PASSKEY_RP_ID`,
   `ARC_PASSKEY_RP_NAME`, `ARC_PASSKEY_ORIGIN`). Six endpoints under `/vault/passkey/*`:

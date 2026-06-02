@@ -14,6 +14,10 @@ import {
   unlock,
   unwrapIdentityFromPasskey,
   wrapIdentityForPasskey,
+  wrapIdentityMlkemForPasskey,
+  unwrapIdentityMlkemFromPasskey,
+  wrapSigningForPasskey,
+  unwrapSigningFromPasskey,
   wrapVaultKeyFor,
 } from "../src";
 
@@ -78,6 +82,39 @@ describe("passkey unlock (PRF-wrapped identity key)", () => {
     const wrapped = wrapIdentityForPasskey(e.session.identityPriv, prf);
     expect(toHex(unwrapIdentityFromPasskey(wrapped, prf))).toBe(toHex(e.session.identityPriv));
     expect(() => unwrapIdentityFromPasskey(wrapped, randomBytes(32))).toThrow();
+  });
+
+  it("wraps + unwraps the ML-KEM identity priv with its own AAD label", () => {
+    const e = enroll(PW, { profile });
+    const prf = randomBytes(32);
+    const wrapped = wrapIdentityMlkemForPasskey(e.session.identityPrivMlkem, prf);
+    expect(toHex(unwrapIdentityMlkemFromPasskey(wrapped, prf))).toBe(
+      toHex(e.session.identityPrivMlkem),
+    );
+    // Cross-AAD: ML-KEM ciphertext must not open under the X25519 AAD even with the
+    // right PRF. The label inside privAad differs ("identity-priv-mlkem" vs
+    // "identity-priv"), which is the whole point of the labelled scheme.
+    expect(() => unwrapIdentityFromPasskey(wrapped, prf)).toThrow();
+  });
+
+  it("wraps + unwraps the signing priv with its own AAD label", () => {
+    const e = enroll(PW, { profile });
+    const prf = randomBytes(32);
+    const wrapped = wrapSigningForPasskey(e.session.signingPriv, prf);
+    expect(toHex(unwrapSigningFromPasskey(wrapped, prf))).toBe(toHex(e.session.signingPriv));
+    expect(() => unwrapIdentityFromPasskey(wrapped, prf)).toThrow();
+  });
+
+  it("rejects a wrong PRF on all three wrappers (corrupted authenticator)", () => {
+    const e = enroll(PW, { profile });
+    const good = randomBytes(32);
+    const bad = randomBytes(32);
+    const w1 = wrapIdentityForPasskey(e.session.identityPriv, good);
+    const w2 = wrapIdentityMlkemForPasskey(e.session.identityPrivMlkem, good);
+    const w3 = wrapSigningForPasskey(e.session.signingPriv, good);
+    expect(() => unwrapIdentityFromPasskey(w1, bad)).toThrow();
+    expect(() => unwrapIdentityMlkemFromPasskey(w2, bad)).toThrow();
+    expect(() => unwrapSigningFromPasskey(w3, bad)).toThrow();
   });
 });
 

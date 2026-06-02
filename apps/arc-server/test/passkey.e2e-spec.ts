@@ -314,6 +314,7 @@ describe("passkey unlock e2e", () => {
         },
         encIdentityPrivPasskey: stubEnvelope("identity-x25519-prf-wrap"),
         encIdentityPrivMlkemPasskey: stubEnvelope("identity-mlkem-prf-wrap"),
+        encSigningPrivPasskey: stubEnvelope("signing-prf-wrap"),
         label: "MacBook Touch ID",
       })
       .expect(201);
@@ -358,6 +359,7 @@ describe("passkey unlock e2e", () => {
     // Server returns the same envelopes the client uploaded at register time.
     expect(unlocked.body.encIdentityPrivPasskey.ct).toBe("identity-x25519-prf-wrap");
     expect(unlocked.body.encIdentityPrivMlkemPasskey.ct).toBe("identity-mlkem-prf-wrap");
+    expect(unlocked.body.encSigningPrivPasskey.ct).toBe("signing-prf-wrap");
   });
 
   it("rejects an unlock that replays an earlier signCount (anti-clone)", async () => {

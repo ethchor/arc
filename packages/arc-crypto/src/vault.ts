@@ -270,6 +270,64 @@ export function unwrapIdentityFromPasskey(
   );
 }
 
+/**
+ * Companions to {@link wrapIdentityForPasskey} for the ML-KEM identity priv + the
+ * signing priv. The PRF-derived KEK is the same; the AAD label is the per-target
+ * `identity-priv-mlkem` / `signing-priv` plus the `"passkey"` suffix — matches the
+ * recovery wrap layout exactly so the AAD encoder can never confuse targets.
+ *
+ * Wrapping all three at register time gives a full-capability session on passkey
+ * unlock (decrypt VKs *and* sign vault heads). Without the signing wrap, passkey
+ * unlock would be read-only.
+ */
+export function wrapIdentityMlkemForPasskey(
+  identityPrivMlkem: Uint8Array,
+  prfOutput: Uint8Array,
+  keyVersion = 1,
+): Envelope {
+  return aeadSeal(
+    derivePasskeyWrapKey(prfOutput),
+    identityPrivMlkem,
+    privAad("identity-priv-mlkem", keyVersion, "passkey"),
+  );
+}
+
+export function unwrapIdentityMlkemFromPasskey(
+  encIdentityPrivMlkemPasskey: Envelope,
+  prfOutput: Uint8Array,
+  keyVersion = 1,
+): Uint8Array {
+  return aeadOpen(
+    derivePasskeyWrapKey(prfOutput),
+    encIdentityPrivMlkemPasskey,
+    privAad("identity-priv-mlkem", keyVersion, "passkey"),
+  );
+}
+
+export function wrapSigningForPasskey(
+  signingPriv: Uint8Array,
+  prfOutput: Uint8Array,
+  keyVersion = 1,
+): Envelope {
+  return aeadSeal(
+    derivePasskeyWrapKey(prfOutput),
+    signingPriv,
+    privAad("signing-priv", keyVersion, "passkey"),
+  );
+}
+
+export function unwrapSigningFromPasskey(
+  encSigningPrivPasskey: Envelope,
+  prfOutput: Uint8Array,
+  keyVersion = 1,
+): Uint8Array {
+  return aeadOpen(
+    derivePasskeyWrapKey(prfOutput),
+    encSigningPrivPasskey,
+    privAad("signing-priv", keyVersion, "passkey"),
+  );
+}
+
 // --- Vault keys, grants, items ---
 
 export function createVaultKey(keyVersion = 1): VaultKeyMaterial {

@@ -32,8 +32,11 @@ const PRF_SALT_LEN = 32; // arc/passkey/v1 expects 32 bytes; HKDF inside `derive
 interface PendingChallenge {
   challenge: string;
   expiresAt: number;
-  /** PRF salt sent with the WebAuthn extension; needed verbatim on unlock so the client and
-   *  server agree on what HKDF input produced the wrap key. */
+  /**
+   * PRF salt sent with the WebAuthn extension. Per-user-stable (looked up from / persisted
+   * onto the user's credentials), so register-time wrap and unlock-time unwrap derive the
+   * same wrap key from the authenticator's PRF.
+   */
   prfSalt: string;
 }
 
@@ -99,6 +102,9 @@ export class PasskeyService {
     if (!enrolled) throw new NotFoundException("not enrolled");
 
     const existing = await this.passkeys.find({ where: { userId } });
+    // Reuse the user's existing PRF salt across credentials so they all unwrap the same
+    // identity. Only the first-ever passkey for the user mints a fresh salt.
+    const prfSalt = existing[0]?.prfSalt ?? randomBytes(PRF_SALT_LEN).toString("base64url");
     const options = await generateRegistrationOptions({
       rpID: this.rpId(),
       rpName: this.rpName(),
@@ -117,7 +123,6 @@ export class PasskeyService {
       // produce the same wrap key. The salt itself is non-secret and stored alongside the
       // credential lookup; rotation requires re-enrolling.
     });
-    const prfSalt = randomBytes(PRF_SALT_LEN).toString("base64url");
 
     this.registrations.set(userId, {
       challenge: options.challenge,
@@ -133,6 +138,7 @@ export class PasskeyService {
     registration: RegistrationResponseJSON,
     encIdentityPrivPasskey: EnvelopeJson,
     encIdentityPrivMlkemPasskey: EnvelopeJson,
+    encSigningPrivPasskey: EnvelopeJson,
     label?: string,
   ): Promise<{ credentialId: string }> {
     const pending = this.registrations.get(userId);
@@ -172,7 +178,9 @@ export class PasskeyService {
       label: label ?? null,
       encIdentityPrivPasskey,
       encIdentityPrivMlkemPasskey,
+      encSigningPrivPasskey,
       transports,
+      prfSalt: pending.prfSalt,
     });
     await this.passkeys.save(row);
     return { credentialId };
@@ -210,11 +218,10 @@ export class PasskeyService {
         transports: (c.transports ?? undefined) as AuthenticatorTransportLike[] | undefined,
       })),
     });
-    // All registered credentials for this user share the same PRF salt today (one user
-    // → one identity, so wrap key derivation needs the same input). When per-credential
-    // salts arrive (e.g. multiple identities per user) the salt would be selected after
-    // the credential id is known on `finishUnlock`.
-    const prfSalt = randomBytes(PRF_SALT_LEN).toString("base64url");
+    // All of this user's credentials share the same PRF salt (persisted at first-ever
+    // register; reused at subsequent registers). One identity → one salt; different PRF
+    // outputs per credential then yield different wraps but unwrap to the same identity.
+    const prfSalt = credentials[0]!.prfSalt;
     this.unlocks.set(userId, {
       challenge: options.challenge,
       expiresAt: Date.now() + CHALLENGE_TTL_MS,
@@ -229,6 +236,7 @@ export class PasskeyService {
   ): Promise<{
     encIdentityPrivPasskey: EnvelopeJson;
     encIdentityPrivMlkemPasskey: EnvelopeJson;
+    encSigningPrivPasskey: EnvelopeJson;
     credentialId: string;
   }> {
     const pending = this.unlocks.get(userId);
@@ -282,6 +290,7 @@ export class PasskeyService {
     return {
       encIdentityPrivPasskey: stored.encIdentityPrivPasskey,
       encIdentityPrivMlkemPasskey: stored.encIdentityPrivMlkemPasskey,
+      encSigningPrivPasskey: stored.encSigningPrivPasskey,
       credentialId,
     };
   }

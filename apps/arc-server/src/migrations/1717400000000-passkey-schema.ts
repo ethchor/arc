@@ -23,7 +23,9 @@ export class PasskeySchema1717400000000 implements MigrationInterface {
         "label" text,
         "encIdentityPrivPasskey" text NOT NULL,
         "encIdentityPrivMlkemPasskey" text NOT NULL,
+        "encSigningPrivPasskey" text NOT NULL,
         "transports" text,
+        "prfSalt" text NOT NULL,
         "createdAt" timestamp NOT NULL DEFAULT now(),
         "updatedAt" timestamp NOT NULL DEFAULT now(),
         CONSTRAINT "uq_user_credential" UNIQUE ("userId", "credentialId")
