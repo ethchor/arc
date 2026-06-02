@@ -11,3 +11,5 @@ export { normalizePrefix, scope, scopeAllows } from "./scope";
 export { PolicyEngine } from "./engine";
 export type { DetailedDecision, PolicyEngineOptions } from "./engine";
 export { InMemoryPolicyStore } from "./in-memory-store";
+export { CachingPolicyStore } from "./caching-store";
+export type { CachingPolicyStoreOptions } from "./caching-store";

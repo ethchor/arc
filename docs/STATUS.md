@@ -167,11 +167,6 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   manual-rotate path works today; needs UX + audit hooks).
 
 ### Phase 3 — Engine A + plugin host
-
-- [ ] Policy lookup cache. `CapabilityGuard` calls `TypeOrmPolicyStore.getPoliciesForSubject`
-  on every `/v1/*` request (two indexed queries). A short-TTL per-subject cache with
-  invalidation on attach/detach/upsert/remove is the obvious optimization; the
-  `MutablePolicyStore` contract makes it a decorator around the existing store.
 - [ ] Group / role attachments. Today policies attach to a subject string (user id). Vault-style
   group membership (attach a policy to a group, add users to groups) is the next expansion —
   `@arc/identity` territory; the `PolicyStore.getPoliciesForSubject` would union direct + group
@@ -185,6 +180,19 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   in the app) and its mutators are async now. New migration `1717300000000-grants-schema.ts`
   creates `policies` + `policy_attachments`; registered in `app.module.ts` + `typeorm.config.ts`.
   The `PolicyEngine` didn't change — only the store behind it.
+- [x] Policy lookup cache. New `CachingPolicyStore` decorator in `@arc/grants` wraps any
+  `MutablePolicyStore`: per-subject read cache with configurable TTL (default 30s, 0 to
+  disable). `getPoliciesForSubject` hits cache; `attach`/`detach(subject)` invalidate that
+  subject's entry; `upsertPolicy`/`removePolicy` flush the whole cache (couldn't know which
+  subjects an edited policy reaches). `listPolicies` bypasses the cache. 13 unit tests cover
+  read caching, TTL expiry, disable-via-`ttlMs=0`, per-subject independence, selective
+  invalidation, contract pass-through (unknown-policy throw still propagates), plus two
+  end-to-end correctness tests proving newly-attached / newly-removed policies are visible
+  on the very next read with no stale window. Wired into arc-server: `GrantsModule` now
+  provides the raw TypeORM store under a private token and exposes a `CachingPolicyStore`
+  factory under `POLICY_STORE`. `ARC_POLICY_CACHE_TTL_MS` overrides the 30s default (set to
+  0 to bypass entirely). `CapabilityGuard` is unchanged — it sees the same `MutablePolicyStore`
+  interface, just one with the two DB queries memoized.
 - [x] First real plugin: `@arc/plugin-aws`. New workspace at `plugins/cloud/arc-plugin-aws/`,
   implementing `SecretsPlugin` for dynamic IAM credentials via STS AssumeRole. Lifecycle
   matches Vault's `aws` engine for `assumed_role`: `issue` → AssumeRole returning
