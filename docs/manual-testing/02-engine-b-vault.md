@@ -70,11 +70,15 @@ Need a second account:
 1. New incognito window → `http://localhost:3000` → sign in as `bob@example.com`.
 2. Enroll Bob into a new master password. Bob is now in the system with an identity
    public key.
-3. Back in Alice's window: open the **Share** dialog from the vault menu.
-4. Enter `bob@example.com`. The web fetches Bob's public key via
-   `GET /vault/users/:id/identity-key` and seals the VK to Bob's hybrid (X25519 + ML-KEM)
-   public key.
-5. Alice clicks **Send**. Bob's view auto-refreshes — the shared vault appears in his list.
+3. Back in Alice's window: the **Share** button is in two places — the **Secrets**
+   header (next to *Add login / TOTP / note / secret*) and under **Access**. Either
+   opens the same dialog.
+4. Enter `bob@example.com` (the email Bob signed in with) and click **Look up**. The web
+   fetches Bob's public key via `GET /vault/users/by-email/:email`, resolves to a userId,
+   and seals the VK to Bob's hybrid (X25519 + ML-KEM) public key. The fingerprint is
+   surfaced for out-of-band verification.
+5. Alice picks a role and clicks **Grant access**. Bob's view auto-refreshes — the shared
+   vault appears in his list.
 
 > **PQ-hybrid check.** The seal uses `sealHybrid` (X25519 + ML-KEM-768 + HKDF +
 > XChaCha20-Poly1305) for every new enrollment per ADR-002. The server never sees the VK.

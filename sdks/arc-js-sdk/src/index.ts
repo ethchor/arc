@@ -383,6 +383,17 @@ export class VaultClient {
     return this.http("GET", `/vault/users/${userId}/identity-key`);
   }
 
+  /** Email→identity lookup. Used by the share dialog so users find members by address. */
+  async getUserIdentityKeyByEmail(email: string): Promise<{
+    userId: number;
+    identityPublicKey: string;
+    identityPublicKeyMlkem: string;
+    signingPublicKey: string;
+    fingerprint: string;
+  }> {
+    return this.http("GET", `/vault/users/by-email/${encodeURIComponent(email)}`);
+  }
+
   /** Grant a member access by wrapping the vault's VK to their hybrid identity (ADR-002). */
   async addMember(
     vaultId: string,

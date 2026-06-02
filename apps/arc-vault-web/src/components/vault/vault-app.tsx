@@ -505,6 +505,15 @@ export function VaultApp() {
                       initialFolderId={folderFilter}
                       onSubmit={(v, f) => saveSecret(v, f)}
                     />
+                    {canManage && (
+                      <ShareDialog
+                        onLookup={(email) => getClient().getUserIdentityKeyByEmail(email)}
+                        onShare={async (userId, role, pub) => {
+                          await getClient().addMember(selected, userId, role, pub);
+                          toast.success("Access granted");
+                        }}
+                      />
+                    )}
                   </>
                 )}
               </div>
@@ -723,7 +732,7 @@ export function VaultApp() {
                 <>
                   {canManage && (
                     <ShareDialog
-                      onLookup={(userId) => getClient().getUserIdentityKey(userId)}
+                      onLookup={(email) => getClient().getUserIdentityKeyByEmail(email)}
                       onShare={async (userId, role, pub) => {
                         await getClient().addMember(selected, userId, role, pub);
                         toast.success("Access granted");

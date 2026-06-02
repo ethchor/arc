@@ -180,6 +180,11 @@ export class VaultController {
     return this.vault.getUserIdentityKey(id);
   }
 
+  @Get("vault/users/by-email/:email")
+  identityKeyByEmail(@CurrentUser() _u: CurrentUserData, @Param("email") email: string) {
+    return this.vault.getUserIdentityKeyByEmail(email);
+  }
+
   @Post("vault/devices")
   registerDevice(@CurrentUser() u: CurrentUserData, @Body() dto: RegisterDeviceDto) {
     return this.vault.registerDevice(u.userId, dto);

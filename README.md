@@ -1,5 +1,15 @@
 # arc
 
+[![CI](https://github.com/ethchor/arc-vault/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/ethchor/arc-vault/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](#prerequisites)
+[![pnpm](https://img.shields.io/badge/pnpm-10.x-f69220)](https://pnpm.io)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
+[![Tests](https://img.shields.io/badge/tests-300%20passing-2ea043)](docs/manual-testing/)
+[![Engine A](https://img.shields.io/badge/Engine%20A-OpenBao%20(MPL%202.0)-5b21b6)](https://github.com/openbao/openbao)
+[![Engine B](https://img.shields.io/badge/Engine%20B-zero%20knowledge-7c2d12)](docs/04-envelopes-and-aad.md)
+[![ADR-002](https://img.shields.io/badge/grants-PQ%20hybrid%20(X25519%20%2B%20ML--KEM--768)-1f6feb)](docs/arc-rfcs/)
+[![License](https://img.shields.io/badge/license-TBD-lightgrey)](#license)
+
 **One platform for OpenBao-grade infrastructure secrets + Bitwarden-class end-to-end vault, unified
 under one identity, one policy model, one audit trail, one UI.**
 
@@ -130,6 +140,22 @@ arc/
 - **License boundary.** OpenBao (MPL 2.0) only for Engine-A. No HashiCorp Vault (BSL 1.1)
   source is copied, ported, or read for translation. The licensing rules live in
   [`docs/CLAUDE.md`](docs/CLAUDE.md) and [`integrations/arc-openbao-adapter/CLAUDE.md`](integrations/arc-openbao-adapter/CLAUDE.md).
+
+## Contributor workflow — never push red
+
+CI runs `pnpm build && pnpm typecheck && pnpm test`. A local **pre-push git hook**
+runs the exact same chain so it's impossible to push code that would break CI.
+
+```bash
+# Installed automatically on `pnpm install` (postinstall). Re-run manually if needed:
+pnpm hooks:install
+
+# What CI runs, mirrored locally — same steps, same arguments:
+pnpm ci          # → build → typecheck → test
+```
+
+`git push` invokes the hook automatically. To bypass in an emergency:
+`git push --no-verify` (and own the consequence — the CI badge above will go red).
 
 ## Manual testing
 

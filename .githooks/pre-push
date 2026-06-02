@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Pre-push hook: refuse to push if typecheck or tests would fail on CI.
+#
+# This catches the "I'll just push, CI will tell me" anti-pattern that produced
+# https://github.com/ethchor/arc-vault/actions/runs/26820725006 (a 1s-skew flaky
+# assertion that broke the develop build).
+#
+# Install: `pnpm run hooks:install` (configures git to use .githooks/).
+# Bypass:  `git push --no-verify` (only for emergencies — and own the consequence).
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# Skip for branch deletions (no commits being pushed).
+read_line="$(cat || true)"
+if [ -z "$read_line" ]; then
+  exit 0
+fi
+
+echo "▶ pre-push: running typecheck + tests on the working tree"
+echo "  (bypass with 'git push --no-verify' if you know what you're doing)"
+echo
+
+# Mirror the CI job order — same steps, same arguments. If this script passes,
+# CI passes (modulo network/secrets-dependent jobs we don't simulate locally).
+pnpm install --frozen-lockfile --prefer-offline >/dev/null
+pnpm build
+pnpm typecheck
+pnpm test
+
+echo
+echo "✓ pre-push: all green, pushing"

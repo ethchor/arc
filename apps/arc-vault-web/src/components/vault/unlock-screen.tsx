@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LogIn, ShieldCheck } from "lucide-react";
+import { Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -65,7 +65,15 @@ export function UnlockScreen({ phase, busy, onSignIn, onUnlock, onEnroll, onNewD
             </CardContent>
             <CardFooter>
               <Button className="w-full" disabled={busy || !email} onClick={() => onSignIn(baseUrl, email)}>
-                <LogIn className="h-4 w-4" /> Continue
+                {busy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Signing in…
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="h-4 w-4" /> Continue
+                  </>
+                )}
               </Button>
             </CardFooter>
           </>
@@ -87,7 +95,13 @@ export function UnlockScreen({ phase, busy, onSignIn, onUnlock, onEnroll, onNewD
             </CardContent>
             <CardFooter className="flex-col gap-2">
               <Button className="w-full" disabled={busy || !password} onClick={() => onUnlock(password)}>
-                Unlock
+                {busy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Unlocking…
+                  </>
+                ) : (
+                  "Unlock"
+                )}
               </Button>
               <Button
                 variant="ghost"
@@ -95,7 +109,13 @@ export function UnlockScreen({ phase, busy, onSignIn, onUnlock, onEnroll, onNewD
                 disabled={busy || !password}
                 onClick={() => onEnroll(password)}
               >
-                Create a new vault
+                {busy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Creating vault…
+                  </>
+                ) : (
+                  "Create a new vault"
+                )}
               </Button>
               {onNewDevice && (
                 <Button variant="ghost" className="w-full" disabled={busy} onClick={onNewDevice}>

@@ -10,7 +10,10 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint"
+    "lint": "turbo run lint",
+    "ci": "pnpm build && pnpm typecheck && pnpm test",
+    "hooks:install": "bash scripts/install-git-hooks.sh",
+    "postinstall": "bash scripts/install-git-hooks.sh || true"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

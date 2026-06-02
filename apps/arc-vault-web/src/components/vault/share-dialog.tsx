@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ShieldCheck, UserPlus } from "lucide-react";
+import { Loader2, ShieldCheck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,16 +20,28 @@ const ROLES = ["viewer", "editor", "admin"] as const;
 type Role = (typeof ROLES)[number];
 
 export interface IdentityLookup {
+  /** Resolved arc user id — set by the email lookup, used in the grant call. */
+  userId: number;
   identityPublicKey: string;
   identityPublicKeyMlkem: string;
   fingerprint: string;
 }
 
+/**
+ * Share-vault dialog. Member lookup is by email (the address the member signed in with);
+ * the dialog calls onLookup which hits `/vault/users/by-email/<email>` server-side and
+ * returns the resolved {userId, identity public keys, fingerprint}. The owner verifies
+ * the fingerprint out of band, picks a role, and grants — the VK gets sealed to the
+ * member's hybrid identity key in the owner's browser (server only relays ciphertext).
+ *
+ * Previously this asked for a raw integer "Member user ID" which was a UX dead-end —
+ * arc never surfaces that id anywhere in the UI. Email is what the user knows.
+ */
 export function ShareDialog({
   onLookup,
   onShare,
 }: {
-  onLookup: (userId: number) => Promise<IdentityLookup>;
+  onLookup: (email: string) => Promise<IdentityLookup>;
   onShare: (
     userId: number,
     role: Role,
@@ -37,21 +49,31 @@ export function ShareDialog({
   ) => Promise<void>;
 }) {
   const [open, setOpen] = React.useState(false);
-  const [userId, setUserId] = React.useState("");
+  const [email, setEmail] = React.useState("");
   const [role, setRole] = React.useState<Role>("viewer");
   const [found, setFound] = React.useState<IdentityLookup | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   const reset = () => {
-    setUserId("");
+    setEmail("");
     setRole("viewer");
     setFound(null);
+    setError(null);
   };
 
   const lookup = async () => {
     setBusy(true);
+    setError(null);
     try {
-      setFound(await onLookup(Number(userId)));
+      setFound(await onLookup(email.trim()));
+    } catch (err) {
+      setFound(null);
+      setError(
+        (err as Error)?.message?.includes("404")
+          ? "No user with that email — they need to sign in once before being added."
+          : ((err as Error)?.message ?? "Lookup failed"),
+      );
     } finally {
       setBusy(false);
     }
@@ -61,7 +83,7 @@ export function ShareDialog({
     if (!found) return;
     setBusy(true);
     try {
-      await onShare(Number(userId), role, {
+      await onShare(found.userId, role, {
         identityPubB64: found.identityPublicKey,
         identityPubMlkemB64: found.identityPublicKeyMlkem,
       });
@@ -96,22 +118,43 @@ export function ShareDialog({
 
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label htmlFor="memberId">Member user ID</Label>
+            <Label htmlFor="memberEmail">Member email</Label>
             <div className="flex gap-2">
               <Input
-                id="memberId"
-                inputMode="numeric"
-                value={userId}
+                id="memberEmail"
+                type="email"
+                placeholder="alice@example.com"
+                value={email}
                 onChange={(e) => {
-                  setUserId(e.target.value);
+                  setEmail(e.target.value);
                   setFound(null);
+                  setError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && email.trim() && !busy) lookup();
                 }}
               />
-              <Button variant="outline" onClick={lookup} disabled={busy || !userId}>
-                Look up
+              <Button variant="outline" onClick={lookup} disabled={busy || !email.trim()}>
+                {busy && !found ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Looking…
+                  </>
+                ) : (
+                  "Look up"
+                )}
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              The member must have signed in at least once so their identity public key is
+              published.
+            </p>
           </div>
+
+          {error && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
 
           {found && (
             <div className="rounded-md border bg-muted/40 p-3 text-sm">
@@ -119,6 +162,7 @@ export function ShareDialog({
                 <ShieldCheck className="h-4 w-4 text-primary" /> Verify this fingerprint out of band
               </div>
               <code className="break-all text-xs text-muted-foreground">{found.fingerprint}</code>
+              <div className="mt-2 text-xs text-muted-foreground">User #{found.userId}</div>
             </div>
           )}
 
@@ -142,7 +186,13 @@ export function ShareDialog({
 
         <DialogFooter>
           <Button onClick={share} disabled={busy || !found}>
-            Grant access
+            {busy && found ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Granting…
+              </>
+            ) : (
+              "Grant access"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

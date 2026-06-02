@@ -78,7 +78,11 @@ describe("EnginesService — database/creds + sys/leases lifecycle", () => {
     const res = await service.get("database/creds/app", {});
     expect(res.data).toEqual({ username: "v-app", password: "secret" });
     expect(typeof res.lease_id).toBe("string");
-    expect(res.lease_duration).toBe(60);
+    // lease_duration is derived from (expiresAt - now) so floor() can shave 1s on a
+    // slow CI runner. Assert the range, not an exact value (the deterministic check on
+    // the underlying LeaseManager TTL lives in @arc/leasing's own tests).
+    expect(res.lease_duration).toBeGreaterThanOrEqual(59);
+    expect(res.lease_duration).toBeLessThanOrEqual(60);
     expect(res.renewable).toBe(true);
   });
 
@@ -89,7 +93,9 @@ describe("EnginesService — database/creds + sys/leases lifecycle", () => {
 
     const renewed = await service.renewLease(leaseId, 120);
     expect(renewed.lease_id).toBe(leaseId);
-    expect(renewed.lease_duration).toBe(120);
+    // Same range tolerance as the issue assertion — floor() can shave 1s.
+    expect(renewed.lease_duration).toBeGreaterThanOrEqual(119);
+    expect(renewed.lease_duration).toBeLessThanOrEqual(120);
     expect(renewed.renewable).toBe(true);
   });
 

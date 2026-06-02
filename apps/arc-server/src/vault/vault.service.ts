@@ -11,6 +11,7 @@ import { DataSource, MoreThan, Repository } from "typeorm";
 import { ctEqual, fingerprint, fromB64u, randomBytes, serverHashAuth, toB64u } from "@arc/crypto";
 import {
   type MemberRole,
+  UserEntity,
   VaultAuditLogEntity,
   VaultDeviceEntity,
   VaultEntity,
@@ -47,6 +48,7 @@ export class VaultService {
   private readonly attempts = new Map<number, AttemptState>();
 
   constructor(
+    @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
     @InjectRepository(VaultUserKeysEntity) private readonly userKeys: Repository<VaultUserKeysEntity>,
     @InjectRepository(VaultEntity) private readonly vaults: Repository<VaultEntity>,
     @InjectRepository(VaultMembershipEntity) private readonly memberships: Repository<VaultMembershipEntity>,
@@ -58,6 +60,13 @@ export class VaultService {
     @InjectRepository(VaultFolderEntity) private readonly folders: Repository<VaultFolderEntity>,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
+
+  /** Email→identity lookup used by the share dialog to find a member by their address. */
+  async getUserIdentityKeyByEmail(email: string) {
+    const user = await this.users.findOne({ where: { email } });
+    if (!user) throw new NotFoundException("user not found");
+    return this.getUserIdentityKey(user.id);
+  }
 
   // --- folders ---
 
