@@ -173,6 +173,15 @@ export function VaultApp() {
       toast.success("Vault unlocked");
     });
 
+  const unlockWithPasskey = () =>
+    guard(async () => {
+      const { browserPasskeyAuthenticator } = await import("@arc/sdk");
+      await getClient().unlockWithPasskey(browserPasskeyAuthenticator());
+      await loadVaults();
+      setPhase("unlocked");
+      toast.success("Vault unlocked with passkey");
+    });
+
   const enroll = (password: string) =>
     guard(async () => {
       const result = await getClient().enroll(password);
@@ -377,6 +386,7 @@ export function VaultApp() {
           onUnlock={unlock}
           onEnroll={enroll}
           onNewDevice={startNewDevice}
+          onPasskeyUnlock={unlockWithPasskey}
         />
       </div>
     );
@@ -424,7 +434,11 @@ export function VaultApp() {
                 }}
               />
             )}
-            <SettingsDialog autolock={autolock} onAutolock={setAutolockPersist} />
+            <SettingsDialog
+              autolock={autolock}
+              onAutolock={setAutolockPersist}
+              client={getClient()}
+            />
           </>
         }
       >

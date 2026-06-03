@@ -162,8 +162,18 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   `pqSeal` too (closes the device-grant HNDL footnote in ADR-002 — possibly ADR-003).
 - [ ] Browser extension: real autofill flow against the live origin-bound capability
   model in `docs/12`. Today is a scaffold of the messaging layer only.
-- [~] Passkey unlock — **server + SDK + cross-client e2e shipped; web UI is the
-  follow-up.** Per-user-stable `prfSalt` persisted so register + unlock derive the same
+- [x] Passkey unlock — **server + SDK + web UI all shipped.** Web UI: new
+  `PasskeysSection` component embedded in the Settings dialog (list with createdAt + label,
+  remove button per entry, register button with optional label field) + a "Use a passkey"
+  button on the unlock screen (shown alongside Unlock / Create vault). Both call into the
+  `browserPasskeyAuthenticator()` factory in `@arc/sdk`. Error messages are friendlier:
+  PRF-not-supported → "Try Chrome 116+ or Safari 17+", cancellation → "You cancelled the
+  OS prompt", origin-blocked → "check the page is on https or localhost". Auto-locked
+  passkey list shows "No passkeys registered yet" on empty state. The web's `vault-app.tsx`
+  now passes the `VaultClient` instance through SettingsDialog so the passkey section can
+  render only when unlocked (server-side reads require the JWT, listPasskeys is gated
+  through arc-server's auth). Web typecheck clean.
+- [~] Original passkey work (preserved for diff reference) — Per-user-stable `prfSalt` persisted so register + unlock derive the same
   wrap key. `@arc/crypto` adds wrap/unwrap pairs for ML-KEM identity priv *and* signing
   priv under distinct AAD labels — so passkey unlock unwraps all three privs and produces
   a full read+write session, not read-only. `@arc/sdk` ships `registerPasskey` /
