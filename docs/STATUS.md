@@ -203,10 +203,26 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   manual-rotate path works today; needs UX + audit hooks).
 
 ### Phase 3 — Engine A + plugin host
-- [ ] Group / role attachments. Today policies attach to a subject string (user id). Vault-style
-  group membership (attach a policy to a group, add users to groups) is the next expansion —
-  `@arc/identity` territory; the `PolicyStore.getPoliciesForSubject` would union direct + group
-  policies.
+- [x] Group / role attachments shipped. `MutablePolicyStore` contract extended with
+  `addToGroup` / `removeFromGroup` / `attachToGroup` / `detachFromGroup` /
+  `listGroupsForSubject` / `listSubjectsInGroup` / `listGroupPolicies`.
+  `getPoliciesForSubject` now returns the **union** of direct attachments + every policy
+  reached via an attached group (deduped, stale-tolerant). `InMemoryPolicyStore`
+  + `CachingPolicyStore` + the new `TypeOrmPolicyStore` all implement it. Cache invalidation:
+  `addToGroup`/`removeFromGroup(subject, _)` drop just the subject's entry; `attachToGroup`/
+  `detachFromGroup` flush the whole cache (we don't track a reverse group→members index
+  here — admin-time + low frequency, fine). New entities `policy_group_memberships` +
+  `policy_group_attachments`, migration `1717500000000-grants-groups-schema`. New
+  `GroupsController` at `/v1/sys/groups/`: GET `:group` (describe), POST `:group/members`
+  + `members/remove`, POST `:group/policies` + DELETE `:group/policies/:policyName`,
+  same `JwtAuthGuard + CapabilityGuard` as the rest of the ACL surface (so groups protect
+  themselves the same way policies do). 15 new unit tests in `@arc/grants` (49 total, was
+  34) covering idempotent add/remove, union resolution, direct+group dedup, group-remove
+  drops inherited access, cache invalidation. 7 new server e2e tests
+  (`grants-groups.e2e-spec.ts`) exercising the full Postgres-backed loop through the HTTP
+  surface: implicit-group describe, transit-via-group access, member-remove revokes,
+  policy-detach revokes for every member, unknown-policy 404, non-root denied, direct+group
+  union preserved when the group link is removed. Workspace total: 322 tests passing.
 - [x] Persisted policy store. New `MutablePolicyStore` contract in `@arc/grants` (read +
   upsert/remove/attach/detach/list; sync-or-async so both stores satisfy it; `InMemoryPolicyStore`
   now declares it). `TypeOrmPolicyStore` in `apps/arc-server/src/grants/` implements it against

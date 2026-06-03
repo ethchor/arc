@@ -1,9 +1,15 @@
 import { Global, Logger, Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { CachingPolicyStore, type DefaultMode, type MutablePolicyStore } from "@arc/grants";
-import { PolicyAttachmentEntity, PolicyEntity } from "../database/entities";
+import {
+  PolicyAttachmentEntity,
+  PolicyEntity,
+  PolicyGroupAttachmentEntity,
+  PolicyGroupMembershipEntity,
+} from "../database/entities";
 import { CapabilityGuard } from "./capability.guard";
 import { GrantsController } from "./grants.controller";
+import { GroupsController } from "./groups.controller";
 import { GRANTS_DEFAULT_MODE, GrantsService, POLICY_STORE } from "./grants.service";
 import { TypeOrmPolicyStore } from "./typeorm-policy-store";
 
@@ -60,8 +66,15 @@ export function buildCacheTtlMs(): number {
  */
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([PolicyEntity, PolicyAttachmentEntity])],
-  controllers: [GrantsController],
+  imports: [
+    TypeOrmModule.forFeature([
+      PolicyEntity,
+      PolicyAttachmentEntity,
+      PolicyGroupMembershipEntity,
+      PolicyGroupAttachmentEntity,
+    ]),
+  ],
+  controllers: [GrantsController, GroupsController],
   providers: [
     { provide: GRANTS_DEFAULT_MODE, useFactory: buildDefaultMode },
     { provide: TYPEORM_POLICY_STORE, useClass: TypeOrmPolicyStore },

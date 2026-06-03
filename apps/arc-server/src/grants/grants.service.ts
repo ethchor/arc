@@ -82,6 +82,36 @@ export class GrantsService implements OnModuleInit {
     return this.store.listPolicies();
   }
 
+  // -- groups (delegate to the store; the cache layer handles invalidation) --
+
+  async addToGroup(subject: string, groupName: string): Promise<void> {
+    await this.store.addToGroup(subject, groupName);
+  }
+
+  async removeFromGroup(subject: string, groupName: string): Promise<boolean> {
+    return this.store.removeFromGroup(subject, groupName);
+  }
+
+  async attachToGroup(groupName: string, policyName: string): Promise<void> {
+    await this.store.attachToGroup(groupName, policyName);
+  }
+
+  async detachFromGroup(groupName: string, policyName: string): Promise<boolean> {
+    return this.store.detachFromGroup(groupName, policyName);
+  }
+
+  async listGroupsForSubject(subject: string): Promise<string[]> {
+    return this.store.listGroupsForSubject(subject);
+  }
+
+  async listSubjectsInGroup(groupName: string): Promise<string[]> {
+    return this.store.listSubjectsInGroup(groupName);
+  }
+
+  async listGroupPolicies(groupName: string): Promise<string[]> {
+    return this.store.listGroupPolicies(groupName);
+  }
+
   decide(subject: string, path: string, capability: Capability): Promise<DetailedDecision> {
     return Promise.resolve(this.engine.decideDetailed(subject, path, capability));
   }

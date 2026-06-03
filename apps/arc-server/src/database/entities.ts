@@ -476,6 +476,51 @@ export class PolicyAttachmentEntity {
   createdAt!: Date;
 }
 
+/**
+ * Subject ↔ group membership. Group names are opaque strings (no separate "groups"
+ * table) — a group with no members and no policies attached doesn't exist. Indexed by
+ * both columns so `listGroupsForSubject` and `listSubjectsInGroup` are both fast.
+ */
+@Entity("policy_group_memberships")
+@Unique(["subject", "groupName"])
+export class PolicyGroupMembershipEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "text" })
+  subject!: string;
+
+  @Index()
+  @Column({ type: "text" })
+  groupName!: string;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+}
+
+/**
+ * Group ↔ policy attachments. Same shape as {@link PolicyAttachmentEntity} but keyed by
+ * group name instead of subject. No FK to `policies` for the same reason — a removed
+ * policy with a lingering link is silently filtered on read.
+ */
+@Entity("policy_group_attachments")
+@Unique(["groupName", "policyName"])
+export class PolicyGroupAttachmentEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "text" })
+  groupName!: string;
+
+  @Column({ type: "text" })
+  policyName!: string;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+}
+
 export const entities = [
   UserEntity,
   VaultUserKeysEntity,
@@ -490,4 +535,6 @@ export const entities = [
   VaultUserPasskeyEntity,
   PolicyEntity,
   PolicyAttachmentEntity,
+  PolicyGroupMembershipEntity,
+  PolicyGroupAttachmentEntity,
 ];

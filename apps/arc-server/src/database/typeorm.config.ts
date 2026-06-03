@@ -18,6 +18,7 @@ import { entities } from "./entities";
 import { InitSchema1717200000000 } from "../migrations/1717200000000-init-schema";
 import { GrantsSchema1717300000000 } from "../migrations/1717300000000-grants-schema";
 import { PasskeySchema1717400000000 } from "../migrations/1717400000000-passkey-schema";
+import { GrantsGroupsSchema1717500000000 } from "../migrations/1717500000000-grants-groups-schema";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -32,5 +33,6 @@ export default new DataSource({
     InitSchema1717200000000,
     GrantsSchema1717300000000,
     PasskeySchema1717400000000,
+    GrantsGroupsSchema1717500000000,
   ],
 });
