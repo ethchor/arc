@@ -27,8 +27,8 @@ authenticators, the live OpenBao backend, and the cross-engine UX.
 
 ```bash
 # clone + install + build
-git clone https://github.com/your-org/arc-vault.git
-cd arc-vault
+git clone https://github.com/ethchor/arc.git
+cd arc
 pnpm install
 pnpm -r build
 

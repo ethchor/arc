@@ -6,8 +6,8 @@ End state of this section: `arc-server` running on `:3001`, the web UI on `:3000
 ## 1. Install + build
 
 ```bash
-git clone https://github.com/your-org/arc-vault.git
-cd arc-vault
+git clone https://github.com/ethchor/arc.git
+cd arc
 pnpm install
 pnpm -r build         # turbo handles the dep graph; ~30s clean, ~5s incremental
 ```

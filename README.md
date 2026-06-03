@@ -1,6 +1,6 @@
 # arc
 
-[![CI](https://github.com/ethchor/arc-vault/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/ethchor/arc-vault/actions/workflows/ci.yml)
+[![CI](https://github.com/ethchor/arc/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/ethchor/arc/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](#prerequisites)
 [![pnpm](https://img.shields.io/badge/pnpm-10.x-f69220)](https://pnpm.io)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
