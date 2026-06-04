@@ -177,8 +177,25 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   installed (Linux) — documented in the shell's README.
 - [ ] Desktop: switch the device identity to the hybrid keypair so device grants can use
   `pqSeal` too (closes the device-grant HNDL footnote in ADR-002 — possibly ADR-003).
-- [ ] Browser extension: real autofill flow against the live origin-bound capability
-  model in `docs/12`. Today is a scaffold of the messaging layer only.
+- [x] Browser extension autofill is real now (was just messaging scaffold). Three
+  upgrades land here. **(1) Background auto-lock TTL** — the worker exposes
+  `arc:setAutolock` (30–3600s, default 300s) + `arc:status` (`{unlocked, lockInSeconds}`),
+  persists the TTL in `chrome.storage.session`, and every fill/list/get touches an idle
+  timer that wipes `client` + `logins` + the activity timestamp when it expires. Every
+  message handler now gates on `isUnlocked()` so requests after the worker is killed by
+  MV3 lifecycle (or its idle TTL) get clean `{unlocked: false}` / empty responses
+  instead of a stale-state crash. **(2) Inline suggestion overlay** — content script
+  listens for `focusin` on password inputs, asks the worker for an origin-matched
+  credential, and on a match renders a small floating "Use arc" button anchored above
+  the field. Single click fills username + password via the existing field-detection
+  heuristic. Anti-spam: shown at most once per page load; dismissed by clicking
+  anywhere else. HTTPS-only — `location.protocol !== "https:"` short-circuits before any
+  worker round-trip. All affordances stay user-initiated (no auto-fill on focus).
+  **(3) Tests** — 10 new vitest cases covering the auto-lock state machine (unlocked →
+  TTL elapses → locked; status returns `lockInSeconds: null` when locked; explicit
+  `lockNow()` drops state) + the overlay logic (shown only on origin-match + HTTPS,
+  filtered to password inputs, suppressed on second focus, click fills both fields and
+  removes the overlay). 16 total in the extension (was 6).
 - [x] Passkey unlock — **server + SDK + web UI all shipped.** Web UI: new
   `PasskeysSection` component embedded in the Settings dialog (list with createdAt + label,
   remove button per entry, register button with optional label field) + a "Use a passkey"

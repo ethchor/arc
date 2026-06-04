@@ -24,6 +24,9 @@ importers:
       '@types/chrome':
         specifier: '*'
         version: 0.1.42
+      happy-dom:
+        specifier: ^16.0.0
+        version: 16.8.1
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
@@ -32,7 +35,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   apps/arc-cli:
     dependencies:
@@ -300,7 +303,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   packages/arc-crypto:
     dependencies:
@@ -328,7 +331,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   packages/arc-grants:
     devDependencies:
@@ -340,7 +343,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   packages/arc-leasing:
     devDependencies:
@@ -352,7 +355,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   packages/arc-plugin-sdk:
     devDependencies:
@@ -364,7 +367,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   packages/arc-secrets-engine:
     dependencies:
@@ -380,7 +383,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   packages/arc-types:
     devDependencies:
@@ -392,7 +395,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   plugins/cloud/arc-plugin-aws:
     dependencies:
@@ -414,7 +417,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   plugins/cloud/arc-plugin-azure:
     dependencies:
@@ -433,7 +436,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   plugins/cloud/arc-plugin-gcp:
     dependencies:
@@ -455,7 +458,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   plugins/scm/arc-plugin-bitbucket:
     dependencies:
@@ -474,7 +477,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   plugins/scm/arc-plugin-github:
     dependencies:
@@ -496,7 +499,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   plugins/scm/arc-plugin-gitlab:
     dependencies:
@@ -515,7 +518,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
   sdks/arc-js-sdk:
     dependencies:
@@ -531,7 +534,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
 packages:
 
@@ -2853,6 +2856,10 @@ packages:
     engines: {node: '>=0.4.7'}
     hasBin: true
 
+  happy-dom@16.8.1:
+    resolution: {integrity: sha512-n0QrmT9lD81rbpKsyhnlz3DgnMZlaOkJPpgi746doA+HvaMC79bdWkwjrNnGJRvDrWTI8iOcJiVTJ5CdT/AZRw==}
+    engines: {node: '>=18.0.0'}
+
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
@@ -4406,6 +4413,14 @@ packages:
 
   webidl-conversions@3.0.1:
     resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
+
+  webidl-conversions@7.0.0:
+    resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
+    engines: {node: '>=12'}
+
+  whatwg-mimetype@3.0.0:
+    resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+    engines: {node: '>=12'}
 
   whatwg-url@5.0.0:
     resolution: {integrity: sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==}
@@ -6902,6 +6917,11 @@ snapshots:
     optionalDependencies:
       uglify-js: 3.19.3
 
+  happy-dom@16.8.1:
+    dependencies:
+      webidl-conversions: 7.0.0
+      whatwg-mimetype: 3.0.0
+
   has-flag@4.0.0: {}
 
   has-property-descriptors@1.0.2:
@@ -8524,7 +8544,7 @@ snapshots:
       '@types/node': 22.19.19
       fsevents: 2.3.3
 
-  vitest@2.1.9(@types/node@22.19.19):
+  vitest@2.1.9(@types/node@22.19.19)(happy-dom@16.8.1):
     dependencies:
       '@vitest/expect': 2.1.9
       '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@22.19.19))
@@ -8548,6 +8568,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.19.19
+      happy-dom: 16.8.1
     transitivePeerDependencies:
       - less
       - lightningcss
@@ -8564,6 +8585,10 @@ snapshots:
       makeerror: 1.0.12
 
   webidl-conversions@3.0.1: {}
+
+  webidl-conversions@7.0.0: {}
+
+  whatwg-mimetype@3.0.0: {}
 
   whatwg-url@5.0.0:
     dependencies:
