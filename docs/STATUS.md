@@ -155,9 +155,26 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 2 — multi-device + shared vaults
 
-- [ ] Desktop (Tauri shell) — wire `crates/desktop-core` into `apps/arc-vault-desktop`'s
-  `src-tauri/src/main.rs` so the device actually runs. Crate is already tested in
-  isolation.
+- [x] Desktop (Tauri shell) wired up. `apps/arc-vault-desktop/src-tauri/src/lib.rs` now
+  exposes 13 `#[tauri::command]`s: session (`vault_set_autolock` / `_lock` / `_is_locked`
+  / `_touch`), device + grants (`vault_device_keypair`, `vault_load_grant`,
+  `vault_wrap_vek_for_device`), narrow item ops (`vault_encrypt_item` /
+  `vault_decrypt_item` — VEK never crosses to the WebView), and the local cipher cache
+  (`cache_open` / `_upsert` / `_get` / `_list`). A background watcher thread polls
+  `Session::is_locked()` every second and emits `arc://vault-locked` on the
+  unlocked → locked transition so the WebView can drop keys + redirect without polling
+  Rust on every keystroke. `OsKeyStore` (Secret Service / macOS Keychain / Windows
+  Credential Manager) stores the device X25519 private key; the keychain feature is on
+  by default in the shell. `tauri.conf.json` points `frontendDist` at
+  `../../arc-vault-web/out` (`pnpm --filter @arc/vault-web build:desktop`); `devUrl`
+  pre-runs `pnpm --filter @arc/vault-web dev`. Frontend bindings live in
+  `apps/arc-vault-web/src/lib/tauri.ts` — typed wrappers around `invoke`/`listen`, plus
+  an `isDesktop()` detector (`window.__TAURI_INTERNALS__`) so plain `next dev` falls
+  back to the in-browser crypto path. The web's auto-lock effect now mirrors the
+  autolock setting into the Rust session and subscribes to `onLocked` so the OS-level
+  idle TTL drives the same UX as the browser-side input listeners. `crates/desktop-core`
+  tests (5) still pass locally; the Tauri shell itself only builds with GTK system libs
+  installed (Linux) — documented in the shell's README.
 - [ ] Desktop: switch the device identity to the hybrid keypair so device grants can use
   `pqSeal` too (closes the device-grant HNDL footnote in ADR-002 — possibly ADR-003).
 - [ ] Browser extension: real autofill flow against the live origin-bound capability

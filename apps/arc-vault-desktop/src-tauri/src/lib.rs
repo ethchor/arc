@@ -5,20 +5,31 @@
 //! field it asked for. These are core invoke handlers — no broad fs/shell capability is
 //! granted (see capabilities/default.json).
 
-use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use arc_vault_crypto::{x25519_keypair, x25519_public_from_secret, EncryptedItem, Envelope};
-use arc_vault_desktop_core::{open_vek_from_device, DeviceKeyStore, OsKeyStore, Session};
-use tauri::State;
+use arc_vault_desktop_core::{
+    open_vek_from_device, CachedItem, CipherCache, DeviceKeyStore, OsKeyStore, Session,
+};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const KEYCHAIN_SERVICE: &str = "app.arcvault.desktop";
 const DEVICE_KEY_ACCOUNT: &str = "device-x25519";
 const DEFAULT_AUTOLOCK_SECS: u64 = 300;
+/// How often the background tick runs the lock check. 1s keeps the "vault-locked" event
+/// snappy without blowing the budget; the underlying check is just a timestamp compare.
+const LOCK_TICK: Duration = Duration::from_secs(1);
+/// Event name the shell emits when the session transitions from unlocked → locked.
+const EVT_LOCKED: &str = "arc://vault-locked";
 
-struct AppState {
-    session: Mutex<Session>,
-    keystore: Box<dyn DeviceKeyStore>,
+pub struct AppState {
+    session: Arc<Mutex<Session>>,
+    keystore: Box<dyn DeviceKeyStore + Send + Sync>,
+    /// Lazily opened on first cache_* command (web app picks the path).
+    cache: Mutex<Option<CipherCache>>,
 }
 
 fn now() -> u64 {
@@ -130,13 +141,133 @@ fn vault_wrap_vek_for_device(
         .map_err(|e| format!("{e:?}"))
 }
 
+// --- CipherCache commands (docs/12 §12.2) -------------------------------------------------
+//
+// The cache stores server-supplied ciphertext envelopes ONLY — never plaintext. Even with
+// plain rusqlite this preserves zero-knowledge at rest; production builds swap to
+// `bundled-sqlcipher` for file-level encryption (file encryption key wrapped under the
+// keychain device key). Commands are gated on the cache being opened first via
+// `cache_open` so multiple windows can share the same file path.
+
+#[derive(Deserialize, Serialize)]
+pub struct CachedItemDto {
+    pub item_id: String,
+    pub ciphertext: Envelope,
+    pub wrapped_item_key: Envelope,
+    pub version: i64,
+    pub key_version: i64,
+    pub seq: i64,
+}
+
+impl From<CachedItem> for CachedItemDto {
+    fn from(c: CachedItem) -> Self {
+        Self {
+            item_id: c.item_id,
+            ciphertext: c.ciphertext,
+            wrapped_item_key: c.wrapped_item_key,
+            version: c.version,
+            key_version: c.key_version,
+            seq: c.seq,
+        }
+    }
+}
+
+impl From<CachedItemDto> for CachedItem {
+    fn from(d: CachedItemDto) -> Self {
+        Self {
+            item_id: d.item_id,
+            ciphertext: d.ciphertext,
+            wrapped_item_key: d.wrapped_item_key,
+            version: d.version,
+            key_version: d.key_version,
+            seq: d.seq,
+        }
+    }
+}
+
+/// Open (or reopen) the local ciphertext cache file. Pass `":memory:"` for a transient
+/// cache, useful for tests + first-run "what does the offline mode look like" demos.
+#[tauri::command]
+fn cache_open(path: String, state: State<AppState>) -> Result<(), String> {
+    let cache = if path == ":memory:" {
+        CipherCache::open_in_memory()
+    } else {
+        CipherCache::open(&path)
+    }
+    .map_err(|e| format!("{e}"))?;
+    *state.cache.lock().unwrap() = Some(cache);
+    Ok(())
+}
+
+#[tauri::command]
+fn cache_upsert(vault_id: String, item: CachedItemDto, state: State<AppState>) -> Result<(), String> {
+    with_cache(&state, |c| c.upsert(&vault_id, &item.into()).map_err(|e| format!("{e}")))
+}
+
+#[tauri::command]
+fn cache_get(
+    vault_id: String,
+    item_id: String,
+    state: State<AppState>,
+) -> Result<Option<CachedItemDto>, String> {
+    with_cache(&state, |c| {
+        c.get(&vault_id, &item_id).map(|opt| opt.map(Into::into)).map_err(|e| format!("{e}"))
+    })
+}
+
+#[tauri::command]
+fn cache_list(vault_id: String, state: State<AppState>) -> Result<Vec<CachedItemDto>, String> {
+    with_cache(&state, |c| {
+        c.list(&vault_id)
+            .map(|items| items.into_iter().map(Into::into).collect())
+            .map_err(|e| format!("{e}"))
+    })
+}
+
+fn with_cache<T>(
+    state: &State<AppState>,
+    f: impl FnOnce(&CipherCache) -> Result<T, String>,
+) -> Result<T, String> {
+    let guard = state.cache.lock().unwrap();
+    let cache = guard.as_ref().ok_or_else(|| "cache not opened".to_string())?;
+    f(cache)
+}
+
+// --- Auto-lock background tick ------------------------------------------------------------
+
+/// Spawn a background thread that polls `is_locked()` every {@link LOCK_TICK} and emits
+/// {@link EVT_LOCKED} to the WebView when the session transitions from unlocked → locked.
+/// The web app listens for this event to drop in-memory keys + bounce to the unlock screen
+/// without polling Rust on every input.
+fn spawn_lock_watcher(session: Arc<Mutex<Session>>, app: AppHandle) {
+    thread::spawn(move || {
+        let mut last_locked = session.lock().unwrap().is_locked(now());
+        loop {
+            thread::sleep(LOCK_TICK);
+            let locked = session.lock().unwrap().is_locked(now());
+            if locked && !last_locked {
+                // Best-effort emit — if no window is open yet the event is dropped, which
+                // is fine because the WebView re-syncs state when it loads.
+                let _ = app.emit(EVT_LOCKED, ());
+            }
+            last_locked = locked;
+        }
+    });
+}
+
 pub fn run() {
+    let session = Arc::new(Mutex::new(Session::new(DEFAULT_AUTOLOCK_SECS, now())));
     let state = AppState {
-        session: Mutex::new(Session::new(DEFAULT_AUTOLOCK_SECS, now())),
+        session: session.clone(),
         keystore: Box::new(OsKeyStore::new(KEYCHAIN_SERVICE)),
+        cache: Mutex::new(None),
     };
 
     tauri::Builder::default()
+        .setup(move |app| {
+            spawn_lock_watcher(session.clone(), app.handle().clone());
+            Ok(())
+        })
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             vault_set_autolock,
@@ -148,6 +279,10 @@ pub fn run() {
             vault_encrypt_item,
             vault_decrypt_item,
             vault_wrap_vek_for_device,
+            cache_open,
+            cache_upsert,
+            cache_get,
+            cache_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running arc-vault desktop");

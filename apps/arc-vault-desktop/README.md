@@ -17,9 +17,26 @@ grants no broad fs/shell/http permissions.
 
 ## Commands
 
-`vault_device_keypair`, `vault_load_grant`, `vault_encrypt_item`, `vault_decrypt_item`,
-`vault_wrap_vek_for_device`, `vault_lock`, `vault_is_locked`, `vault_touch`,
-`vault_set_autolock`.
+Session: `vault_set_autolock`, `vault_lock`, `vault_is_locked`, `vault_touch`.
+Device + grants: `vault_device_keypair`, `vault_load_grant`, `vault_wrap_vek_for_device`.
+Item ops (VEK never crosses): `vault_encrypt_item`, `vault_decrypt_item`.
+Local cache: `cache_open`, `cache_upsert`, `cache_get`, `cache_list`.
+
+## Events
+
+`arc://vault-locked` — emitted by a background tick when the session transitions from
+unlocked → locked. The web app listens via `apps/arc-vault-web/src/lib/tauri.ts` →
+`onLocked(cb)` and drops in-memory keys + bounces to the unlock screen without polling
+Rust on every input.
+
+## Frontend bindings
+
+Typed wrappers around `invoke` + `listen` live in
+`apps/arc-vault-web/src/lib/tauri.ts`. `isDesktop()` returns true only inside the Tauri
+WebView (via `window.__TAURI_INTERNALS__`); a plain `next dev` build returns false and
+the web client falls back to the in-browser crypto path. The web app's auto-lock effect
+mirrors the autolock setting into the Rust session and subscribes to `onLocked` so the
+OS-level idle TTL drives the same UX as the browser-side input listeners.
 
 ## Building
 
