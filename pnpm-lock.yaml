@@ -152,12 +152,21 @@ importers:
       '@arc/plugin-aws':
         specifier: workspace:*
         version: link:../../plugins/cloud/arc-plugin-aws
+      '@arc/plugin-azure':
+        specifier: workspace:*
+        version: link:../../plugins/cloud/arc-plugin-azure
+      '@arc/plugin-bitbucket':
+        specifier: workspace:*
+        version: link:../../plugins/scm/arc-plugin-bitbucket
       '@arc/plugin-gcp':
         specifier: workspace:*
         version: link:../../plugins/cloud/arc-plugin-gcp
       '@arc/plugin-github':
         specifier: workspace:*
         version: link:../../plugins/scm/arc-plugin-github
+      '@arc/plugin-gitlab':
+        specifier: workspace:*
+        version: link:../../plugins/scm/arc-plugin-gitlab
       '@arc/sdk':
         specifier: workspace:*
         version: link:../../sdks/arc-js-sdk
@@ -404,6 +413,25 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.19)
 
+  plugins/cloud/arc-plugin-azure:
+    dependencies:
+      '@arc/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../packages/arc-plugin-sdk
+      '@arc/types':
+        specifier: workspace:*
+        version: link:../../../packages/arc-types
+    devDependencies:
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)
+
   plugins/cloud/arc-plugin-gcp:
     dependencies:
       '@arc/plugin-sdk':
@@ -415,6 +443,25 @@ importers:
       google-auth-library:
         specifier: ^9.0.0
         version: 9.15.1
+    devDependencies:
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)
+
+  plugins/scm/arc-plugin-bitbucket:
+    dependencies:
+      '@arc/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../packages/arc-plugin-sdk
+      '@arc/types':
+        specifier: workspace:*
+        version: link:../../../packages/arc-types
     devDependencies:
       tsup:
         specifier: ^8.3.5
@@ -438,6 +485,25 @@ importers:
       '@types/node':
         specifier: ^22.10.2
         version: 22.19.19
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)
+
+  plugins/scm/arc-plugin-gitlab:
+    dependencies:
+      '@arc/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../packages/arc-plugin-sdk
+      '@arc/types':
+        specifier: workspace:*
+        version: link:../../../packages/arc-types
+    devDependencies:
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)

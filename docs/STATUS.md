@@ -375,8 +375,34 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   so Jest can `require()` `LeaseError` / `LeaseManager` directly.
 - [ ] `arc-server`: out-of-process plugin host (gRPC / WASM backend). The in-process
   module shipped above; out-of-process transport for sandboxed plugins is the follow-up.
-- [ ] Cloud plugins: `arc-plugin-azure` (AWS + GCP landed below).
-- [ ] SCM plugins: `arc-plugin-gitlab`, `arc-plugin-bitbucket` (GitHub landed below).
+- [x] `arc-plugin-azure` — Azure AD service-principal access tokens via the v2.0
+  client_credentials grant. Mirrors the AWS / GCP / GitHub layout: core plugin + optional
+  `@arc/plugin-azure/node` default client using `fetch` only (no external deps). Form-encoded
+  request body per RFC 6749. Config: `adminToken` (not applicable here — replaced by
+  per-role `clientSecret`) + roles map of `{tenantId, clientId, clientSecret, scope,
+  maxTtlSeconds?}`. `issue` returns `{access_token, tenant_id, client_id, scope}` + AAD's
+  `expires_in` as the lease TTL (clamped to `role.maxTtlSeconds` if set). `renew` throws;
+  `revoke` is a no-op at AAD (no per-token revoke API — application-level via SP secret
+  rotation) + drops local tracking. Sovereign-cloud `loginUrl` override supported. 13
+  unit tests cover configure / issue / renew / revoke + the TTL clamp + sovereign-cloud
+  override. 2 server integration specs through `PluginsService` + `EnginesService`.
+- [x] `arc-plugin-gitlab` — GitLab project access tokens via the REST API. Admin PAT in
+  `adminToken`, roles map of `{projectId, scopes[], accessLevel (10|20|30|40|50),
+  expiresAt?, namePrefix?}`. `issue` POSTs `/projects/:id/access_tokens`, returns the
+  bearer + computed `expirationSeconds` as the lease TTL. Default expires_at is 30 days
+  out; role can override with explicit ISO date. `revoke` actually DELETEs at GitLab —
+  unlike GitHub installation tokens we have the tokenId from the create response, so a
+  cheap revoke round-trip is fine here. `renew` throws (rotate-by-recreate). 13 unit
+  tests + 2 server integration specs.
+- [x] `arc-plugin-bitbucket` — Bitbucket Cloud repository access tokens via the REST API.
+  Admin token in `adminToken`, roles map of `{workspace, repoSlug, scopes[], namePrefix?,
+  ttlSeconds?}`. Bitbucket tokens have **no native expiry** so the plugin records a
+  configurable `ttlSeconds` (default 7 days) as the lease TTL. `revoke` DELETEs at
+  Bitbucket via the stored uuid; `renew` throws. 9 unit tests + 2 server integration
+  specs.
+- Cross-plugin "six together" integration spec confirms all six vendors (AWS / GCP /
+  GitHub / Azure / GitLab / Bitbucket) co-mount on the same `MountRegistry` and dispatch
+  independently. **Workspace total: 364 tests passing.**
 - [ ] Auth plugins: `arc-plugin-oidc`, `arc-plugin-kubernetes`.
 
 ### Phase 4 — deployment + ops
