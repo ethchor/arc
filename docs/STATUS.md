@@ -477,9 +477,28 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   exists in `infra/arc-helm-charts/arc/values.yaml` — so the two stay in
   lockstep without needing `terraform` installed. `terraform fmt -check` +
   `terraform validate` will run in CI in the next commit.
-- [ ] GitHub Actions CI: build + typecheck + test + parity test + adapter live test
-  (the last one needs a docker-enabled runner; cheap because we already have the
-  compose file).
+- [x] GitHub Actions CI: build + typecheck + test + parity test, plus three
+  newly added jobs — `openbao-adapter`, `helm`, `terraform`. The
+  `openbao-adapter` job stands up the upstream `quay.io/openbao/openbao`
+  image as a GitHub Actions service container (matching the
+  `integrations/arc-openbao-adapter/docker-compose.yml` config) and exports
+  `BAO_ADDR=http://127.0.0.1:8200` so the existing
+  `tests/integration.test.ts` `skipIf(!BAO_ADDR)` suite runs against a
+  real OpenBao instead of being skipped — no extra runner cost, the
+  service container is part of the standard GH runner. The `helm` job
+  installs `helm` v3.16.3 via `azure/setup-helm@v4`, runs `helm lint`,
+  then `helm template` twice (default values + a production-ish override
+  with the secret keys, OTLP endpoint, devMode=false, persistence,
+  Ingress, and ServiceMonitor flipped on) and pipes the output through
+  `yaml.safe_load_all` to assert the rendered documents parse and have
+  the expected `kind`s. The `terraform` job installs `terraform` v1.9.8
+  via `hashicorp/setup-terraform@v3`, runs `terraform fmt -check
+  -recursive`, then `terraform init -backend=false` + `terraform
+  validate` against both `modules/arc/` and `examples/dev/`. Together
+  with the existing vitest smoke suites this gives both a "fast feedback
+  for contributors without docker / helm / terraform installed" path and
+  a "real binary" path that catches Go-template + HCL bugs the parsers
+  can't see.
 - [ ] Release pipeline + SBOM + signed artifacts.
 - [x] OpenTelemetry traces + Prometheus metrics in `arc-server`. New
   `apps/arc-server/src/observability/` module: `MetricsService` owns a single

@@ -37,3 +37,101 @@ jobs:
           cargo install cargo-audit --locked || true
           cargo audit --file crates/vault-crypto-rs/Cargo.lock
         continue-on-error: true
+
+  # Smoke-tests the OpenBao adapter against a real OpenBao instance. The Node smoke
+  # suite already skips when BAO_ADDR is unset, so we only need to give it one.
+  openbao-adapter:
+    runs-on: ubuntu-latest
+    services:
+      openbao:
+        image: quay.io/openbao/openbao:latest
+        # Match `integrations/arc-openbao-adapter/docker-compose.yml`.
+        env:
+          BAO_DEV_ROOT_TOKEN_ID: root
+          BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+        ports:
+          - 8200:8200
+        options: >-
+          --cap-add=IPC_LOCK
+          --health-cmd="wget -q -O- http://127.0.0.1:8200/v1/sys/health || exit 1"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+    env:
+      BAO_ADDR: http://127.0.0.1:8200
+      BAO_TOKEN: root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build adapter + deps
+        run: pnpm --filter @arc/openbao-adapter... build
+      - name: Live integration test against dev-mode OpenBao
+        run: pnpm --filter @arc/openbao-adapter test
+
+  # Validates the Helm chart with the real `helm` binary on top of the structural
+  # vitest suite that already runs in the `node` job. Catches anything that breaks
+  # Go-template rendering (missing partials, bad indentation, sprig-fn typos).
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: helm lint
+        run: helm lint infra/arc-helm-charts/arc
+      - name: helm template (default values)
+        run: helm template arc infra/arc-helm-charts/arc > /tmp/arc-default.yaml
+      - name: helm template (production-ish overrides)
+        run: |
+          helm template arc infra/arc-helm-charts/arc \
+            --set arcServer.secret.jwtSecret=test-jwt \
+            --set arcServer.secret.databaseUrl=postgres://test \
+            --set arcServer.env.OTEL_EXPORTER_OTLP_ENDPOINT=http://otel:4318 \
+            --set openbao.devMode=false \
+            --set openbao.persistence.enabled=true \
+            --set ingress.enabled=true \
+            --set serviceMonitor.enabled=true \
+            > /tmp/arc-prod.yaml
+      - name: Sanity-check rendered manifests parse as YAML
+        run: |
+          python3 - <<'PY'
+          import sys, yaml
+          for path in ("/tmp/arc-default.yaml", "/tmp/arc-prod.yaml"):
+              docs = list(yaml.safe_load_all(open(path)))
+              docs = [d for d in docs if d]
+              assert docs, f"{path} produced no documents"
+              kinds = sorted({d.get("kind") for d in docs})
+              print(path, "→", kinds)
+          PY
+
+  # Validates the Terraform module formatting + syntax. The structural vitest
+  # suite from the `node` job catches drift between the module and the chart;
+  # this job catches HCL/typing bugs the parser can't see.
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+      - name: terraform fmt
+        run: terraform fmt -check -recursive infra/arc-terraform
+      - name: terraform init (module dir)
+        working-directory: infra/arc-terraform/modules/arc
+        run: terraform init -backend=false -input=false
+      - name: terraform validate (module dir)
+        working-directory: infra/arc-terraform/modules/arc
+        run: terraform validate -no-color
+      - name: terraform init (dev example)
+        working-directory: infra/arc-terraform/examples/dev
+        run: terraform init -backend=false -input=false
+      - name: terraform validate (dev example)
+        working-directory: infra/arc-terraform/examples/dev
+        run: terraform validate -no-color
