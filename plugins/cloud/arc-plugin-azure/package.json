@@ -1,0 +1,39 @@
+{
+  "name": "@arc/plugin-azure",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Azure cloud plugin: dynamic OAuth2 access tokens via the Microsoft identity platform (v2.0 token endpoint). Implements @arc/plugin-sdk's SecretsPlugin contract.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./node": {
+      "types": "./dist/node-client.d.ts",
+      "import": "./dist/node-client.js",
+      "require": "./dist/node-client.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arc/plugin-sdk": "workspace:*",
+    "@arc/types": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

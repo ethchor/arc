@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, LogIn, ShieldCheck } from "lucide-react";
+import { Fingerprint, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -21,9 +21,25 @@ interface Props {
   onUnlock: (password: string) => void;
   onEnroll: (password: string) => void;
   onNewDevice?: () => void;
+  /**
+   * Optional — when present, the unlock screen shows a "Use a passkey" button under the
+   * Unlock action. Triggers a WebAuthn assertion via the SDK's browser authenticator;
+   * the caller drives the SDK + state transition. UI doesn't gate by browser feature
+   * detection — failure surfaces a toast — so users on Chrome/Safari see the affordance
+   * even when no passkey is registered yet (server returns 404 → friendly toast).
+   */
+  onPasskeyUnlock?: () => void;
 }
 
-export function UnlockScreen({ phase, busy, onSignIn, onUnlock, onEnroll, onNewDevice }: Props) {
+export function UnlockScreen({
+  phase,
+  busy,
+  onSignIn,
+  onUnlock,
+  onEnroll,
+  onNewDevice,
+  onPasskeyUnlock,
+}: Props) {
   const [baseUrl, setBaseUrl] = React.useState("http://localhost:3001");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -103,6 +119,24 @@ export function UnlockScreen({ phase, busy, onSignIn, onUnlock, onEnroll, onNewD
                   "Unlock"
                 )}
               </Button>
+              {onPasskeyUnlock && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  disabled={busy}
+                  onClick={onPasskeyUnlock}
+                >
+                  {busy ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Waiting for passkey…
+                    </>
+                  ) : (
+                    <>
+                      <Fingerprint className="h-4 w-4" /> Use a passkey
+                    </>
+                  )}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 className="w-full"

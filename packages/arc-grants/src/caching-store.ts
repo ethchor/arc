@@ -28,6 +28,11 @@ const DEFAULT_TTL_MS = 30_000;
  *    *any* attached subject's effective scopes, and we don't track the reverse
  *    (policy → subjects) index here. A future refinement could index attachments by
  *    policy and selectively invalidate; the all-flush is fine until profiling says otherwise.
+ *  - `addToGroup`/`removeFromGroup(subject, _)` → drop just that subject (the membership
+ *    change only affects that one subject's effective policies).
+ *  - `attachToGroup`/`detachFromGroup` → drop the entire cache. We don't have a
+ *    group→members reverse index from here, so we can't selectively drop the affected
+ *    subjects. Group changes are admin-time + low frequency; an all-flush is acceptable.
  *
  * Behavior preserves the {@link MutablePolicyStore} contract semantics — same
  * unknown-policy throw on attach, same idempotent detach return value, same stale-attachment
@@ -86,6 +91,42 @@ export class CachingPolicyStore implements MutablePolicyStore {
   async listPolicies(): Promise<Policy[]> {
     // Not cached: low-frequency admin operation, always wants fresh data.
     return this.store.listPolicies();
+  }
+
+  // -- groups (delegate + invalidate per the strategy above) --
+
+  async addToGroup(subject: string, groupName: string): Promise<void> {
+    await this.store.addToGroup(subject, groupName);
+    this.entries.delete(subject);
+  }
+
+  async removeFromGroup(subject: string, groupName: string): Promise<boolean> {
+    const removed = await this.store.removeFromGroup(subject, groupName);
+    this.entries.delete(subject);
+    return removed;
+  }
+
+  async attachToGroup(groupName: string, policyName: string): Promise<void> {
+    await this.store.attachToGroup(groupName, policyName);
+    this.entries.clear();
+  }
+
+  async detachFromGroup(groupName: string, policyName: string): Promise<boolean> {
+    const removed = await this.store.detachFromGroup(groupName, policyName);
+    this.entries.clear();
+    return removed;
+  }
+
+  async listGroupsForSubject(subject: string): Promise<string[]> {
+    return this.store.listGroupsForSubject(subject);
+  }
+
+  async listSubjectsInGroup(groupName: string): Promise<string[]> {
+    return this.store.listSubjectsInGroup(groupName);
+  }
+
+  async listGroupPolicies(groupName: string): Promise<string[]> {
+    return this.store.listGroupPolicies(groupName);
   }
 
   // -- introspection for tests --

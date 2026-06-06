@@ -1,0 +1,85 @@
+{{- if .Values.arcServer.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "arc.server.fullname" . }}
+  labels:
+    {{- include "arc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: arc-server
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.arcServer.replicaCount }}
+  # Strategy = RollingUpdate by default; surge / unavailable accept upstream defaults.
+  selector:
+    matchLabels:
+      {{- include "arc.server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "arc.server.selectorLabels" . | nindent 8 }}
+      {{- with .Values.arcServer.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.arcServer.podSecurityContext | nindent 8 }}
+      containers:
+        - name: arc-server
+          image: "{{ .Values.arcServer.image.repository }}:{{ default .Chart.AppVersion .Values.arcServer.image.tag }}"
+          imagePullPolicy: {{ .Values.arcServer.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.arcServer.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.arcServer.service.port }}
+              protocol: TCP
+          env:
+            # Non-secret env from values.yaml.
+            {{- range $k, $v := .Values.arcServer.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- if .Values.openbao.enabled }}
+            - name: BAO_ADDR
+              value: "http://{{ include "arc.openbao.fullname" . }}:{{ .Values.openbao.service.port }}"
+            {{- end }}
+          envFrom:
+            # Secrets the Deployment mounts. Either the chart-managed Secret or an
+            # `existingSecret` the caller controls — `secretName` helper picks the right
+            # one so this block stays the same in both modes.
+            - secretRef:
+                name: {{ include "arc.server.secretName" . }}
+          # readOnlyRootFilesystem=true above means we need an emptyDir for /tmp.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            {{- toYaml .Values.arcServer.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.arcServer.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.arcServer.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.arcServer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.arcServer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.arcServer.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

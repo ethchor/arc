@@ -6,9 +6,11 @@ import { entities } from "./database/entities";
 import { InitSchema1717200000000 } from "./migrations/1717200000000-init-schema";
 import { GrantsSchema1717300000000 } from "./migrations/1717300000000-grants-schema";
 import { PasskeySchema1717400000000 } from "./migrations/1717400000000-passkey-schema";
+import { GrantsGroupsSchema1717500000000 } from "./migrations/1717500000000-grants-groups-schema";
 import { AuthModule } from "./auth/auth.module";
 import { EnginesModule } from "./engines/engines.module";
 import { GrantsModule } from "./grants/grants.module";
+import { ObservabilityModule } from "./observability/observability.module";
 import { PluginsModule } from "./plugins/plugins.module";
 import { VaultModule } from "./vault/vault.module";
 
@@ -16,6 +18,7 @@ const migrations = [
   InitSchema1717200000000,
   GrantsSchema1717300000000,
   PasskeySchema1717400000000,
+  GrantsGroupsSchema1717500000000,
 ];
 
 /**
@@ -115,6 +118,7 @@ export function buildDataSourceOptions(): TypeOrmModuleOptions {
   imports: [
     LoggerModule.forRoot(buildLoggerOptions()),
     TypeOrmModule.forRoot(buildDataSourceOptions()),
+    ObservabilityModule,
     AuthModule,
     GrantsModule,
     VaultModule,

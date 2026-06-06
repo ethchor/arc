@@ -1,0 +1,45 @@
+arc {{ .Chart.AppVersion }} installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+{{- if .Values.arcServer.enabled }}
+
+The arc-server API is reachable in-cluster at:
+
+    http://{{ include "arc.server.fullname" . }}:{{ .Values.arcServer.service.port }}
+
+{{- if .Values.ingress.enabled }}
+And externally via your Ingress hosts:
+{{- range .Values.ingress.hosts }}
+    https://{{ .host }}{{ (index .paths 0).path }}
+{{- end }}
+{{- end }}
+
+Prometheus scrape endpoint (un-authenticated by design — front it at the network layer):
+
+    http://{{ include "arc.server.fullname" . }}:{{ .Values.arcServer.service.port }}/metrics
+
+{{- if .Values.serviceMonitor.enabled }}
+
+A ServiceMonitor was created. The Prometheus Operator will pick it up automatically.
+{{- end }}
+{{- end }}
+
+{{- if .Values.openbao.enabled }}
+
+OpenBao is co-located in this release at:
+
+    http://{{ include "arc.openbao.fullname" . }}:{{ .Values.openbao.service.port }}
+
+{{- if .Values.openbao.devMode }}
+
+WARNING — OpenBao is running in DEV mode. State is in-memory and the root token is
+hardcoded. Flip `openbao.devMode=false` and supply a real config / seal before going
+to production.
+{{- end }}
+{{- end }}
+
+To verify the deployment:
+
+    kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+    kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "arc.server.fullname" . }}
+
+Full manual-test playbook: docs/manual-testing/.

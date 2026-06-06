@@ -1,0 +1,18 @@
+{{- if .Values.openbao.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "arc.openbao.fullname" . }}
+  labels:
+    {{- include "arc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openbao
+spec:
+  type: {{ .Values.openbao.service.type }}
+  ports:
+    - name: api
+      port: {{ .Values.openbao.service.port }}
+      targetPort: api
+      protocol: TCP
+  selector:
+    {{- include "arc.openbao.selectorLabels" . | nindent 4 }}
+{{- end }}

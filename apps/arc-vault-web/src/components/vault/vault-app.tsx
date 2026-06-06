@@ -173,6 +173,15 @@ export function VaultApp() {
       toast.success("Vault unlocked");
     });
 
+  const unlockWithPasskey = () =>
+    guard(async () => {
+      const { browserPasskeyAuthenticator } = await import("@arc/sdk");
+      await getClient().unlockWithPasskey(browserPasskeyAuthenticator());
+      await loadVaults();
+      setPhase("unlocked");
+      toast.success("Vault unlocked with passkey");
+    });
+
   const enroll = (password: string) =>
     guard(async () => {
       const result = await getClient().enroll(password);
@@ -357,6 +366,33 @@ export function VaultApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, autolock]);
 
+  // Desktop shell (Tauri): mirror the autolock setting into the Rust session and listen
+  // for the shell-emitted lock event so the OS-level idle TTL drives the same UX as the
+  // browser-side input listeners above. No-op in the regular browser.
+  React.useEffect(() => {
+    let unlistenLocked: (() => void) | undefined;
+    let cancelled = false;
+    (async () => {
+      const tauri = await import("@/lib/tauri");
+      if (!tauri.isDesktop()) return;
+      try {
+        await tauri.setAutolock(autolock * 60);
+        unlistenLocked = await tauri.onLocked(() => {
+          if (cancelled) return;
+          doLock();
+          toast("Locked due to inactivity");
+        });
+      } catch {
+        /* shell not actually wired (browser build); ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlistenLocked?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, autolock]);
+
   if (phase === "device-pending") {
     return (
       <div className="min-h-screen">
@@ -377,6 +413,7 @@ export function VaultApp() {
           onUnlock={unlock}
           onEnroll={enroll}
           onNewDevice={startNewDevice}
+          onPasskeyUnlock={unlockWithPasskey}
         />
       </div>
     );
@@ -424,7 +461,11 @@ export function VaultApp() {
                 }}
               />
             )}
-            <SettingsDialog autolock={autolock} onAutolock={setAutolockPersist} />
+            <SettingsDialog
+              autolock={autolock}
+              onAutolock={setAutolockPersist}
+              client={getClient()}
+            />
           </>
         }
       >

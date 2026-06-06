@@ -49,5 +49,27 @@ export interface FillValues {
   password: string;
 }
 
-export type BackgroundMessage = UnlockRequest | FillRequest | ListRequest | GetRequest;
+/** Worker status — used by the popup to skip re-entering credentials when the worker is alive + unlocked. */
+export interface StatusRequest {
+  type: "arc:status";
+}
+export interface StatusResponse {
+  unlocked: boolean;
+  /** Seconds until auto-lock, or null when locked / no clock. */
+  lockInSeconds: number | null;
+}
+
+/** Configure the auto-lock TTL (seconds). Persisted in `chrome.storage.session`. */
+export interface SetAutolockRequest {
+  type: "arc:setAutolock";
+  ttlSeconds: number;
+}
+
+export type BackgroundMessage =
+  | UnlockRequest
+  | FillRequest
+  | ListRequest
+  | GetRequest
+  | StatusRequest
+  | SetAutolockRequest;
 export type ContentMessage = DoFill | FillValues;

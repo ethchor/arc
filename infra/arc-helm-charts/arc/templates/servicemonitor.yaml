@@ -1,0 +1,31 @@
+{{- if and .Values.arcServer.enabled .Values.serviceMonitor.enabled -}}
+# Requires the Prometheus Operator (kube-prometheus-stack). Scrapes the /metrics endpoint
+# we shipped in the observability module — Node + process defaults plus the six arc-
+# specific families (acl decisions, leases, plugin issues, http duration, active leases).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "arc.server.fullname" . }}
+  {{- with .Values.serviceMonitor.namespace }}
+  namespace: {{ . | quote }}
+  {{- end }}
+  labels:
+    {{- include "arc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: arc-server
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "arc.server.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+      {{- with .Values.serviceMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

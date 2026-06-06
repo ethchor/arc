@@ -1,0 +1,28 @@
+apiVersion: v2
+name: arc
+description: |
+  arc — unified Vault-grade infra secrets (Engine A, OpenBao-backed) + Bitwarden-class
+  end-to-end vault (Engine B), one identity / policy / audit / UI. See
+  https://github.com/ethchor/arc.
+type: application
+# Versions:
+#   `version`     — chart version. Bump on every chart change.
+#   `appVersion`  — the arc-server / openbao image tag the chart was tested against.
+version: 0.1.0
+appVersion: "0.0.0"
+kubeVersion: ">=1.27.0"
+icon: https://raw.githubusercontent.com/ethchor/arc/develop/docs/icon.png
+home: https://github.com/ethchor/arc
+sources:
+  - https://github.com/ethchor/arc
+maintainers:
+  - name: Vimu Kale
+    email: ethchor@gmail.com
+keywords:
+  - secrets
+  - vault
+  - openbao
+  - e2e
+  - password-manager
+annotations:
+  category: Security

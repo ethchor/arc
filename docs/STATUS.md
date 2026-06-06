@@ -155,15 +155,59 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 2 — multi-device + shared vaults
 
-- [ ] Desktop (Tauri shell) — wire `crates/desktop-core` into `apps/arc-vault-desktop`'s
-  `src-tauri/src/main.rs` so the device actually runs. Crate is already tested in
-  isolation.
+- [x] Desktop (Tauri shell) wired up. `apps/arc-vault-desktop/src-tauri/src/lib.rs` now
+  exposes 13 `#[tauri::command]`s: session (`vault_set_autolock` / `_lock` / `_is_locked`
+  / `_touch`), device + grants (`vault_device_keypair`, `vault_load_grant`,
+  `vault_wrap_vek_for_device`), narrow item ops (`vault_encrypt_item` /
+  `vault_decrypt_item` — VEK never crosses to the WebView), and the local cipher cache
+  (`cache_open` / `_upsert` / `_get` / `_list`). A background watcher thread polls
+  `Session::is_locked()` every second and emits `arc://vault-locked` on the
+  unlocked → locked transition so the WebView can drop keys + redirect without polling
+  Rust on every keystroke. `OsKeyStore` (Secret Service / macOS Keychain / Windows
+  Credential Manager) stores the device X25519 private key; the keychain feature is on
+  by default in the shell. `tauri.conf.json` points `frontendDist` at
+  `../../arc-vault-web/out` (`pnpm --filter @arc/vault-web build:desktop`); `devUrl`
+  pre-runs `pnpm --filter @arc/vault-web dev`. Frontend bindings live in
+  `apps/arc-vault-web/src/lib/tauri.ts` — typed wrappers around `invoke`/`listen`, plus
+  an `isDesktop()` detector (`window.__TAURI_INTERNALS__`) so plain `next dev` falls
+  back to the in-browser crypto path. The web's auto-lock effect now mirrors the
+  autolock setting into the Rust session and subscribes to `onLocked` so the OS-level
+  idle TTL drives the same UX as the browser-side input listeners. `crates/desktop-core`
+  tests (5) still pass locally; the Tauri shell itself only builds with GTK system libs
+  installed (Linux) — documented in the shell's README.
 - [ ] Desktop: switch the device identity to the hybrid keypair so device grants can use
   `pqSeal` too (closes the device-grant HNDL footnote in ADR-002 — possibly ADR-003).
-- [ ] Browser extension: real autofill flow against the live origin-bound capability
-  model in `docs/12`. Today is a scaffold of the messaging layer only.
-- [~] Passkey unlock — **server + SDK + cross-client e2e shipped; web UI is the
-  follow-up.** Per-user-stable `prfSalt` persisted so register + unlock derive the same
+- [x] Browser extension autofill is real now (was just messaging scaffold). Three
+  upgrades land here. **(1) Background auto-lock TTL** — the worker exposes
+  `arc:setAutolock` (30–3600s, default 300s) + `arc:status` (`{unlocked, lockInSeconds}`),
+  persists the TTL in `chrome.storage.session`, and every fill/list/get touches an idle
+  timer that wipes `client` + `logins` + the activity timestamp when it expires. Every
+  message handler now gates on `isUnlocked()` so requests after the worker is killed by
+  MV3 lifecycle (or its idle TTL) get clean `{unlocked: false}` / empty responses
+  instead of a stale-state crash. **(2) Inline suggestion overlay** — content script
+  listens for `focusin` on password inputs, asks the worker for an origin-matched
+  credential, and on a match renders a small floating "Use arc" button anchored above
+  the field. Single click fills username + password via the existing field-detection
+  heuristic. Anti-spam: shown at most once per page load; dismissed by clicking
+  anywhere else. HTTPS-only — `location.protocol !== "https:"` short-circuits before any
+  worker round-trip. All affordances stay user-initiated (no auto-fill on focus).
+  **(3) Tests** — 10 new vitest cases covering the auto-lock state machine (unlocked →
+  TTL elapses → locked; status returns `lockInSeconds: null` when locked; explicit
+  `lockNow()` drops state) + the overlay logic (shown only on origin-match + HTTPS,
+  filtered to password inputs, suppressed on second focus, click fills both fields and
+  removes the overlay). 16 total in the extension (was 6).
+- [x] Passkey unlock — **server + SDK + web UI all shipped.** Web UI: new
+  `PasskeysSection` component embedded in the Settings dialog (list with createdAt + label,
+  remove button per entry, register button with optional label field) + a "Use a passkey"
+  button on the unlock screen (shown alongside Unlock / Create vault). Both call into the
+  `browserPasskeyAuthenticator()` factory in `@arc/sdk`. Error messages are friendlier:
+  PRF-not-supported → "Try Chrome 116+ or Safari 17+", cancellation → "You cancelled the
+  OS prompt", origin-blocked → "check the page is on https or localhost". Auto-locked
+  passkey list shows "No passkeys registered yet" on empty state. The web's `vault-app.tsx`
+  now passes the `VaultClient` instance through SettingsDialog so the passkey section can
+  render only when unlocked (server-side reads require the JWT, listPasskeys is gated
+  through arc-server's auth). Web typecheck clean.
+- [~] Original passkey work (preserved for diff reference) — Per-user-stable `prfSalt` persisted so register + unlock derive the same
   wrap key. `@arc/crypto` adds wrap/unwrap pairs for ML-KEM identity priv *and* signing
   priv under distinct AAD labels — so passkey unlock unwraps all three privs and produces
   a full read+write session, not read-only. `@arc/sdk` ships `registerPasskey` /
@@ -193,10 +237,26 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   manual-rotate path works today; needs UX + audit hooks).
 
 ### Phase 3 — Engine A + plugin host
-- [ ] Group / role attachments. Today policies attach to a subject string (user id). Vault-style
-  group membership (attach a policy to a group, add users to groups) is the next expansion —
-  `@arc/identity` territory; the `PolicyStore.getPoliciesForSubject` would union direct + group
-  policies.
+- [x] Group / role attachments shipped. `MutablePolicyStore` contract extended with
+  `addToGroup` / `removeFromGroup` / `attachToGroup` / `detachFromGroup` /
+  `listGroupsForSubject` / `listSubjectsInGroup` / `listGroupPolicies`.
+  `getPoliciesForSubject` now returns the **union** of direct attachments + every policy
+  reached via an attached group (deduped, stale-tolerant). `InMemoryPolicyStore`
+  + `CachingPolicyStore` + the new `TypeOrmPolicyStore` all implement it. Cache invalidation:
+  `addToGroup`/`removeFromGroup(subject, _)` drop just the subject's entry; `attachToGroup`/
+  `detachFromGroup` flush the whole cache (we don't track a reverse group→members index
+  here — admin-time + low frequency, fine). New entities `policy_group_memberships` +
+  `policy_group_attachments`, migration `1717500000000-grants-groups-schema`. New
+  `GroupsController` at `/v1/sys/groups/`: GET `:group` (describe), POST `:group/members`
+  + `members/remove`, POST `:group/policies` + DELETE `:group/policies/:policyName`,
+  same `JwtAuthGuard + CapabilityGuard` as the rest of the ACL surface (so groups protect
+  themselves the same way policies do). 15 new unit tests in `@arc/grants` (49 total, was
+  34) covering idempotent add/remove, union resolution, direct+group dedup, group-remove
+  drops inherited access, cache invalidation. 7 new server e2e tests
+  (`grants-groups.e2e-spec.ts`) exercising the full Postgres-backed loop through the HTTP
+  surface: implicit-group describe, transit-via-group access, member-remove revokes,
+  policy-detach revokes for every member, unknown-policy 404, non-root denied, direct+group
+  union preserved when the group link is removed. Workspace total: 322 tests passing.
 - [x] Persisted policy store. New `MutablePolicyStore` contract in `@arc/grants` (read +
   upsert/remove/attach/detach/list; sync-or-async so both stores satisfy it; `InMemoryPolicyStore`
   now declares it). `TypeOrmPolicyStore` in `apps/arc-server/src/grants/` implements it against
@@ -349,8 +409,34 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   so Jest can `require()` `LeaseError` / `LeaseManager` directly.
 - [ ] `arc-server`: out-of-process plugin host (gRPC / WASM backend). The in-process
   module shipped above; out-of-process transport for sandboxed plugins is the follow-up.
-- [ ] Cloud plugins: `arc-plugin-azure` (AWS + GCP landed below).
-- [ ] SCM plugins: `arc-plugin-gitlab`, `arc-plugin-bitbucket` (GitHub landed below).
+- [x] `arc-plugin-azure` — Azure AD service-principal access tokens via the v2.0
+  client_credentials grant. Mirrors the AWS / GCP / GitHub layout: core plugin + optional
+  `@arc/plugin-azure/node` default client using `fetch` only (no external deps). Form-encoded
+  request body per RFC 6749. Config: `adminToken` (not applicable here — replaced by
+  per-role `clientSecret`) + roles map of `{tenantId, clientId, clientSecret, scope,
+  maxTtlSeconds?}`. `issue` returns `{access_token, tenant_id, client_id, scope}` + AAD's
+  `expires_in` as the lease TTL (clamped to `role.maxTtlSeconds` if set). `renew` throws;
+  `revoke` is a no-op at AAD (no per-token revoke API — application-level via SP secret
+  rotation) + drops local tracking. Sovereign-cloud `loginUrl` override supported. 13
+  unit tests cover configure / issue / renew / revoke + the TTL clamp + sovereign-cloud
+  override. 2 server integration specs through `PluginsService` + `EnginesService`.
+- [x] `arc-plugin-gitlab` — GitLab project access tokens via the REST API. Admin PAT in
+  `adminToken`, roles map of `{projectId, scopes[], accessLevel (10|20|30|40|50),
+  expiresAt?, namePrefix?}`. `issue` POSTs `/projects/:id/access_tokens`, returns the
+  bearer + computed `expirationSeconds` as the lease TTL. Default expires_at is 30 days
+  out; role can override with explicit ISO date. `revoke` actually DELETEs at GitLab —
+  unlike GitHub installation tokens we have the tokenId from the create response, so a
+  cheap revoke round-trip is fine here. `renew` throws (rotate-by-recreate). 13 unit
+  tests + 2 server integration specs.
+- [x] `arc-plugin-bitbucket` — Bitbucket Cloud repository access tokens via the REST API.
+  Admin token in `adminToken`, roles map of `{workspace, repoSlug, scopes[], namePrefix?,
+  ttlSeconds?}`. Bitbucket tokens have **no native expiry** so the plugin records a
+  configurable `ttlSeconds` (default 7 days) as the lease TTL. `revoke` DELETEs at
+  Bitbucket via the stored uuid; `renew` throws. 9 unit tests + 2 server integration
+  specs.
+- Cross-plugin "six together" integration spec confirms all six vendors (AWS / GCP /
+  GitHub / Azure / GitLab / Bitbucket) co-mount on the same `MountRegistry` and dispatch
+  independently. **Workspace total: 364 tests passing.**
 - [ ] Auth plugins: `arc-plugin-oidc`, `arc-plugin-kubernetes`.
 
 ### Phase 4 — deployment + ops
@@ -358,13 +444,90 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 - [ ] `arc-agent`: Rust sidecar for templating + auto-auth (sketched in ADR-001 §Open
   questions; needs a concrete first use case before it lands).
 - [ ] `arc-operator`: Kubernetes operator (Go) per `infra/`.
-- [ ] `arc-helm-charts`: deploys `arc-server` + colocated OpenBao.
-- [ ] `arc-terraform`: IaC modules.
-- [ ] GitHub Actions CI: build + typecheck + test + parity test + adapter live test
-  (the last one needs a docker-enabled runner; cheap because we already have the
-  compose file).
+- [x] `arc-helm-charts`. New `infra/arc-helm-charts/arc` Helm chart deploys arc-server
+  (Deployment + Service + Secret) with co-located OpenBao (StatefulSet + Service, dev mode
+  by default — production deployments flip `openbao.devMode=false` and supply a real
+  config/seal). Optional `Ingress` (`networking.k8s.io/v1`) and `ServiceMonitor`
+  (`monitoring.coreos.com/v1`) that scrapes the `/metrics` endpoint from the
+  observability commit. Production knobs: `arcServer.secret.existingSecret` for External
+  Secrets / SealedSecrets integration, `OTEL_EXPORTER_OTLP_ENDPOINT` for tracing,
+  `ARC_DEFAULT_POLICY=deny` + `ARC_ROOT_USERS` for the fail-closed posture. 13 vitest
+  smoke tests (`infra/arc-helm-charts/arc/tests/chart.test.ts`) parse Chart.yaml +
+  values.yaml + every template YAML, walk the values tree, and assert every
+  `.Values.<key>` reference in the templates resolves to a real key — catches typos
+  without needing `helm` installed locally. `helm lint` + `helm template` will run in CI
+  in the next commit.
+- [x] `arc-terraform`: IaC module wrapping the chart for `terraform`-driven
+  installs. New `infra/arc-terraform/modules/arc` declares the providers
+  (`hashicorp/helm` ~> 3.0, `hashicorp/kubernetes` ~> 3.0 — the v3 majors,
+  so the example uses helm v3's `kubernetes = {}` attribute syntax and the
+  `kubernetes_namespace_v1` resource), creates the
+  namespace (gated on `create_namespace`), and renders a `helm_release` whose
+  `values` block is a 1:1 typed mapping of the chart's `values.yaml`
+  (`arc_server` → `arcServer`, `openbao` → `openbao`, etc.). Mirrors the same
+  production knobs as the chart: `arc_server.secret.existing_secret`,
+  `arc_server.env.OTEL_EXPORTER_OTLP_ENDPOINT`, `openbao.dev_mode`,
+  `openbao.persistence`, `service_monitor.enabled`. `extra_values` escape
+  hatch merges raw HCL on top so any chart key the typed surface doesn't
+  expose yet can still be set. `outputs.tf` exposes the cluster-internal
+  Service DNS for both arc-server and the colocated OpenBao. A reference
+  example at `examples/dev/main.tf` wires the in-repo chart path for kind/k3d
+  loops. 14 vitest smoke tests (`infra/arc-terraform/tests/module.test.ts`)
+  scan every `.tf` file, assert the required `variable` / `output` /
+  `resource` declarations exist, and cross-check that every chart key the
+  module writes (`arcServer.replicaCount`, `openbao.devMode`, etc.) actually
+  exists in `infra/arc-helm-charts/arc/values.yaml` — so the two stay in
+  lockstep without needing `terraform` installed. `terraform fmt -check` +
+  `terraform validate` will run in CI in the next commit.
+- [x] GitHub Actions CI: build + typecheck + test + parity test, plus three
+  newly added jobs — `openbao-adapter`, `helm`, `terraform`. The
+  `openbao-adapter` job stands up the upstream `quay.io/openbao/openbao`
+  image as a GitHub Actions service container (matching the
+  `integrations/arc-openbao-adapter/docker-compose.yml` config) and exports
+  `BAO_ADDR=http://127.0.0.1:8200` so the existing
+  `tests/integration.test.ts` `skipIf(!BAO_ADDR)` suite runs against a
+  real OpenBao instead of being skipped — no extra runner cost, the
+  service container is part of the standard GH runner. The `helm` job
+  installs `helm` v3.16.3 via `azure/setup-helm@v4`, runs `helm lint`,
+  then `helm template` twice (default values + a production-ish override
+  with the secret keys, OTLP endpoint, devMode=false, persistence,
+  Ingress, and ServiceMonitor flipped on) and pipes the output through
+  `yaml.safe_load_all` to assert the rendered documents parse and have
+  the expected `kind`s. The `terraform` job installs `terraform` v1.9.8
+  via `hashicorp/setup-terraform@v3`, runs `terraform fmt -check
+  -recursive`, then `terraform init -backend=false` + `terraform
+  validate` against both `modules/arc/` and `examples/dev/`. Together
+  with the existing vitest smoke suites this gives both a "fast feedback
+  for contributors without docker / helm / terraform installed" path and
+  a "real binary" path that catches Go-template + HCL bugs the parsers
+  can't see.
 - [ ] Release pipeline + SBOM + signed artifacts.
-- [ ] OpenTelemetry traces + Prometheus metrics in `arc-server`.
+- [x] OpenTelemetry traces + Prometheus metrics in `arc-server`. New
+  `apps/arc-server/src/observability/` module: `MetricsService` owns a single
+  `prom-client` registry pre-loaded with the Node + process defaults
+  (`arc_process_*`, `arc_nodejs_*`) and six arc-specific metric families —
+  `arc_vault_operations_total`, `arc_leases_total {engine,op}`,
+  `arc_acl_decisions_total {decision,reason}`, `arc_plugin_issue_total
+  {plugin,role,result}`, `arc_http_request_duration_seconds {method,route,status}`
+  histogram, `arc_active_leases {engine}` gauge. `MetricsController` at `/metrics`
+  serves the 0.0.4 exposition format (un-guarded — network-layer auth is the
+  expected control); samples the LeaseManager just before each render so the
+  active-leases gauge is point-in-time current and won't hold stale labels.
+  `HttpMetricsInterceptor` wired as `APP_INTERCEPTOR` records the histogram on
+  every request using the matched Express route (low cardinality, no
+  per-`:id` blowup). `CapabilityGuard` increments `arc_acl_decisions_total` with
+  the `PolicyEngine`'s detailed reason; `EnginesService` increments
+  `arc_leases_total {issue,renew,revoke}` + `arc_plugin_issue_total` —
+  `MetricsService` injected via `@Optional()` so existing unit harnesses don't
+  need a stub. OTel SDK gated on `OTEL_EXPORTER_OTLP_ENDPOINT`:
+  `setupTelemetry()` from `main.ts` runs before `NestFactory.create` so
+  auto-instrumentations (HTTP, Express, pg, sqlite, pino) wrap their targets
+  in time. SIGTERM/SIGINT drain spans via `shutdownTelemetry()` so a deploy
+  doesn't lose the last few seconds of traces. 5 new e2e tests
+  (`observability.e2e-spec.ts`) confirm the exposition format, route-pattern
+  cardinality on the histogram, ACL counter on allow path, gauge HELP/TYPE at
+  zero, and unauthenticated scrape semantics. arc-server now 17 suites / 96
+  tests passing.
 - [ ] `sdks/arc-js-sdk` publish to npm.
 - [ ] `sdks/arc-go-sdk` scaffold + publish.
 

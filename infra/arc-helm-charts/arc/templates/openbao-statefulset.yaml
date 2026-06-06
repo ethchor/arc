@@ -1,0 +1,64 @@
+{{- if .Values.openbao.enabled -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "arc.openbao.fullname" . }}
+  labels:
+    {{- include "arc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openbao
+spec:
+  serviceName: {{ include "arc.openbao.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "arc.openbao.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "arc.openbao.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: openbao
+          image: "{{ .Values.openbao.image.repository }}:{{ .Values.openbao.image.tag }}"
+          imagePullPolicy: {{ .Values.openbao.image.pullPolicy }}
+          {{- if .Values.openbao.devMode }}
+          # `server -dev` auto-initializes + auto-unseals with `BAO_DEV_ROOT_TOKEN_ID` as the
+          # bootstrap token. NEVER use this in production — the server starts in-memory and
+          # loses every secret on restart.
+          args: ["server", "-dev"]
+          env:
+            - name: BAO_DEV_ROOT_TOKEN_ID
+              value: {{ .Values.openbao.devRootToken | quote }}
+            - name: BAO_DEV_LISTEN_ADDRESS
+              value: "0.0.0.0:{{ .Values.openbao.service.port }}"
+          {{- else }}
+          # Production posture: ship a config file via ConfigMap + a real seal block.
+          # The chart leaves this branch deliberately minimal — operators wire their own
+          # storage / seal (KMS / Shamir) at the values layer.
+          args: ["server", "-config=/etc/openbao/config.hcl"]
+          {{- end }}
+          ports:
+            - name: api
+              containerPort: {{ .Values.openbao.service.port }}
+              protocol: TCP
+          {{- if .Values.openbao.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /openbao/data
+          {{- end }}
+          resources:
+            {{- toYaml .Values.openbao.resources | nindent 12 }}
+  {{- if .Values.openbao.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.openbao.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.openbao.persistence.size }}
+  {{- end }}
+{{- end }}
