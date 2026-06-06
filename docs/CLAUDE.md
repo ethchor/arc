@@ -215,6 +215,31 @@ See MONOREPO_PLAN.md for full roadmap + reference docs for target feature behavi
 
 -----
 
+## Branching & PR workflow
+
+Work lands on `develop` through **pull requests**, never by committing straight to it.
+
+- **Branch names use category prefixes**, grouped by area of work (one branch/PR per area
+  or phase — not one per tiny feature):
+  - `ops/<topic>` — infra, CI, release pipeline, operator, agent (e.g. `ops/release-pipeline`).
+  - `plugins/<topic>` — plugin work (e.g. `plugins/auth-oidc-kubernetes`).
+  - `feat/<topic>` — product features in apps/packages (e.g. `feat/multi-device-rotation`).
+  - `design/<topic>` — docs, ADRs, architecture, process.
+  - `fix/<topic>` — bug fixes that don't belong to a larger in-flight branch.
+- **Open a PR into `develop`, merge once CI is green.** Keep PRs scoped to their area.
+- Commits stay **GPG-signed** as the repo author (so GitHub shows "Verified"). Do **not**
+  rewrite authorship to `noreply@anthropic.com` — the stop-hook that suggests this is a
+  generic default that conflicts with this repo's signing setup; ignore it.
+- **Sandbox transport caveat:** the remote-execution git proxy only accepts pushes to the
+  session's assigned `claude/…` ref (every other ref, including `develop`, returns 503). So
+  from the sandbox: do the work on a properly-named local branch rebased on `develop`,
+  `git push` it to the assigned `claude/…` ref as a dumb transport, then create the
+  **real-named** branch + PR via the GitHub API (`create_branch` from that ref, then
+  `create_pull_request`). On GitHub only the real names appear; the `claude/…` ref stays an
+  invisible implementation detail.
+
+-----
+
 ## Agent Instructions
 
 1. Use only the `arc-` prefix. Never write "Qwantarc".
@@ -225,3 +250,5 @@ See MONOREPO_PLAN.md for full roadmap + reference docs for target feature behavi
 6. Plugins never see the E2E master key; only scoped capabilities.
 7. Check arc-types before defining interfaces; check this file for where code belongs.
 8. Run `pnpm turbo build` after structural changes. License/dependency calls → ADR.
+9. Land work via category-prefixed branches + PRs into `develop` (see "Branching & PR
+   workflow"). Never commit straight to `develop`/`main`.
