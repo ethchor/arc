@@ -8,6 +8,7 @@ import { GrantsSchema1717300000000 } from "./migrations/1717300000000-grants-sch
 import { PasskeySchema1717400000000 } from "./migrations/1717400000000-passkey-schema";
 import { GrantsGroupsSchema1717500000000 } from "./migrations/1717500000000-grants-groups-schema";
 import { AuthModule } from "./auth/auth.module";
+import { AuthMethodsModule } from "./auth-methods/auth-methods.module";
 import { EnginesModule } from "./engines/engines.module";
 import { GrantsModule } from "./grants/grants.module";
 import { ObservabilityModule } from "./observability/observability.module";
@@ -122,6 +123,10 @@ export function buildDataSourceOptions(): TypeOrmModuleOptions {
     AuthModule,
     GrantsModule,
     VaultModule,
+    // AuthMethodsModule must precede EnginesModule: its POST /v1/auth/<mount>/login route has
+    // to register ahead of the engines `/v1/*` catch-all (and it intentionally doesn't import
+    // EnginesModule, so it isn't pulled in transitively first).
+    AuthMethodsModule,
     EnginesModule,
     PluginsModule,
   ],
