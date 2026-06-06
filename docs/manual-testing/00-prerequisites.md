@@ -52,6 +52,14 @@ production posture (`prod`-column) or a non-default endpoint.
 | `ARC_PASSKEY_RP_ID` | `localhost` | the public hostname | passkey service |
 | `ARC_PASSKEY_RP_NAME` | `arc` | display name in OS dialogs | passkey service |
 | `ARC_PASSKEY_ORIGIN` | `http://localhost:5173` | the public origin (https in prod) | passkey service |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (unset → tracing disabled) | OTLP/HTTP collector URL (e.g. `http://otel-collector:4318`); the trace exporter appends `/v1/traces` if not present | observability |
+| `OTEL_SERVICE_NAME` | `arc-server` | overrides the `service.name` resource attribute | observability |
+| `OTEL_SERVICE_VERSION` | `0.0.0` | overrides the `service.version` resource attribute | observability |
+| `OTEL_LOG_LEVEL` | (unset) | set to `debug` to enable verbose OTel diagnostic logs | observability |
+
+`/metrics` is always on — no env required. Prometheus scrapes the endpoint
+un-authenticated; access control lives at the network layer (bind the metrics port to
+the internal interface, or front the route with nginx/envoy if the deployment needs auth).
 
 ## Ports the local stack uses
 

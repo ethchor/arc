@@ -6,6 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import type { Capability } from "@arc/grants";
+import { MetricsService } from "../observability/metrics.service";
 import { GrantsService } from "./grants.service";
 
 interface AuthedRequest {
@@ -38,7 +39,10 @@ interface AuthedRequest {
 export class CapabilityGuard implements CanActivate {
   private readonly logger = new Logger(CapabilityGuard.name);
 
-  constructor(private readonly grants: GrantsService) {}
+  constructor(
+    private readonly grants: GrantsService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<AuthedRequest>();
@@ -51,6 +55,7 @@ export class CapabilityGuard implements CanActivate {
     const capability = pickCapability(req.method, path, req.query ?? {});
 
     const decision = await this.grants.decide(String(user.userId), path, capability);
+    this.metrics.aclDecisions.labels(decision.decision, decision.reason).inc();
     if (decision.decision === "allow") return true;
 
     this.logger.warn(

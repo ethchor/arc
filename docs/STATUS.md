@@ -450,7 +450,32 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   (the last one needs a docker-enabled runner; cheap because we already have the
   compose file).
 - [ ] Release pipeline + SBOM + signed artifacts.
-- [ ] OpenTelemetry traces + Prometheus metrics in `arc-server`.
+- [x] OpenTelemetry traces + Prometheus metrics in `arc-server`. New
+  `apps/arc-server/src/observability/` module: `MetricsService` owns a single
+  `prom-client` registry pre-loaded with the Node + process defaults
+  (`arc_process_*`, `arc_nodejs_*`) and six arc-specific metric families —
+  `arc_vault_operations_total`, `arc_leases_total {engine,op}`,
+  `arc_acl_decisions_total {decision,reason}`, `arc_plugin_issue_total
+  {plugin,role,result}`, `arc_http_request_duration_seconds {method,route,status}`
+  histogram, `arc_active_leases {engine}` gauge. `MetricsController` at `/metrics`
+  serves the 0.0.4 exposition format (un-guarded — network-layer auth is the
+  expected control); samples the LeaseManager just before each render so the
+  active-leases gauge is point-in-time current and won't hold stale labels.
+  `HttpMetricsInterceptor` wired as `APP_INTERCEPTOR` records the histogram on
+  every request using the matched Express route (low cardinality, no
+  per-`:id` blowup). `CapabilityGuard` increments `arc_acl_decisions_total` with
+  the `PolicyEngine`'s detailed reason; `EnginesService` increments
+  `arc_leases_total {issue,renew,revoke}` + `arc_plugin_issue_total` —
+  `MetricsService` injected via `@Optional()` so existing unit harnesses don't
+  need a stub. OTel SDK gated on `OTEL_EXPORTER_OTLP_ENDPOINT`:
+  `setupTelemetry()` from `main.ts` runs before `NestFactory.create` so
+  auto-instrumentations (HTTP, Express, pg, sqlite, pino) wrap their targets
+  in time. SIGTERM/SIGINT drain spans via `shutdownTelemetry()` so a deploy
+  doesn't lose the last few seconds of traces. 5 new e2e tests
+  (`observability.e2e-spec.ts`) confirm the exposition format, route-pattern
+  cardinality on the histogram, ACL counter on allow path, gauge HELP/TYPE at
+  zero, and unauthenticated scrape semantics. arc-server now 17 suites / 96
+  tests passing.
 - [ ] `sdks/arc-js-sdk` publish to npm.
 - [ ] `sdks/arc-go-sdk` scaffold + publish.
 

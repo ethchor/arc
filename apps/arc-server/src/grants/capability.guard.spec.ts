@@ -5,6 +5,7 @@
  */
 import { ExecutionContext, ForbiddenException } from "@nestjs/common";
 import { InMemoryPolicyStore, scope } from "@arc/grants";
+import { MetricsService } from "../observability/metrics.service";
 import { CapabilityGuard, pickCapability, stripV1Prefix } from "./capability.guard";
 import { GrantsService } from "./grants.service";
 
@@ -58,8 +59,9 @@ describe("CapabilityGuard", () => {
   function makeGuard(defaultMode: "allow" | "deny" = "deny") {
     const store = new InMemoryPolicyStore();
     const grants = new GrantsService(store, defaultMode);
-    const guard = new CapabilityGuard(grants);
-    return { grants, guard, store };
+    const metrics = new MetricsService();
+    const guard = new CapabilityGuard(grants, metrics);
+    return { grants, guard, store, metrics };
   }
 
   it("skips non-/v1 paths entirely (the Vault membership ACL handles those)", async () => {

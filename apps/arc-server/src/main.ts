@@ -1,4 +1,11 @@
 import "reflect-metadata";
+// OTel must be initialized BEFORE the Nest app + its transitive deps are required,
+// otherwise the auto-instrumentations don't see the modules to wrap. The function is a
+// no-op when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset, so dev / test boots don't pay the
+// SDK cost.
+import { setupTelemetry, shutdownTelemetry } from "./observability/telemetry";
+setupTelemetry();
+
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import helmet from "helmet";
@@ -16,6 +23,13 @@ async function bootstrap() {
   app.enableCors({
     origin: (process.env.CORS_ORIGINS ?? "http://localhost:3000,tauri://localhost").split(","),
   });
+
+  // Drain spans + flush metrics on graceful shutdown so a SIGTERM during a deploy
+  // doesn't lose the last few seconds of traces.
+  app.enableShutdownHooks();
+  process.on("SIGTERM", () => void shutdownTelemetry());
+  process.on("SIGINT", () => void shutdownTelemetry());
+
   const port = process.env.PORT ? Number(process.env.PORT) : 3001;
   await app.listen(port);
   app.get(Logger).log(`arc-vault API listening on :${port}`, "Bootstrap");

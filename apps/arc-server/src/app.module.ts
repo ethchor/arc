@@ -10,6 +10,7 @@ import { GrantsGroupsSchema1717500000000 } from "./migrations/1717500000000-gran
 import { AuthModule } from "./auth/auth.module";
 import { EnginesModule } from "./engines/engines.module";
 import { GrantsModule } from "./grants/grants.module";
+import { ObservabilityModule } from "./observability/observability.module";
 import { PluginsModule } from "./plugins/plugins.module";
 import { VaultModule } from "./vault/vault.module";
 
@@ -117,6 +118,7 @@ export function buildDataSourceOptions(): TypeOrmModuleOptions {
   imports: [
     LoggerModule.forRoot(buildLoggerOptions()),
     TypeOrmModule.forRoot(buildDataSourceOptions()),
+    ObservabilityModule,
     AuthModule,
     GrantsModule,
     VaultModule,

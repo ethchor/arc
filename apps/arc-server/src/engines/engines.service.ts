@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Optional,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
@@ -18,6 +19,7 @@ import {
   type TransitEngine,
 } from "@arc/secrets-engine";
 import { OpenBaoClient, OpenBaoError } from "@arc/openbao-adapter";
+import { MetricsService } from "../observability/metrics.service";
 
 /**
  * Token under which the {@link EnginesConfig} factory provider is registered. The module
@@ -51,7 +53,10 @@ export interface EnginesConfig {
 export class EnginesService {
   private readonly logger = new Logger(EnginesService.name);
 
-  constructor(@Inject(ENGINES_CONFIG) private readonly config: EnginesConfig) {}
+  constructor(
+    @Inject(ENGINES_CONFIG) private readonly config: EnginesConfig,
+    @Optional() private readonly metrics?: MetricsService,
+  ) {}
 
   get enabled(): boolean {
     return this.config.client !== null;
@@ -147,7 +152,15 @@ export class EnginesService {
     // shape), not by `type` string, so plugins don't need to claim "database".
     if (relativePath.startsWith("creds/") && isDynamicSecretsEngine(engine)) {
       const role = relativePath.slice("creds/".length);
-      const issued = await engine.issue(role);
+      let issued;
+      try {
+        issued = await engine.issue(role);
+      } catch (err) {
+        this.metrics?.pluginIssue.labels(engine.type, role, "error").inc();
+        throw err;
+      }
+      this.metrics?.leases.labels(engine.type, "issue").inc();
+      this.metrics?.pluginIssue.labels(engine.type, role, "success").inc();
       return {
         data: issued.data,
         lease_id: issued.lease.id,
@@ -181,6 +194,7 @@ export class EnginesService {
     }
     try {
       const renewed = await engine.renew(leaseId, incrementSeconds);
+      this.metrics?.leases.labels(engine.type, "renew").inc();
       return {
         lease_id: renewed.id,
         lease_duration: leaseDurationSeconds(renewed),
@@ -211,6 +225,7 @@ export class EnginesService {
     }
     try {
       await engine.revoke(leaseId);
+      this.metrics?.leases.labels(engine.type, "revoke").inc();
     } catch (err) {
       if (err instanceof LeaseError) {
         throw new BadRequestException({ errors: [err.message], code: err.code });
@@ -224,6 +239,24 @@ export class EnginesService {
    * through here. Body shape mirrors OpenBao's (Vault-compatible) wire format so existing
    * Vault client SDKs Just Work against this surface.
    */
+  /**
+   * Snapshot of active leases grouped by engine type. Called by the metrics controller
+   * right before each `/metrics` scrape so the `arc_active_leases` gauge reflects the
+   * current LeaseManager state. Empty when no leases have been issued.
+   */
+  activeLeasesByEngine(): Map<string, number> {
+    const now = Date.now();
+    const counts = new Map<string, number>();
+    for (const lease of this.config.leases.list()) {
+      if (lease.revokedAt !== undefined) continue;
+      if (lease.expiresAt <= now) continue;
+      const engine = this.config.enginesByMount.get(lease.mount);
+      const type = engine?.type ?? lease.mount;
+      counts.set(type, (counts.get(type) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   async post(
     requestPath: string,
     body: Record<string, unknown>,
