@@ -457,7 +457,26 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   `.Values.<key>` reference in the templates resolves to a real key — catches typos
   without needing `helm` installed locally. `helm lint` + `helm template` will run in CI
   in the next commit.
-- [ ] `arc-terraform`: IaC modules.
+- [x] `arc-terraform`: IaC module wrapping the chart for `terraform`-driven
+  installs. New `infra/arc-terraform/modules/arc` declares the providers
+  (`hashicorp/helm` ≥ 2.12, `hashicorp/kubernetes` ≥ 2.25), creates the
+  namespace (gated on `create_namespace`), and renders a `helm_release` whose
+  `values` block is a 1:1 typed mapping of the chart's `values.yaml`
+  (`arc_server` → `arcServer`, `openbao` → `openbao`, etc.). Mirrors the same
+  production knobs as the chart: `arc_server.secret.existing_secret`,
+  `arc_server.env.OTEL_EXPORTER_OTLP_ENDPOINT`, `openbao.dev_mode`,
+  `openbao.persistence`, `service_monitor.enabled`. `extra_values` escape
+  hatch merges raw HCL on top so any chart key the typed surface doesn't
+  expose yet can still be set. `outputs.tf` exposes the cluster-internal
+  Service DNS for both arc-server and the colocated OpenBao. A reference
+  example at `examples/dev/main.tf` wires the in-repo chart path for kind/k3d
+  loops. 14 vitest smoke tests (`infra/arc-terraform/tests/module.test.ts`)
+  scan every `.tf` file, assert the required `variable` / `output` /
+  `resource` declarations exist, and cross-check that every chart key the
+  module writes (`arcServer.replicaCount`, `openbao.devMode`, etc.) actually
+  exists in `infra/arc-helm-charts/arc/values.yaml` — so the two stay in
+  lockstep without needing `terraform` installed. `terraform fmt -check` +
+  `terraform validate` will run in CI in the next commit.
 - [ ] GitHub Actions CI: build + typecheck + test + parity test + adapter live test
   (the last one needs a docker-enabled runner; cheap because we already have the
   compose file).

@@ -325,6 +325,24 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
 
+  infra/arc-terraform:
+    devDependencies:
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.2.0
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+
   integrations/arc-openbao-adapter:
     dependencies:
       '@arc/leasing':
