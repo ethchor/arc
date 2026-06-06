@@ -97,20 +97,61 @@ a CI matrix that builds, tests, and validates every surface on every change.
 Two engines, one control plane. `arc-server` (NestJS) unifies authentication, authorization,
 audit, and the plugin host; it routes every request through the same identity and policy model.
 
-```
-                         ┌─────────────────────────────────────────────┐
-   web · desktop ·       │                  arc-server                 │
-   extension · CLI ·  ───┤   identity · policy (@arc/grants) · audit   │
-   SDK · API            │      plugin host · sync · observability      │
-                         └───────────────┬───────────────┬─────────────┘
-                                         │               │
-                        Engine A — infra │               │ Engine B — E2E vault
-                   (KV · transit · PKI · │               │ (zero-knowledge; server
-                    dynamic creds · lease)               │  stores ciphertext only)
-                                         │               │
-                          MountRegistry  │               │  @arc/crypto  (TS)
-                          + secrets-engine                │  vault-crypto-rs (Rust)
-                          contracts                        │  byte-for-byte parity
+```mermaid
+flowchart TB
+    subgraph CL["Clients &amp; surfaces"]
+        direction LR
+        WEB["Web console<br/>Next.js"]
+        DESK["Desktop<br/>Tauri + Rust"]
+        EXT["Browser<br/>extension"]
+        CLI["CLI"]
+        SDK["SDK / REST API"]
+    end
+
+    subgraph SRV["arc-server — one control plane (NestJS)"]
+        direction LR
+        ID["Identity &amp; auth<br/>JWT · passkeys · devices"]
+        POL["Policy engine<br/>@arc/grants ACL"]
+        AUD["Audit<br/>metadata-only"]
+        OBS["Observability<br/>OTel · /metrics"]
+        HOST["Plugin host"]
+    end
+
+    subgraph EA["Engine A — infrastructure secrets"]
+        direction LR
+        REG{{"MountRegistry<br/>per-mount routing"}}
+        KV["KV v2"]
+        TR["Transit"]
+        PK["PKI"]
+        LS["Leasing"]
+    end
+
+    subgraph PL["Secrets plugins — scoped capabilities only"]
+        direction LR
+        CLOUD["cloud<br/>AWS · GCP · Azure"]
+        SCM["scm<br/>GitHub · GitLab · Bitbucket"]
+    end
+
+    subgraph EB["Engine B — end-to-end vault · zero-knowledge"]
+        direction LR
+        CTS["@arc/crypto<br/>TypeScript"]
+        CRS["vault-crypto-rs<br/>Rust"]
+    end
+
+    BK[("Secrets backend<br/>swappable per mount")]
+    DB[("PostgreSQL<br/>ciphertext + metadata")]
+
+    CL ==>|"one identity · one API"| SRV
+    SRV --> EA
+    SRV --> EB
+    HOST --> PL
+    REG --> KV
+    REG --> TR
+    REG --> PK
+    REG --> LS
+    REG --> PL
+    EA --> BK
+    EB --> DB
 ```
 
 **Engine A is backend-agnostic by design.** The `@arc/secrets-engine` contracts
@@ -122,11 +163,47 @@ product *above* it. Because everything routes through `MountRegistry`, that back
 per mount: see [Roadmap & north star](#roadmap--north-star) for where this goes next.
 
 **Engine B is arc's own zero-knowledge cryptosystem.** Keys are derived and used only on the
-client; the server is a blind ciphertext store. The crypto runs identically in **TypeScript**
-(`@arc/crypto`, for web/extension/CLI) and **Rust** (`vault-crypto-rs`, for desktop) — verified
-byte-for-byte against shared known-answer test vectors.
+client; the server is a blind ciphertext store. Only ciphertext ever crosses the trust boundary:
 
-**Monorepo** (pnpm workspaces + Turborepo), with strict dependency boundaries:
+```mermaid
+flowchart LR
+    subgraph C["Client — trusted (keys never leave)"]
+        direction TB
+        MP["Master password"] --> KDF["Argon2id"]
+        KDF --> KEYS["Identity &amp; vault keys"]
+        PT["Plaintext items"] --> ENC["Encrypt + sign locally<br/>@arc/crypto · vault-crypto-rs"]
+        KEYS --> ENC
+    end
+
+    subgraph S["arc-server — never sees keys or plaintext"]
+        direction TB
+        CT["Ciphertext envelopes<br/>+ signatures"]
+        MD["Policy · audit · metadata"]
+    end
+
+    ENC ==>|"only ciphertext crosses the boundary"| CT
+    CT --> PG[("PostgreSQL")]
+    MD --> PG
+```
+
+The crypto runs identically in **TypeScript** (`@arc/crypto`, for web/extension/CLI) and **Rust**
+(`vault-crypto-rs`, for desktop) — verified byte-for-byte against shared known-answer test vectors.
+
+**Monorepo** (pnpm workspaces + Turborepo), with strict, enforced dependency boundaries — nothing
+above the line may be imported by anything below it, and plugins are sandboxed to two packages:
+
+```mermaid
+flowchart TD
+    PLUG["plugins/*"] --> PSDK["arc-plugin-sdk"]
+    PLUG --> TYP["arc-types"]
+    APP["apps/*"] --> PKG["packages/*"]
+    APP --> SDKS["sdks/*"]
+    APP --> INT["integrations/*"]
+    SDKS --> PKG
+    INT --> PKG
+    INT --> EXT["external backend<br/>HTTP API"]
+    INFRA["infra/*"] -.->|"no code imports"| NONE["deploys the built artifacts only"]
+```
 
 ```
 packages/    arc-types · arc-crypto · arc-grants · arc-leasing · arc-secrets-engine · arc-plugin-sdk
