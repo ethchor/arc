@@ -59,6 +59,8 @@
     "@arc/plugin-gcp": "workspace:*",
     "@arc/plugin-github": "workspace:*",
     "@arc/plugin-gitlab": "workspace:*",
+    "@arc/plugin-kubernetes": "workspace:*",
+    "@arc/plugin-oidc": "workspace:*",
     "@arc/sdk": "workspace:*",
     "@nestjs/testing": "^11.0.0",
     "@types/jest": "^29.5.14",

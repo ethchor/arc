@@ -437,7 +437,31 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 - Cross-plugin "six together" integration spec confirms all six vendors (AWS / GCP /
   GitHub / Azure / GitLab / Bitbucket) co-mount on the same `MountRegistry` and dispatch
   independently. **Workspace total: 364 tests passing.**
-- [ ] Auth plugins: `arc-plugin-oidc`, `arc-plugin-kubernetes`.
+- [x] Auth plugins: `arc-plugin-oidc` + `arc-plugin-kubernetes` — completes the plugin
+  target matrix (cloud + scm + auth). Both implement `@arc/plugin-sdk`'s `AuthPlugin`
+  contract (`configure` + `login(req) → {identityId, policies, tokenTtlSeconds, …}`) with an
+  injectable verifier/reviewer at construction so the core is hermetic; each ships a default
+  Node-builtin-only client behind a `/node` subpath. **OIDC** (`plugins/auth/arc-plugin-oidc`)
+  verifies a caller-presented JWT against the issuer's JWKS — `createOidcJwtVerifier` does OIDC
+  discovery (`/.well-known/openid-configuration` → `jwks_uri`, cached) + RS256/384/512 &
+  ES256/384/512 signature verification via `node:crypto` (`createPublicKey({format:"jwk"})`,
+  IEEE-P1363 for ECDSA) + iss/aud/exp/nbf checks — then enforces the role's `boundAudiences` +
+  `boundClaims` and maps to policies; policies come from the role, never the token, so a token
+  can't self-escalate. 19 tests incl. real RSA/EC signed JWTs (tamper/wrong-key/expiry/issuer/
+  audience/kid + JWKS caching). **Kubernetes** (`plugins/auth/arc-plugin-kubernetes`) delegates
+  authentication to the cluster TokenReview API (`createNodeTokenReviewer` POSTs
+  `authentication.k8s.io/v1/tokenreviews` over fetch), parses the
+  `system:serviceaccount:<ns>:<name>` identity, and enforces the role's bound namespaces +
+  service-account names (with `*` wildcards). 11 tests. **arc-server wiring:** new
+  `AuthMethodsModule` (`apps/arc-server/src/auth-methods/`) — `AuthMethodsService` holds its own
+  `PluginHost` for auth methods (deliberately free of `EnginesModule`) and
+  `AuthMethodsController` serves `POST /v1/auth/<mount>/login`: resolve the method → `login()` →
+  attach the resolved policies to the identity in the grants store → mint an arc JWT
+  (`sub=identityId`). The module is registered **before** `EnginesModule` in `app.module` so its
+  login route is matched ahead of the engines `/v1/*` catch-all. 5 e2e tests boot the real app,
+  mount both methods with fake verifier/reviewer, and prove login → token → policy-bound access
+  (covered path authorized, uncovered path 403) + 401 on unverifiable token / unknown role + 404
+  on an unmounted method. Workspace total climbs accordingly (OIDC 19 + k8s 11 + 5 server e2e).
 
 ### Phase 4 — deployment + ops
 

@@ -191,6 +191,12 @@ importers:
       '@arc/plugin-gitlab':
         specifier: workspace:*
         version: link:../../plugins/scm/arc-plugin-gitlab
+      '@arc/plugin-kubernetes':
+        specifier: workspace:*
+        version: link:../../plugins/auth/arc-plugin-kubernetes
+      '@arc/plugin-oidc':
+        specifier: workspace:*
+        version: link:../../plugins/auth/arc-plugin-oidc
       '@arc/sdk':
         specifier: workspace:*
         version: link:../../sdks/arc-js-sdk
@@ -462,6 +468,50 @@ importers:
 
   packages/arc-types:
     devDependencies:
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+
+  plugins/auth/arc-plugin-kubernetes:
+    dependencies:
+      '@arc/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../packages/arc-plugin-sdk
+      '@arc/types':
+        specifier: workspace:*
+        version: link:../../../packages/arc-types
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.19
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+
+  plugins/auth/arc-plugin-oidc:
+    dependencies:
+      '@arc/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../packages/arc-plugin-sdk
+      '@arc/types':
+        specifier: workspace:*
+        version: link:../../../packages/arc-types
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.19
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
