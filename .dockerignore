@@ -1,0 +1,27 @@
+# Keep the build context lean. We must NOT exclude any package.json / source that the
+# pnpm lockfile references (--frozen-lockfile validates the whole workspace), so this only
+# drops build artifacts, caches, and VCS/CI metadata — never source or manifests.
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+**/.next
+**/out
+**/build
+**/target
+**/.terraform
+**/.terraform.lock.hcl
+**/*.tfstate
+**/*.tfstate.*
+
+.git
+.gitignore
+.github
+**/*.log
+.DS_Store
+**/.idea
+**/.vscode
+
+# Desktop shell native build inputs aren't needed to build the server image.
+apps/arc-vault-desktop/src-tauri/gen

@@ -135,3 +135,39 @@ jobs:
       - name: terraform validate (dev example)
         working-directory: infra/arc-terraform/examples/dev
         run: terraform validate -no-color
+
+  # Builds the arc-server image on every PR (no push) so the Dockerfile that `release.yml`
+  # publishes never rots, and boots it to prove the deployed bundle actually serves /metrics.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build arc-server image (load locally, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/arc-server/Dockerfile
+          push: false
+          load: true
+          tags: arc-server:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test the image boots and serves /metrics
+        run: |
+          # NODE_ENV=development uses the in-memory sql.js fallback (production refuses to
+          # boot without DATABASE_URL), so the image can come up with no external deps.
+          id=$(docker run -d -e NODE_ENV=development -e PORT=3001 -p 3001:3001 arc-server:ci)
+          ok=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3001/metrics >/dev/null 2>&1; then ok=1; break; fi
+            sleep 1
+          done
+          echo "----- container logs -----"
+          docker logs "$id" 2>&1 | tail -25
+          docker rm -f "$id" >/dev/null 2>&1 || true
+          if [ "$ok" != "1" ]; then
+            echo "::error::arc-server image did not serve /metrics within 30s"
+            exit 1
+          fi
+          echo "image booted and served /metrics ✓"

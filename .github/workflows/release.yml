@@ -1,0 +1,110 @@
+name: Release
+
+# Tag a release (`git tag v0.1.0 && git push --tags`) to build, sign, and publish the
+# arc-server image to GHCR with an SBOM. `workflow_dispatch` allows a manual re-run.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to build, e.g. v0.1.0 (defaults to the triggering ref)."
+        required: false
+
+permissions:
+  contents: read
+  packages: write # push the image to GHCR
+  id-token: write # cosign keyless signing via the GitHub OIDC token
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ethchor/arc-server
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=${ref}" >> "$GITHUB_OUTPUT"
+          echo "version=${ref#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.version.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.tag }}
+            type=sha
+
+      # BuildKit attaches an SPDX SBOM + SLSA provenance attestation to the pushed image.
+      - name: Build + push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/arc-server/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Keyless signature bound to this workflow's OIDC identity (no long-lived keys).
+      - name: Sign the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${REGISTRY}/${IMAGE_NAME}@${DIGEST}"
+
+      # A standalone, downloadable SPDX SBOM (in addition to the attestation BuildKit pushed).
+      - name: Generate SBOM (syft)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: arc-server.sbom.spdx.json
+
+      - name: Attest the SBOM to the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign attest --yes --type spdxjson --predicate arc-server.sbom.spdx.json "${REGISTRY}/${IMAGE_NAME}@${DIGEST}"
+
+      - name: Upload SBOM as a run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-server-sbom-${{ steps.version.outputs.version }}
+          path: arc-server.sbom.spdx.json
+
+      - name: Summary
+        run: |
+          {
+            echo "### arc-server ${{ steps.version.outputs.tag }} published"
+            echo ""
+            echo "- Image: \`${REGISTRY}/${IMAGE_NAME}@${{ steps.build.outputs.digest }}\`"
+            echo "- Signed (keyless cosign) + SBOM attested (SPDX) + SLSA provenance."
+            echo ""
+            echo "Verify:"
+            echo '```sh'
+            echo "cosign verify ${REGISTRY}/${IMAGE_NAME}:${{ steps.version.outputs.version }} \\"
+            echo "  --certificate-identity-regexp 'https://github.com/ethchor/arc/.github/workflows/release.yml@.*' \\"
+            echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
