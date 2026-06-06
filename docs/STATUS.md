@@ -501,7 +501,35 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   for contributors without docker / helm / terraform installed" path and
   a "real binary" path that catches Go-template + HCL bugs the parsers
   can't see.
-- [ ] Release pipeline + SBOM + signed artifacts.
+- [x] Release pipeline + SBOM + signed artifacts. New
+  `apps/arc-server/Dockerfile` — multi-stage: stage 1 installs the whole
+  pnpm workspace, builds arc-server + its `@arc/*` deps, then
+  `pnpm --filter @arc/server deploy --prod --legacy /app` carves out a
+  self-contained, production-only tree (the `--legacy` flag is pnpm v10's
+  requirement for non-injected workspaces); stage 2 copies just that tree
+  onto a slim non-root `node:22-bookworm-slim` runtime that runs
+  `node dist/main.js` with a `/metrics` HEALTHCHECK. `.dockerignore` keeps
+  node_modules / build caches out of the context. `.github/workflows/release.yml`
+  (tag-triggered `v*` + manual dispatch) logs into GHCR, builds + pushes
+  `ghcr.io/ethchor/arc-server` (the image the helm chart + terraform
+  already reference) with BuildKit SLSA provenance + SPDX SBOM
+  attestations, then **cosign keyless-signs** the digest (OIDC, no
+  long-lived keys), generates a standalone SPDX SBOM via syft
+  (`anchore/sbom-action`), `cosign attest`s it, and uploads it as a run
+  artifact — plus a job summary with the `cosign verify` incantation. A
+  new `docker-build` CI job builds the image on **every PR** (no push) and
+  boots it to assert `/metrics` serves, so the Dockerfile can't rot
+  between releases. 16 structural vitest checks in the new `@arc/release`
+  package lock the Dockerfile + both workflows against drift (multi-stage,
+  non-root, deploy --legacy, tag trigger, packages/id-token permissions,
+  cosign + SBOM steps) without needing docker/cosign installed — and
+  assert the build-time TLS bypass the sandbox needs never reaches the
+  committed image. Verified locally that `pnpm deploy --prod --legacy`
+  produces a self-contained bundle that boots the full NestJS app (every
+  module initializes); the end-to-end image build is exercised by the
+  `docker-build` CI job on every PR (the sandbox's TLS-intercepting proxy
+  breaks corepack inside `docker build`, so it can't complete here without
+  a throwaway bypass that must never ship in the image).
 - [x] OpenTelemetry traces + Prometheus metrics in `arc-server`. New
   `apps/arc-server/src/observability/` module: `MetricsService` owns a single
   `prom-client` registry pre-loaded with the Node + process defaults
