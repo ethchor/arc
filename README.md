@@ -361,8 +361,10 @@ pnpm hooks:install   # (re)install the pre-push hook; runs automatically on pnpm
 ## Roadmap & north star
 
 **Near-term** (tracked live in [`docs/STATUS.md`](docs/STATUS.md)):
-auth plugins (OIDC, Kubernetes) · the Kubernetes operator for secret injection · the client-side
-agent · multi-device key rotation with auto-revoke · out-of-process (WASM/gRPC) plugin sandbox.
+an **MCP server** (`integrations/arc-mcp-server`) that exposes arc over the
+[Model Context Protocol](https://modelcontextprotocol.io) · the Kubernetes operator for secret
+injection · the client-side agent · multi-device key rotation with auto-revoke · out-of-process
+(WASM/gRPC) plugin sandbox.
 
 **The engine north star.** Engine A's contracts are deliberately backend-agnostic and route per
 mount, which makes the reference OpenBao backend an *implementation detail, not a dependency*. The
@@ -374,8 +376,13 @@ deliberately, when the leverage is there.
 **The agentic north star.** The next wave of consumers won't only be humans and CI jobs — it'll be
 autonomous and intelligent systems that need to hold, request, and rotate credentials continuously.
 arc is being built so those systems are first-class: scoped, auditable, revocable capabilities and
-machine identities, never raw key material. A secrets platform robust enough for a person should be
-robust enough for an agent — and ours is designed for both.
+machine identities, never raw key material. The concrete vehicle is an **MCP (Model Context
+Protocol) server**: any MCP-capable agent authenticates with a machine identity (via the OIDC /
+Kubernetes auth methods), receives a policy-bound token, and then calls arc operations — fetch a
+secret, mint a dynamic credential, encrypt via transit — as MCP *tools*, each authorized by
+`@arc/grants` and recorded in the audit log, and **never** handed the E2E master key. Because MCP is
+an open standard, the same server works with any agent runtime. A secrets platform robust enough
+for a person should be robust enough for an agent — and ours is designed for both.
 
 ---
 
