@@ -1,0 +1,157 @@
+# =============================================================================
+# arc Helm values — every knob, with the boring production-safe default first.
+#
+# The chart deploys two main things:
+#   1. arc-server (Deployment) — the Node/Nest API at /vaults, /vault/*, /v1/*, /metrics.
+#   2. OpenBao (StatefulSet)   — Engine-A backend. Co-locate by default; toggle off
+#                                  when you operate OpenBao separately.
+# =============================================================================
+
+# Common defaults applied to everything the chart renders.
+nameOverride: ""
+fullnameOverride: ""
+commonLabels: {}
+commonAnnotations: {}
+imagePullSecrets: []
+
+# ---------------------------------------------------------------------------
+# arc-server
+# ---------------------------------------------------------------------------
+arcServer:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ghcr.io/ethchor/arc-server
+    # Pinned tag. Use `appVersion` from Chart.yaml when bumping in lockstep.
+    tag: ""
+    pullPolicy: IfNotPresent
+  # `NODE_ENV=production` flips arc-server into the strict profile (migrations only,
+  # no synchronize). The Deployment also refuses to start when DATABASE_URL is unset.
+  env:
+    NODE_ENV: production
+    LOG_LEVEL: info
+    PORT: "3001"
+    # Set this to opt into ACL enforcement. Leaves dev defaults if unset.
+    ARC_DEFAULT_POLICY: deny
+    # Comma list of bootstrap sudo subject ids. Required if ARC_DEFAULT_POLICY=deny.
+    ARC_ROOT_USERS: ""
+    ARC_POLICY_CACHE_TTL_MS: "30000"
+    # OTel: leave empty to disable tracing, otherwise an OTLP/HTTP collector URL.
+    OTEL_EXPORTER_OTLP_ENDPOINT: ""
+    OTEL_SERVICE_NAME: arc-server
+  # Secrets the chart will create (and the Deployment will mount). When `existingSecret`
+  # is set we instead reference that, so users can manage secrets out-of-band.
+  secret:
+    create: true
+    existingSecret: ""
+    # Required when create=true. Either provide here (committed values are NOT recommended
+    # — overlay via `--set-string` / external-secrets) or leave blank for "use a literal
+    # in `secret.literals`".
+    jwtSecret: ""
+    # Connection URL the server reads as DATABASE_URL.
+    databaseUrl: ""
+    # When OpenBao is co-located by this chart, the StatefulSet's root token is
+    # auto-injected. If you point at an external OpenBao, set this.
+    baoToken: ""
+
+  service:
+    type: ClusterIP
+    port: 3001
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
+
+  # Pod-level security context (NestJS is fine as non-root).
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
+  livenessProbe:
+    httpGet:
+      path: /metrics
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 30
+  readinessProbe:
+    httpGet:
+      path: /metrics
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# Postgres dependency (arc-server's primary DB).
+# This chart does NOT install Postgres — production deployments use a managed offering
+# (RDS / CloudSQL / AlloyDB / hosted). Wire it via `arcServer.secret.databaseUrl`.
+# For local clusters, point at a Bitnami postgres chart in the same namespace.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# OpenBao (Engine-A backend)
+#
+# Co-located by default. Disable when you operate OpenBao separately (e.g. multi-tenant
+# OpenBao cluster shared across arc deployments).
+# ---------------------------------------------------------------------------
+openbao:
+  enabled: true
+  image:
+    repository: quay.io/openbao/openbao
+    tag: latest
+    pullPolicy: IfNotPresent
+  # Dev mode unseals + auto-initializes for first-boot ergonomics. Production deployments
+  # MUST switch to non-dev mode + a real seal config (KMS / Shamir).
+  devMode: true
+  devRootToken: root
+  service:
+    type: ClusterIP
+    port: 8200
+  persistence:
+    enabled: false
+    storageClass: ""
+    size: 8Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+
+# ---------------------------------------------------------------------------
+# Ingress (front the /vaults, /v1, /metrics paths).
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: arc.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# ---------------------------------------------------------------------------
+# Prometheus integration. ServiceMonitor wires the /metrics endpoint we shipped.
+# Requires kube-prometheus-stack (or the upstream prometheus-operator) installed.
+# ---------------------------------------------------------------------------
+serviceMonitor:
+  enabled: false
+  namespace: ""
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+  # Drop very high-cardinality labels at the relabel layer if needed.
+  metricRelabelings: []

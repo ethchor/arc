@@ -1,0 +1,16 @@
+{
+  "name": "@arc/helm-charts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Helm chart for arc-server + colocated OpenBao. Validates structure via vitest; full helm lint runs in CI.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "js-yaml": "^4.1.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

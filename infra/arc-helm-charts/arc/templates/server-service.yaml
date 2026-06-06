@@ -1,0 +1,18 @@
+{{- if .Values.arcServer.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "arc.server.fullname" . }}
+  labels:
+    {{- include "arc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: arc-server
+spec:
+  type: {{ .Values.arcServer.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.arcServer.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "arc.server.selectorLabels" . | nindent 4 }}
+{{- end }}

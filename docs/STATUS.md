@@ -444,7 +444,19 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 - [ ] `arc-agent`: Rust sidecar for templating + auto-auth (sketched in ADR-001 §Open
   questions; needs a concrete first use case before it lands).
 - [ ] `arc-operator`: Kubernetes operator (Go) per `infra/`.
-- [ ] `arc-helm-charts`: deploys `arc-server` + colocated OpenBao.
+- [x] `arc-helm-charts`. New `infra/arc-helm-charts/arc` Helm chart deploys arc-server
+  (Deployment + Service + Secret) with co-located OpenBao (StatefulSet + Service, dev mode
+  by default — production deployments flip `openbao.devMode=false` and supply a real
+  config/seal). Optional `Ingress` (`networking.k8s.io/v1`) and `ServiceMonitor`
+  (`monitoring.coreos.com/v1`) that scrapes the `/metrics` endpoint from the
+  observability commit. Production knobs: `arcServer.secret.existingSecret` for External
+  Secrets / SealedSecrets integration, `OTEL_EXPORTER_OTLP_ENDPOINT` for tracing,
+  `ARC_DEFAULT_POLICY=deny` + `ARC_ROOT_USERS` for the fail-closed posture. 13 vitest
+  smoke tests (`infra/arc-helm-charts/arc/tests/chart.test.ts`) parse Chart.yaml +
+  values.yaml + every template YAML, walk the values tree, and assert every
+  `.Values.<key>` reference in the templates resolves to a real key — catches typos
+  without needing `helm` installed locally. `helm lint` + `helm template` will run in CI
+  in the next commit.
 - [ ] `arc-terraform`: IaC modules.
 - [ ] GitHub Actions CI: build + typecheck + test + parity test + adapter live test
   (the last one needs a docker-enabled runner; cheap because we already have the
