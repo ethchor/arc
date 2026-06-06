@@ -93,12 +93,12 @@ variable "arc_server" {
       readOnlyRootFilesystem   = true
       capabilities             = { drop = ["ALL"] }
     })
-    liveness_probe   = optional(any, {})
-    readiness_probe  = optional(any, {})
-    pod_annotations  = optional(map(string), {})
-    node_selector    = optional(map(string), {})
-    tolerations      = optional(list(any), [])
-    affinity         = optional(any, {})
+    liveness_probe  = optional(any, {})
+    readiness_probe = optional(any, {})
+    pod_annotations = optional(map(string), {})
+    node_selector   = optional(map(string), {})
+    tolerations     = optional(list(any), [])
+    affinity        = optional(any, {})
   })
   default = {}
 }

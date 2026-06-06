@@ -11,7 +11,8 @@ provider "kubernetes" {
 }
 
 provider "helm" {
-  kubernetes {
+  # helm provider v3: kubernetes connection is an attribute, not a nested block.
+  kubernetes = {
     config_path = "~/.kube/config"
   }
 }

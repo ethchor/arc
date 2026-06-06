@@ -2,7 +2,7 @@
 ## Namespace (optional).
 ## ---------------------------------------------------------------------------
 
-resource "kubernetes_namespace" "this" {
+resource "kubernetes_namespace_v1" "this" {
   count = var.create_namespace ? 1 : 0
 
   metadata {
@@ -25,10 +25,10 @@ locals {
     commonAnnotations = var.common_annotations
 
     arcServer = {
-      enabled       = var.arc_server.enabled
-      replicaCount  = var.arc_server.replica_count
-      image         = var.arc_server.image
-      env           = var.arc_server.env
+      enabled      = var.arc_server.enabled
+      replicaCount = var.arc_server.replica_count
+      image        = var.arc_server.image
+      env          = var.arc_server.env
       secret = {
         create         = var.arc_server.secret.create
         existingSecret = var.arc_server.secret.existing_secret
@@ -93,10 +93,10 @@ resource "helm_release" "arc" {
 
   atomic           = var.atomic
   timeout          = var.timeout_seconds
-  create_namespace = false # Handled by `kubernetes_namespace.this` above.
+  create_namespace = false # Handled by `kubernetes_namespace_v1.this` above.
   wait             = true
 
   values = [yamlencode(local.merged_values)]
 
-  depends_on = [kubernetes_namespace.this]
+  depends_on = [kubernetes_namespace_v1.this]
 }

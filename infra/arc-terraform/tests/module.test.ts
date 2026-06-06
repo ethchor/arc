@@ -99,7 +99,7 @@ describe("modules/arc — outputs", () => {
 
 describe("modules/arc — resources", () => {
   it("creates the namespace and helm_release", () => {
-    expect(moduleSrc).toMatch(/resource\s+"kubernetes_namespace"\s+"this"/);
+    expect(moduleSrc).toMatch(/resource\s+"kubernetes_namespace_v1"\s+"this"/);
     expect(moduleSrc).toMatch(/resource\s+"helm_release"\s+"arc"/);
   });
 
@@ -112,7 +112,7 @@ describe("modules/arc — resources", () => {
   });
 
   it("orders helm_release after the namespace creation", () => {
-    expect(moduleSrc).toMatch(/depends_on\s*=\s*\[\s*kubernetes_namespace\.this\s*\]/);
+    expect(moduleSrc).toMatch(/depends_on\s*=\s*\[\s*kubernetes_namespace_v1\.this\s*\]/);
   });
 });
 

@@ -459,7 +459,9 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   in the next commit.
 - [x] `arc-terraform`: IaC module wrapping the chart for `terraform`-driven
   installs. New `infra/arc-terraform/modules/arc` declares the providers
-  (`hashicorp/helm` ≥ 2.12, `hashicorp/kubernetes` ≥ 2.25), creates the
+  (`hashicorp/helm` ~> 3.0, `hashicorp/kubernetes` ~> 3.0 — the v3 majors,
+  so the example uses helm v3's `kubernetes = {}` attribute syntax and the
+  `kubernetes_namespace_v1` resource), creates the
   namespace (gated on `create_namespace`), and renders a `helm_release` whose
   `values` block is a 1:1 typed mapping of the chart's `values.yaml`
   (`arc_server` → `arcServer`, `openbao` → `openbao`, etc.). Mirrors the same

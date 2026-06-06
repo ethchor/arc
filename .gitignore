@@ -15,3 +15,12 @@ apps/arc-vault-desktop/src-tauri/gen/
 .DS_Store
 .idea/
 .vscode/
+
+# Terraform — provider cache, lock, and state are never committed here.
+# (CI runs `terraform init` fresh; the lock would otherwise pin to one OS/arch.)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+crash.log
+crash.*.log
