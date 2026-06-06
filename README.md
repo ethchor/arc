@@ -270,8 +270,9 @@ Plus [`docs/arc-rfcs/`](docs/arc-rfcs/) for architectural decision records and
 ## Contributing
 
 Work lands on `develop` through **pull requests** from **category-prefixed branches** —
-`ops/…`, `plugins/…`, `feat/…`, `design/…`, `fix/…` — one branch per area or phase. CI must be
-green to merge. The full convention is in [`docs/CLAUDE.md`](docs/CLAUDE.md).
+`feat/…`, `fix/…`, `ops/…`, `plugins/…`, `architecture/…`, `chore/…`, and `design/…` (reserved for
+UI/UX design) — one branch per area or phase, with the set open to new prefixes as the work calls
+for them. CI must be green to merge. The full convention is in [`docs/CLAUDE.md`](docs/CLAUDE.md).
 
 ```sh
 pnpm ci          # the exact chain CI runs: build → typecheck → test

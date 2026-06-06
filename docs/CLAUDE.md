@@ -220,12 +220,18 @@ See MONOREPO_PLAN.md for full roadmap + reference docs for target feature behavi
 Work lands on `develop` through **pull requests**, never by committing straight to it.
 
 - **Branch names use category prefixes**, grouped by area of work (one branch/PR per area
-  or phase — not one per tiny feature):
+  or phase — not one per tiny feature). The set is **open-ended**: these are the common
+  prefixes, but introduce a new one (`test/`, `refactor/`, `perf/`, `security/`, `release/`,
+  `docs/`, …) whenever the work genuinely warrants it.
+  - `feat/<topic>` — product features in apps/packages (e.g. `feat/multi-device-rotation`).
+  - `fix/<topic>` — bug fixes that don't belong to a larger in-flight branch.
   - `ops/<topic>` — infra, CI, release pipeline, operator, agent (e.g. `ops/release-pipeline`).
   - `plugins/<topic>` — plugin work (e.g. `plugins/auth-oidc-kubernetes`).
-  - `feat/<topic>` — product features in apps/packages (e.g. `feat/multi-device-rotation`).
-  - `design/<topic>` — docs, ADRs, architecture, process.
-  - `fix/<topic>` — bug fixes that don't belong to a larger in-flight branch.
+  - `architecture/<topic>` — ADRs, protocol specs, structural/architectural decisions.
+  - `chore/<topic>` — docs, process, tooling, dependency bumps, housekeeping (e.g. README,
+    workflow, this convention itself).
+  - `design/<topic>` — **reserved for actual UI / UX design work** (visual + interaction
+    design), not docs or process.
 - **Open a PR into `develop`, merge once CI is green.** Keep PRs scoped to their area.
 - Commits stay **GPG-signed** as the repo author (so GitHub shows "Verified"). Do **not**
   rewrite authorship to `noreply@anthropic.com` — the stop-hook that suggests this is a
