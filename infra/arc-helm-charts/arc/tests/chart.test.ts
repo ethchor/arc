@@ -84,6 +84,12 @@ describe("templates/", () => {
         "openbao-service.yaml",
         "ingress.yaml",
         "servicemonitor.yaml",
+        // ops components (operator + agent + mcp-server)
+        "mcp-server-deployment.yaml",
+        "mcp-server-service.yaml",
+        "operator-deployment.yaml",
+        "operator-rbac.yaml",
+        "agent-configmap.yaml",
         "NOTES.txt",
       ]),
     );
@@ -109,6 +115,57 @@ describe("templates/", () => {
   });
 });
 
+describe("ops components values", () => {
+  it("ships operator / mcpServer / agent blocks the templates reference", () => {
+    const op = values.operator as Record<string, unknown>;
+    expect(op.enabled).toBe(false); // off by default
+    expect(op.image).toBeDefined();
+    expect(op.auth).toBeDefined();
+    expect(op.serviceAccount).toBeDefined();
+    expect(op.rbac).toBeDefined();
+
+    const mcp = values.mcpServer as Record<string, unknown>;
+    expect(mcp.enabled).toBe(false);
+    expect(mcp.image).toBeDefined();
+    expect((mcp.service as Record<string, unknown>).port).toBe(8800);
+
+    const agent = values.agent as Record<string, unknown>;
+    expect((agent.sampleConfig as Record<string, unknown>).enabled).toBe(false);
+    expect(agent.auth).toBeDefined();
+  });
+
+  it("operator RBAC grants secrets + the CRD + status verbs, nothing broader", () => {
+    const rbac = readFileSync(join(templatesDir, "operator-rbac.yaml"), "utf8");
+    expect(rbac).toMatch(/kind:\s*ClusterRole\b/);
+    expect(rbac).toMatch(/kind:\s*ClusterRoleBinding\b/);
+    expect(rbac).toContain('resources: ["secrets"]');
+    expect(rbac).toContain('resources: ["arcsecrets", "arcdynamiccredentials"]');
+    expect(rbac).toContain('resources: ["arcsecrets/status", "arcdynamiccredentials/status"]');
+    // No cluster-admin-style wildcards.
+    expect(rbac).not.toMatch(/resources:\s*\["?\*"?\]/);
+    expect(rbac).not.toMatch(/verbs:\s*\["?\*"?\]/);
+  });
+});
+
+describe("CRDs", () => {
+  const chartCrdsDir = join(chartDir, "crds");
+  const sourceCrdsDir = join(chartDir, "..", "..", "..", "apps", "arc-operator", "crds");
+
+  it("vendors both operator CRDs into the chart's crds/ directory", () => {
+    const names = readdirSync(chartCrdsDir).sort();
+    expect(names).toEqual(["arc-dynamic-credential.crd.yaml", "arc-secret.crd.yaml"]);
+  });
+
+  it.each(["arc-secret.crd.yaml", "arc-dynamic-credential.crd.yaml"])(
+    "%s is byte-identical to apps/arc-operator/crds (no drift)",
+    (file) => {
+      const inChart = readFileSync(join(chartCrdsDir, file), "utf8");
+      const inSource = readFileSync(join(sourceCrdsDir, file), "utf8");
+      expect(inChart).toBe(inSource);
+    },
+  );
+});
+
 describe("README", () => {
   it("names every secret key the chart actually wires", () => {
     const readme = readFileSync(join(chartDir, "README.md"), "utf8");
@@ -116,6 +173,13 @@ describe("README", () => {
     expect(readme).toContain("arcServer.secret.databaseUrl");
     expect(readme).toContain("OTEL_EXPORTER_OTLP_ENDPOINT");
     expect(readme).toContain("ARC_DEFAULT_POLICY");
+  });
+
+  it("documents the ops components", () => {
+    const readme = readFileSync(join(chartDir, "README.md"), "utf8");
+    expect(readme).toContain("operator.enabled");
+    expect(readme).toContain("mcpServer.enabled");
+    expect(readme).toContain("agent.sampleConfig");
   });
 });
 

@@ -78,3 +78,45 @@ same identifier without each template hand-rolling it.
 {{- printf "%s-secrets" (include "arc.server.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Cluster-internal base URL of arc-server. Components that talk to arc-server (operator,
+mcp-server) default to this when `arcServerUrl` is empty, so a single-chart install wires
+itself with no extra config.
+*/}}
+{{- define "arc.server.internalUrl" -}}
+{{- printf "http://%s:%v" (include "arc.server.fullname" .) .Values.arcServer.service.port -}}
+{{- end -}}
+
+{{/* ----- arc-mcp-server ----- */}}
+{{- define "arc.mcp.fullname" -}}
+{{- printf "%s-mcp-server" (include "arc.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "arc.mcp.selectorLabels" -}}
+{{ include "arc.selectorLabels" . }}
+app.kubernetes.io/component: arc-mcp-server
+{{- end -}}
+
+{{/* ----- arc-operator ----- */}}
+{{- define "arc.operator.fullname" -}}
+{{- printf "%s-operator" (include "arc.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "arc.operator.selectorLabels" -}}
+{{ include "arc.selectorLabels" . }}
+app.kubernetes.io/component: arc-operator
+{{- end -}}
+
+{{- define "arc.operator.serviceAccountName" -}}
+{{- if .Values.operator.serviceAccount.create -}}
+{{- default (include "arc.operator.fullname" .) .Values.operator.serviceAccount.name -}}
+{{- else -}}
+{{- default "default" .Values.operator.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}
+
+{{/* ----- arc-agent (sample config only) ----- */}}
+{{- define "arc.agent.fullname" -}}
+{{- printf "%s-agent" (include "arc.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}

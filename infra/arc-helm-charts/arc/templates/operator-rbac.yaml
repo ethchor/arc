@@ -1,0 +1,57 @@
+{{- if .Values.operator.enabled -}}
+{{- if .Values.operator.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "arc.operator.serviceAccountName" . }}
+  labels:
+    {{- include "arc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: arc-operator
+  {{- with .Values.operator.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if .Values.operator.rbac.create }}
+---
+# The operator watches its two CRD kinds cluster-wide and writes the K8s Secrets they
+# project into. Secrets is the only powerful verb here; everything else is read-only or
+# scoped to the operator's own CRDs + their /status subresource.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "arc.operator.fullname" . }}
+  labels:
+    {{- include "arc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: arc-operator
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["arc.io"]
+    resources: ["arcsecrets", "arcdynamiccredentials"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["arc.io"]
+    resources: ["arcsecrets/status", "arcdynamiccredentials/status"]
+    verbs: ["get", "patch", "update"]
+  # The operator presents its own ServiceAccount token to arc-server; creating that token
+  # is handled by the projected-token volume, so no `tokenreviews`/`serviceaccounts/token`
+  # grant is needed here.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "arc.operator.fullname" . }}
+  labels:
+    {{- include "arc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: arc-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "arc.operator.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "arc.operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

@@ -8,7 +8,7 @@ type: application
 # Versions:
 #   `version`     — chart version. Bump on every chart change.
 #   `appVersion`  — the arc-server / openbao image tag the chart was tested against.
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.0.0"
 kubeVersion: ">=1.27.0"
 icon: https://raw.githubusercontent.com/ethchor/arc/develop/docs/icon.png

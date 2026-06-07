@@ -37,6 +37,36 @@ to production.
 {{- end }}
 {{- end }}
 
+{{- if .Values.mcpServer.enabled }}
+
+arc-mcp-server (Model Context Protocol for AI agents) is reachable in-cluster at:
+
+    http://{{ include "arc.mcp.fullname" . }}:{{ .Values.mcpServer.service.port }}/mcp
+
+Agents authenticate via an arc auth method (e.g. POST /v1/auth/kubernetes/login) and then
+connect here with the returned arc JWT as the bearer.
+{{- end }}
+
+{{- if .Values.operator.enabled }}
+
+arc-operator is running. Create ArcSecret / ArcDynamicCredential resources to project arc
+secrets into K8s Secrets:
+
+    kubectl -n {{ .Release.Namespace }} get arcsecrets,arcdynamiccredentials
+    kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "arc.operator.fullname" . }}
+
+Make sure a role named "{{ .Values.operator.auth.role }}" exists on arc-server's
+"{{ .Values.operator.auth.mount }}" auth mount and is bound to the policies the operator's
+secrets need.
+{{- end }}
+
+{{- if .Values.agent.sampleConfig.enabled }}
+
+A sample arc-agent config ConfigMap was created: {{ include "arc.agent.fullname" . }}-sample-config
+Mount it at /etc/arc-agent/ in your workload pod and add the arc-agent init+sidecar
+containers — see the arc-agent README for the snippet.
+{{- end }}
+
 To verify the deployment:
 
     kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
