@@ -27,6 +27,7 @@ import { MountRegistry, type SecretsEngine } from "@arc/secrets-engine";
 import { BadRequestException } from "@nestjs/common";
 import { EnginesService, type EnginesConfig } from "../engines/engines.service";
 import { PluginsService } from "./plugins.service";
+import { PluginManifestService } from "./plugin-manifest.service";
 
 function fakeSts(): StsClient & { calls: StsAssumeRoleInput[] } {
   const calls: StsAssumeRoleInput[] = [];
@@ -52,7 +53,7 @@ function buildHarness() {
   const config: EnginesConfig = { client: null, registry, enginesByMount, leases };
   return {
     enginesService: new EnginesService(config),
-    plugins: new PluginsService(config),
+    plugins: new PluginsService(config, new PluginManifestService()),
     config,
   };
 }

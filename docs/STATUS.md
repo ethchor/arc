@@ -255,9 +255,24 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   on the verifier + service across allowlist / malformed / required-mode / kind selection,
   3 e2e: valid SPIFFE recorded verified, malformed → 400 `attestation_rejected`, none in
   optional mode allowed). Workspace 70/70 turbo green (server 30 suites, 152 passed).
-- [ ] **Phase 5b — plugin-manifest provenance** (`feat/plugin-manifest`). Signed plugin
-  manifest + per-plugin `sha256`, mount refused on hash mismatch (extends ADR-004). Split
-  from 5a — it's plugin-host territory, not agent identity.
+- [x] **Phase 5b — plugin-manifest provenance** (`feat/plugin-manifest`). Closes the
+  "anyone can mount any artifact off disk" gap: an OOP / WASM plugin is mounted only when
+  its **signed manifest** pins the artifact's SHA-256 *and* names a publisher arc trusts.
+  `@arc/types` adds `PluginManifestClaims` + `SignedPluginManifest` (`kind: "wasm" | "process"`).
+  `@arc/crypto` ships `signPluginManifest` / `verifyPluginManifest` (thin wrappers over
+  `signObject`/`verifyObject` — no new crypto) + `pluginArtifactDigest`. Server
+  `PluginManifestService` reads `ARC_PLUGIN_MANIFEST` (optional/required) +
+  `ARC_PLUGIN_TRUST_ANCHORS` (comma-separated `publisher=<b64url-pub>` allowlist) and gates
+  `PluginsService.mountRemoteSecretsPlugin` / `mountWasmSecretsPlugin` — the verifier
+  short-circuits the mount path *before spawn*, so a tampered binary or unknown signer never
+  forks a child. Honest scope: this is *who built it* + *what it is* binding, not a
+  capability gate (the WASI deny-by-default sandbox from ADR-004 still bounds *what it does*
+  at runtime). **14 new tests**: 5 crypto (sign/verify round-trip + every-field tamper +
+  wrong-key + SHA-256 KAT + bytes differ), 8 unit on the service (optional vs required, hash
+  match/mismatch, untrusted publisher, tampered signature, kind mismatch, unreadable
+  artifact, `parseTrustAnchors` malformed/non-b64url skipped), 3 integration through
+  `PluginsService` (untrusted publisher / hash mismatch / kind mismatch all 400'd *before*
+  spawn). Workspace stays 70/70 turbo green (server 33 suites, 169 passed).
 - [x] **Agent self-authentication + RFC 8693 `act` claim** (`feat/agent-credential-path`).
   Completes the Phase-3 credential path: an agent proves control of its Ed25519 signing key
   via challenge-response (`POST /vault/agents/:id/auth/challenge` → sign the nonce →

@@ -24,6 +24,7 @@ import { LeaseManager } from "@arc/leasing";
 import { MountRegistry, type SecretsEngine } from "@arc/secrets-engine";
 import { EnginesService, type EnginesConfig } from "../engines/engines.service";
 import { PluginsService } from "./plugins.service";
+import { PluginManifestService } from "./plugin-manifest.service";
 
 function data(result: Record<string, unknown>): Record<string, unknown> {
   return result.data as Record<string, unknown>;
@@ -36,7 +37,7 @@ function buildHarness() {
   const config: EnginesConfig = { client: null, registry, enginesByMount, leases };
   return {
     enginesService: new EnginesService(config),
-    plugins: new PluginsService(config),
+    plugins: new PluginsService(config, new PluginManifestService()),
     config,
   };
 }

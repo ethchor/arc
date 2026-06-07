@@ -10,7 +10,9 @@ import {
   type SecretsPlugin,
   type WasmPluginSpec,
 } from "@arc/plugin-sdk";
+import type { PluginArtifactKind, SignedPluginManifest } from "@arc/types";
 import { ENGINES_CONFIG, type EnginesConfig } from "../engines/engines.service";
+import { PluginManifestService } from "./plugin-manifest.service";
 import { PluginSecretsEngine } from "./plugin-secrets-engine";
 
 /**
@@ -42,7 +44,35 @@ export class PluginsService {
   /** Remote process handles, keyed by plugin name; closed on unmount() for clean shutdown. */
   private readonly remoteByName = new Map<string, RemoteSecretsPlugin>();
 
-  constructor(@Inject(ENGINES_CONFIG) private readonly config: EnginesConfig) {}
+  constructor(
+    @Inject(ENGINES_CONFIG) private readonly config: EnginesConfig,
+    private readonly manifests: PluginManifestService,
+  ) {}
+
+  /**
+   * Verify a plugin manifest against the artifact at `artifactPath` before spawning. Refuses
+   * to spawn on signature mismatch, hash mismatch, or untrusted publisher — and on a missing
+   * manifest when `ARC_PLUGIN_MANIFEST=required`. The reason is surfaced verbatim so the
+   * operator sees *why* (matters for trust-anchor misconfigs in production).
+   */
+  private async verifyManifestOrThrow(
+    manifest: SignedPluginManifest | undefined,
+    artifactPath: string,
+    kind: PluginArtifactKind,
+  ): Promise<void> {
+    const result = await this.manifests.verify(manifest, artifactPath, kind);
+    if (!result.ok) {
+      throw new BadRequestException({
+        errors: [`plugin manifest rejected: ${result.reason}`],
+        reason: result.reason,
+      });
+    }
+    if (result.publisher) {
+      this.logger.log(
+        `plugin manifest verified: publisher=${result.publisher} version=${result.version} sha256-ok`,
+      );
+    }
+  }
 
   /** Register a plugin without mounting it. Useful when configure() must run first. */
   register(plugin: Plugin): void {
@@ -109,7 +139,23 @@ export class PluginsService {
    * Lifecycle is the same as the in-process flavour: `register → configure → mount`.
    * `unmount(name)` additionally closes the child cleanly.
    */
-  async mountRemoteSecretsPlugin(spec: RemoteProcessSpec, mountPath: string, config: unknown = {}): Promise<MountedPlugin> {
+  async mountRemoteSecretsPlugin(
+    spec: RemoteProcessSpec,
+    mountPath: string,
+    config: unknown = {},
+    /**
+     * Optional signed manifest pinning the executable's SHA-256 + publisher (ADR-005
+     * Phase 5b). When `ARC_PLUGIN_MANIFEST=required` an absent manifest is itself a
+     * refusal; an attached manifest is always verified strictly.
+     */
+    manifest?: SignedPluginManifest,
+  ): Promise<MountedPlugin> {
+    await this.verifyManifestOrThrow(manifest, spec.command, "process");
+    return this.spawnAndMount(spec, mountPath, config);
+  }
+
+  /** Spawn + mount; assumes any manifest check has already been done by the caller. */
+  private async spawnAndMount(spec: RemoteProcessSpec, mountPath: string, config: unknown): Promise<MountedPlugin> {
     let remote: RemoteSecretsPlugin;
     try {
       remote = await RemoteSecretsPlugin.spawn(spec);
@@ -136,8 +182,18 @@ export class PluginsService {
    * resulting child the same way as any other remote plugin. The operator must have the
    * `wasmtime` binary on PATH in the deployment image (or pin `wasmtimePath` in `spec`).
    */
-  async mountWasmSecretsPlugin(spec: WasmPluginSpec, mountPath: string, config: unknown = {}): Promise<MountedPlugin> {
-    return this.mountRemoteSecretsPlugin(buildWasmtimeSpec(spec), mountPath, config);
+  async mountWasmSecretsPlugin(
+    spec: WasmPluginSpec,
+    mountPath: string,
+    config: unknown = {},
+    /** Optional signed manifest pinning the `.wasm` SHA-256 + publisher. */
+    manifest?: SignedPluginManifest,
+  ): Promise<MountedPlugin> {
+    // Verify against the *.wasm* (kind: "wasm"), not the wasmtime CLI — that's what the
+    // manifest pins. The wasmtime binary itself is an operator-supplied runtime, not a
+    // plugin artifact, so it doesn't go through manifest verification.
+    await this.verifyManifestOrThrow(manifest, spec.wasmPath, "wasm");
+    return this.spawnAndMount(buildWasmtimeSpec(spec), mountPath, config);
   }
 
   /** List every plugin currently in the host. Each item shows its mount path if mounted. */

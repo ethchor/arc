@@ -14,6 +14,7 @@ import { LeaseManager } from "@arc/leasing";
 import { MountRegistry, type SecretsEngine } from "@arc/secrets-engine";
 import { EnginesService, type EnginesConfig } from "../engines/engines.service";
 import { PluginsService } from "./plugins.service";
+import { PluginManifestService } from "./plugin-manifest.service";
 
 const RUNTIME_CJS = join(__dirname, "../../../../packages/arc-plugin-sdk/dist/runtime.cjs");
 
@@ -40,7 +41,7 @@ function buildHarness(): { plugins: PluginsService; engines: EnginesService } {
   const leases = new LeaseManager();
   const enginesByMount = new Map<string, SecretsEngine>();
   const config: EnginesConfig = { client: null, registry, enginesByMount, leases };
-  return { engines: new EnginesService(config), plugins: new PluginsService(config) };
+  return { engines: new EnginesService(config), plugins: new PluginsService(config, new PluginManifestService()) };
 }
 
 describe("PluginsService — out-of-process plugin host", () => {

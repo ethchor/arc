@@ -9,12 +9,13 @@ import { LeaseManager } from "@arc/leasing";
 import { MountRegistry, type SecretsEngine } from "@arc/secrets-engine";
 import { EnginesService, type EnginesConfig } from "../engines/engines.service";
 import { PluginsService } from "./plugins.service";
+import { PluginManifestService } from "./plugin-manifest.service";
 
 function buildHarness(): PluginsService {
   const registry = new MountRegistry();
   const leases = new LeaseManager();
   const enginesByMount = new Map<string, SecretsEngine>();
-  return new PluginsService({ client: null, registry, enginesByMount, leases } satisfies EnginesConfig);
+  return new PluginsService({ client: null, registry, enginesByMount, leases } satisfies EnginesConfig, new PluginManifestService());
 }
 
 describe("PluginsService.mountWasmSecretsPlugin", () => {

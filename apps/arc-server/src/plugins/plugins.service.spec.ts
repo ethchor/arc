@@ -22,6 +22,7 @@ import { MountRegistry, type SecretsEngine } from "@arc/secrets-engine";
 import type { IssueRequest, IssuedSecret, LeaseInfo, SecretsPlugin } from "@arc/plugin-sdk";
 import { EnginesService, type EnginesConfig } from "../engines/engines.service";
 import { PluginsService } from "./plugins.service";
+import { PluginManifestService } from "./plugin-manifest.service";
 
 class FakeAwsPlugin implements SecretsPlugin {
   readonly meta = {
@@ -66,7 +67,7 @@ function buildHarness(): {
   // No OpenBao client — proves plugin mounts work in plugin-only deployments.
   const config: EnginesConfig = { client: null, registry, enginesByMount, leases };
   const enginesService = new EnginesService(config);
-  const plugins = new PluginsService(config);
+  const plugins = new PluginsService(config, new PluginManifestService());
   return { enginesService, plugins, config };
 }
 
