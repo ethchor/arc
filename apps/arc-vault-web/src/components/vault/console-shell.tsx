@@ -2,16 +2,24 @@
 
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { Clock, FileClock, KeyRound, Lock, ScrollText, Users, Wrench } from "lucide-react";
+import { Bot, Clock, FileClock, KeyRound, Lock, ScrollText, Users, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeCustomizer } from "@/components/theme-customizer";
 import { cn } from "@/lib/utils";
 
-export type ConsoleSection = "secrets" | "access" | "policies" | "leases" | "audit" | "tools";
+export type ConsoleSection =
+  | "secrets"
+  | "access"
+  | "identities"
+  | "policies"
+  | "leases"
+  | "audit"
+  | "tools";
 
 const NAV: { id: ConsoleSection; label: string; icon: LucideIcon }[] = [
   { id: "secrets", label: "Secrets", icon: KeyRound },
   { id: "access", label: "Access", icon: Users },
+  { id: "identities", label: "Identities", icon: Bot },
   { id: "policies", label: "Policies", icon: ScrollText },
   { id: "leases", label: "Leases", icon: Clock },
   { id: "audit", label: "Audit", icon: FileClock },

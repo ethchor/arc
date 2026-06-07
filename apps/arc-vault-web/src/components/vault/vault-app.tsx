@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { AccessView } from "@/components/vault/access-view";
 import { AuditView } from "@/components/vault/audit-view";
 import { ConsoleShell, type ConsoleSection } from "@/components/vault/console-shell";
+import { IdentitiesView } from "@/components/vault/identities-view";
 import { CopyField } from "@/components/vault/copy-field";
 import { CreateVaultDialog } from "@/components/vault/create-vault-dialog";
 import { DevicePendingView } from "@/components/vault/device-pending-view";
@@ -821,6 +822,13 @@ export function VaultApp() {
               Select a vault under Secrets first.
             </p>
           ))}
+
+        {section === "identities" && (
+          <IdentitiesView
+            load={() => getClient().listAgents()}
+            update={(agentId, patch) => getClient().updateAgent(agentId, patch)}
+          />
+        )}
 
         {section === "tools" && <ToolsView />}
       </ConsoleShell>

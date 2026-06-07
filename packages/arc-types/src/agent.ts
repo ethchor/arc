@@ -75,6 +75,12 @@ export interface AgentAttestation {
   doc: string;
   /** Recorded trust anchor (e.g. the SPIFFE trust domain) for display/audit. */
   trustAnchor?: string;
+  /** Set when the server has verified the attestation at enrollment (ADR-005 Phase 5a). */
+  verified?: boolean;
+  /** Resolved workload subject (e.g. the full SPIFFE id) when `verified`. */
+  subject?: string;
+  /** ISO timestamp of the verification. */
+  verifiedAt?: string;
 }
 
 /**
