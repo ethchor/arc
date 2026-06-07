@@ -489,8 +489,28 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 4 — deployment + ops
 
-- [ ] `arc-agent`: Rust sidecar for templating + auto-auth (sketched in ADR-001 §Open
-  questions; needs a concrete first use case before it lands).
+- [x] `arc-agent`: Rust workload sidecar — pairs with `arc-operator` as the two
+  "deliver secrets to workloads" surfaces (operator = cluster-wide CRDs into K8s Secrets;
+  agent = direct in-pod templating into config files). Lives in `crates/arc-agent` as a
+  standalone Rust crate (matches the existing `vault-crypto-rs`/`desktop-core` pattern; no
+  Cargo workspace yet). YAML config (`src/config.rs`) describes auth + sinks; each sink has
+  a source (`kv_get` or `dynamic_creds`), a template file, an output path, an octal mode,
+  a refresh policy, and an optional `on_change` (exec a command or signal a PID). Two run
+  modes — `arc-agent run --once` for init containers (fetch + render + exit), `arc-agent
+  run` for sidecars (stay running, refresh before lease expiry). Auth via the Kubernetes
+  auth plugin shipped in #7 (same login flow as `arc-operator`). HTTP client handles JWT
+  cache + refresh-ahead (60s) + one re-login on 401; 403 propagates immediately. Templates
+  use Tera (Jinja-style); autoescape is **off** (config files, not HTML), missing dotted
+  fields error so operator typos fail loudly. Sink writes are atomic (`.tmp` + `rename`),
+  with the configured mode (default 0600). The cached JWT lives in a `CachedJwt` wrapper
+  that zeroizes on `Drop`. Runner schedules sinks independently — one failing sink can't
+  block the others; per-sink errors are tracing-logged and rescheduled with a 15s
+  backoff. Tests (10) across config parse/validate, template rendering (dotenv +
+  dynamic-cred + lease metadata + missing-field error), and live HTTP integration via
+  `wiremock` (login → KV render with correct mode; dynamic-cred issue + render; 403 → error
+  with no file written). Ships a Dockerfile (rust:slim build → debian:slim runtime with
+  just `ca-certificates`, non-root user); ~14 MB release binary. Helm chart integration
+  (template a Pod with `arc-agent` as an initContainer + sidecar) is a follow-up PR.
 - [x] `arc-operator`: Kubernetes operator that declaratively delivers arc secrets to
   workloads. Lives in `apps/arc-operator` (TypeScript — keeps the monorepo on one language;
   the control loop is small enough that `controller-runtime`/`kubebuilder` would be
