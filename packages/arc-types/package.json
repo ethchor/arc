@@ -2,21 +2,23 @@
   "name": "@arc/types",
   "version": "0.0.0",
   "private": true,
-  "description": "Single source of truth for TS types/wire shapes shared across arc-crypto, arc-server, arc-sdk, plugins, and the apps. Pure types, no runtime.",
+  "description": "Single source of truth for TS types/wire shapes shared across arc-crypto, arc-server, arc-sdk, plugins, and the apps. Mostly types; a few small runtime allowlists + guards (e.g. vault-ui) ship dual ESM/CJS.",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },

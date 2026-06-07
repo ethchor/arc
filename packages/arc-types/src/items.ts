@@ -35,11 +35,23 @@ export interface LoginItem {
 
 /**
  * Encrypted note. Free-form text body; no structured secret payload.
+ *
+ * `format` is a v1 product call: notes default to plaintext (matches Bitwarden's secure
+ * note shape and what every existing client already produces). `markdown` opts into
+ * client-side rendering — the server still treats the body as opaque ciphertext and
+ * never parses it.
  */
+export type NoteFormat = "plaintext" | "markdown";
+
 export interface NoteItem {
   type: "note";
   title: string;
   body: string;
+  /**
+   * Optional render hint. Missing / `undefined` is equivalent to `"plaintext"` so notes
+   * written by older clients keep displaying unchanged.
+   */
+  format?: NoteFormat;
 }
 
 /**

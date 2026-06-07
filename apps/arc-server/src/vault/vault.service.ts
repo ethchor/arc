@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   HttpException,
@@ -12,6 +13,7 @@ import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
 import { BLOB_STORE, type BlobStore, newAttachmentKey, BlobNotFoundError } from "../blob/blob-store";
 import { DataSource, In, MoreThan, Repository } from "typeorm";
 import { ctEqual, fingerprint, fromB64u, randomBytes, serverHashAuth, toB64u } from "@arc/crypto";
+import { isVaultColor, isVaultIcon } from "@arc/types";
 import {
   type MemberRole,
   UserEntity,
@@ -35,6 +37,7 @@ import type {
   PutHeadDto,
   RegisterDeviceDto,
   RotateKeyDto,
+  UpdateVaultUiDto,
   UpsertItemDto,
   UploadAttachmentDto,
 } from "./dto";
@@ -225,6 +228,8 @@ export class VaultService {
         id: v.id,
         type: v.type,
         encName: v.encName,
+        icon: v.icon,
+        color: v.color,
         currentKeyVersion: v.currentKeyVersion,
         role: m.role,
         grant: grant?.wrappedVaultKey ?? null,
@@ -234,8 +239,25 @@ export class VaultService {
   }
 
   async createVault(userId: number, dto: CreateVaultDto) {
+    // Allowlist-validate the UI affordance before we hit the DB — the column is plaintext
+    // and gets rendered, so unknown values are rejected outright (no XSS via icon names, no
+    // surprise URLs through the colour field).
+    if (dto.icon !== undefined && !isVaultIcon(dto.icon)) {
+      throw new BadRequestException({ error: "invalid_icon", icon: dto.icon });
+    }
+    if (dto.color !== undefined && !isVaultColor(dto.color)) {
+      throw new BadRequestException({ error: "invalid_color", color: dto.color });
+    }
     const vault = await this.vaults.save(
-      this.vaults.create({ type: dto.type, ownerUserId: userId, encName: dto.encName ?? null, currentKeyVersion: 1, seqCounter: 0 }),
+      this.vaults.create({
+        type: dto.type,
+        ownerUserId: userId,
+        encName: dto.encName ?? null,
+        icon: dto.icon ?? null,
+        color: dto.color ?? null,
+        currentKeyVersion: 1,
+        seqCounter: 0,
+      }),
     );
     await this.memberships.save(
       this.memberships.create({ vaultId: vault.id, userId, role: "owner", status: "active", addedByUserId: userId }),
@@ -244,7 +266,41 @@ export class VaultService {
       this.grants.create({ vaultId: vault.id, keyVersion: 1, granteeUserId: userId, wrappedVaultKey: dto.ownerGrant, wrappedByUserId: userId }),
     );
     await this.writeAudit(vault.id, userId, "vault_created", vault.id);
-    return { id: vault.id, currentKeyVersion: vault.currentKeyVersion };
+    return {
+      id: vault.id,
+      currentKeyVersion: vault.currentKeyVersion,
+      icon: vault.icon,
+      color: vault.color,
+    };
+  }
+
+  /**
+   * Patch the per-vault UI affordance columns. Requires admin-or-higher because changing
+   * the icon/colour is visible to every member — picker chrome, not the vault's own data.
+   *
+   * Semantics: `undefined` means "leave it alone"; `null` means "clear it". Each field is
+   * validated against the same closed allowlists as `createVault` before any write.
+   */
+  async updateVaultUi(userId: number, vaultId: string, dto: UpdateVaultUiDto) {
+    await this.requireRole(vaultId, userId, "admin");
+    const vault = await this.vaults.findOne({ where: { id: vaultId } });
+    if (!vault) throw new NotFoundException("vault not found");
+
+    if (dto.icon !== undefined) {
+      if (dto.icon !== null && !isVaultIcon(dto.icon)) {
+        throw new BadRequestException({ error: "invalid_icon", icon: dto.icon });
+      }
+      vault.icon = dto.icon;
+    }
+    if (dto.color !== undefined) {
+      if (dto.color !== null && !isVaultColor(dto.color)) {
+        throw new BadRequestException({ error: "invalid_color", color: dto.color });
+      }
+      vault.color = dto.color;
+    }
+    await this.vaults.save(vault);
+    await this.writeAudit(vaultId, userId, "vault_ui_updated", vaultId);
+    return { id: vault.id, icon: vault.icon, color: vault.color };
   }
 
   async listMembers(userId: number, vaultId: string) {

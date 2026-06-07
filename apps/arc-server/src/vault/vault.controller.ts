@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Put,
   Query,
@@ -28,6 +29,7 @@ import {
   RotateKeyDto,
   TouchDeviceDto,
   UnlockDto,
+  UpdateVaultUiDto,
   UploadAttachmentDto,
   UpsertItemDto,
 } from "./dto";
@@ -110,6 +112,20 @@ export class VaultController {
   @Post("vaults")
   createVault(@CurrentUser() u: CurrentUserData, @Body() dto: CreateVaultDto) {
     return this.vault.createVault(u.userId, dto);
+  }
+
+  /**
+   * Patch the per-vault UI affordance (icon + colour). Admin-or-higher only because the
+   * change is visible to every member of the vault. Body fields are individually optional:
+   * omit one to leave it alone, send `null` to clear it.
+   */
+  @Patch("vaults/:id/ui")
+  updateVaultUi(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Body() dto: UpdateVaultUiDto,
+  ) {
+    return this.vault.updateVaultUi(u.userId, id, dto);
   }
 
   @Get("vaults/:id/members")

@@ -129,6 +129,36 @@ Anything that ships *between* the phases gets folded into the closest one.
   mount. `@arc/secrets-engine` + `@arc/openbao-adapter` now dual-publish ESM + CJS via
   matching `tsup.config.ts` files (inlining `@arc/leasing` in the CJS build) so the
   CommonJS Jest runner can `require()` them without dual-publishing leasing itself.
+- [x] Per-vault UI affordances (icon + colour). New `@arc/types` `vault-ui.ts` exports two
+  closed allowlists (`VAULT_ICONS` = 20 Lucide/Heroicons identifiers, `VAULT_COLORS` =
+  12 brand `#RRGGBB` values tuned for ≥ 4.5:1 contrast vs white text) plus
+  `isVaultIcon` / `isVaultColor` type guards — kept tight on purpose so a chart bump is
+  the only way to add to either list. New `VaultEntity.icon` + `.color` nullable text
+  columns (migration `1717800000000-vault-ui`) — both plaintext, because they're
+  picker chrome, not secret material (the vault's *name* still rides as `encName`).
+  `CreateVaultDto` accepts optional `icon` / `color` and the service allowlist-validates
+  both before any write, throwing a 400 with `{ error: "invalid_icon", icon }` (or
+  `invalid_color`) on anything off-list — no XSS via icon names rendered into the
+  picker, no surprise URLs in colour values. New `PATCH /vaults/:id/ui` endpoint
+  (admin-or-higher) with `UpdateVaultUiDto` semantics: `undefined` leaves a field alone,
+  `null` clears it. `listVaults` + `createVault` responses now include `icon` + `color`.
+  SDK: `VaultClient.createVault(type, name, { icon, color })` (optional 3rd arg, all
+  existing callers still compile), `VaultClient.updateVaultUi(vaultId, { icon, color })`,
+  and the allowlists themselves are re-exported from `@arc/sdk` so picker UIs don't need
+  a separate `@arc/types` import. **11 new tests**: 8 unit tests on the allowlists +
+  type guards in `@arc/types/test/vault-ui.test.ts` (rejects non-allowlist values,
+  rejects non-strings, hex shape check on every blessed colour), plus 3 e2e tests in
+  `vault-ui.e2e-spec.ts` (round-trip on create through listVaults, 400 with structured
+  payload on `<script>` / `javascript:` injection attempts, PATCH semantics including
+  `null` clears).
+- [x] Secure-note format (plaintext vs markdown). `NoteItem` in `@arc/types/items.ts`
+  gains an optional `format?: "plaintext" | "markdown"` discriminator. Default
+  (missing / `undefined`) is equivalent to `"plaintext"` so notes written by every
+  client predating this change keep displaying unchanged — the field is purely a render
+  hint the client can opt into. The server still treats the body as opaque ciphertext
+  and never parses it (Engine-B remains zero-knowledge); `format` only travels inside
+  the encrypted payload, never as a server-visible column. Bitwarden-shape default
+  matches what the existing `NoteDialog` already produces.
 
 ----
 

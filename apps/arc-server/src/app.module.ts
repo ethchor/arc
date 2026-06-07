@@ -9,6 +9,7 @@ import { PasskeySchema1717400000000 } from "./migrations/1717400000000-passkey-s
 import { GrantsGroupsSchema1717500000000 } from "./migrations/1717500000000-grants-groups-schema";
 import { AttachmentsSchema1717600000000 } from "./migrations/1717600000000-attachments-schema";
 import { DeviceHybridKey1717700000000 } from "./migrations/1717700000000-device-hybrid-key";
+import { VaultUi1717800000000 } from "./migrations/1717800000000-vault-ui";
 import { AuthModule } from "./auth/auth.module";
 import { AuthMethodsModule } from "./auth-methods/auth-methods.module";
 import { EnginesModule } from "./engines/engines.module";
@@ -24,6 +25,7 @@ const migrations = [
   GrantsGroupsSchema1717500000000,
   AttachmentsSchema1717600000000,
   DeviceHybridKey1717700000000,
+  VaultUi1717800000000,
 ];
 
 /**

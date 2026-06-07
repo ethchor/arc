@@ -694,6 +694,9 @@ importers:
 
   sdks/arc-js-sdk:
     dependencies:
+      '@arc/types':
+        specifier: workspace:*
+        version: link:../../packages/arc-types
       '@noble/ciphers':
         specifier: ^1.2.1
         version: 1.3.0
@@ -710,9 +713,6 @@ importers:
       '@arc/crypto':
         specifier: workspace:*
         version: link:../../packages/arc-crypto
-      '@arc/types':
-        specifier: workspace:*
-        version: link:../../packages/arc-types
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
