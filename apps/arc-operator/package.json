@@ -1,0 +1,30 @@
+{
+  "name": "@arc/operator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kubernetes operator for arc. Reconciles ArcSecret + ArcDynamicCredential CRDs by reading from arc-server and projecting credentials into K8s Secrets.",
+  "type": "module",
+  "main": "./dist/main.js",
+  "bin": {
+    "arc-operator": "./dist/main.js"
+  },
+  "files": [
+    "dist",
+    "crds"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
