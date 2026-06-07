@@ -491,7 +491,33 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 - [ ] `arc-agent`: Rust sidecar for templating + auto-auth (sketched in ADR-001 §Open
   questions; needs a concrete first use case before it lands).
-- [ ] `arc-operator`: Kubernetes operator (Go) per `infra/`.
+- [x] `arc-operator`: Kubernetes operator that declaratively delivers arc secrets to
+  workloads. Lives in `apps/arc-operator` (TypeScript — keeps the monorepo on one language;
+  the control loop is small enough that `controller-runtime`/`kubebuilder` would be
+  overkill). Two CRDs under `arc.io/v1alpha1`: **`ArcSecret`** syncs a KV v2 secret into a
+  K8s Secret (with optional `{{ .field }}` template projection); **`ArcDynamicCredential`**
+  issues a short-lived dynamic credential (AWS STS / GCP IAM / GitHub App / GitLab /
+  Bitbucket / Azure AD / database) and re-issues it before its lease expires, best-effort
+  revoking the previous lease on rotation. CRDs ship under `crds/` with `openAPIV3Schema`
+  validation + `status` subresources + printer columns. The operator's pod authenticates
+  via the **K8s auth plugin** shipped in #7 (`POST /v1/auth/kubernetes/login` with its own
+  ServiceAccount token); the returned arc JWT is what every subsequent call carries.
+  `JwtAuthGuard` + `CapabilityGuard` (`@arc/grants`) are the only policy decision points —
+  the operator never makes authorization decisions locally. Reconcile strategy: polling
+  (every `POLL_INTERVAL_SECONDS`, list both CR kinds, reconcile each), not informers —
+  simpler, deterministic, fine for secret-injection. OwnerReferences make `kubectl delete
+  arcsecret X` garbage-collect the Secret. Status conditions surface
+  `Synced=True|False`/`Ready=True|False` with reason + message + lastTransitionTime so
+  `kubectl describe` shows operator health. ArcClient handles login + JWT refresh-ahead +
+  401-retry-once (token revoked server-side); 403 propagates immediately (policy denial is
+  permanent). 23 tests: reconcilers (verbatim copy, template projection,
+  missing-field-rejected, lease re-issue + revoke, no-op when lease fresh, error → status),
+  ArcClient (SA-token login, JWT caching + refresh window, 401-retry, 403-no-retry),
+  template engine (rendering, whitespace tolerance, null/undefined → empty, missing-field
+  throw), poll loop (per-iteration progress, fault isolation per CR, clean stop). Ships an
+  ESM-only build via tsup + a Dockerfile (multi-stage, non-root, `pnpm deploy --legacy`
+  bundle, CRDs at `/app/crds`) so it can be deployed alongside arc-server. Helm chart
+  template + RBAC manifests follow in a separate PR.
 - [x] `arc-helm-charts`. New `infra/arc-helm-charts/arc` Helm chart deploys arc-server
   (Deployment + Service + Secret) with co-located OpenBao (StatefulSet + Service, dev mode
   by default — production deployments flip `openbao.devMode=false` and supply a real
