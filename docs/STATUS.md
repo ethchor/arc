@@ -490,8 +490,7 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   in-process API; `unmount(name)` now also closes the child cleanly via `RemoteSecretsPlugin.close()`.
   The transport boundary is real: the child sees **only the env vars the spec lists**, has
   no access to arc-server's heap or open FDs beyond stdio, and is process-bound to its
-  child lifetime. WASM (wasmtime) is queued as a separate backend behind the same
-  contract — the wire stays JSON-RPC, only the transport changes. **10 new tests** (7 in
+  child lifetime. **10 new tests** (7 in
   `@arc/plugin-sdk` driving a real Node child through the runtime: meta handshake;
   configure → issue → revoke; error propagation as `RemotePluginError`; in-flight call
   fails when child exits; idempotent `close()`; spawn-without-handshake rejected; runtime
@@ -499,6 +498,23 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   unmount; unspawnable plugin → BadRequest with the spawn error; configure() throws → host
   rolls back the child). Workspace stays 70/70 turbo green; arc-server 128 tests / 24
   suites; `@arc/plugin-sdk` 14 tests.
+- [x] **WASM/wasmtime plugin backend** — ADR-004. Adds `buildWasmtimeSpec` to
+  `@arc/plugin-sdk` and `PluginsService.mountWasmSecretsPlugin` to arc-server. Reuses the
+  JSON-RPC-over-stdio transport from the OOP host above verbatim — the plugin author
+  writes the same `SecretsPlugin`; they just compile it to a **WASI preview-1 command**
+  instead of a Node script. wasmtime is shelled out to under a **deny-by-default profile**:
+  `--env-inherit=none --dir=none --tcplisten=none`, with each `env: { K: V }` threaded as
+  `--env=K=V` and each `dirs` entry threaded as `--dir=H=G[:rw]` so the plugin only sees
+  what the operator explicitly grants. Deliberately **not** in-process WASM (Node's
+  `node:wasi`) — that runs in the Node heap and would defeat the isolation point;
+  wasmtime is the production-grade Bytecode Alliance sandbox and ships a persistent stdio
+  process model that fits the existing transport. Operator action: install wasmtime in
+  the deployment image (or pin `wasmtimePath`). 7 new tests: 6 unit tests on the spec
+  builder (deny-by-default flags pinned, env / dir pass-through, wasmtime path override,
+  argv after `--`, RPC timeout propagation); 1 arc-server spec verifying the
+  "wasmtime not installed" path surfaces as a BadRequest carrying the spawn error (same
+  flow as any other unspawnable process plugin, no half-mounted state leak). Full ADR:
+  `docs/arc-rfcs/ADR-004-wasm-plugin-backend.md`.
 - [x] `arc-plugin-azure` — Azure AD service-principal access tokens via the v2.0
   client_credentials grant. Mirrors the AWS / GCP / GitHub layout: core plugin + optional
   `@arc/plugin-azure/node` default client using `fetch` only (no external deps). Form-encoded

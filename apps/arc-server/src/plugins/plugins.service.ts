@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
 import {
+  buildWasmtimeSpec,
   PluginError,
   PluginHost,
   RemoteSecretsPlugin,
@@ -7,6 +8,7 @@ import {
   type PluginMeta,
   type RemoteProcessSpec,
   type SecretsPlugin,
+  type WasmPluginSpec,
 } from "@arc/plugin-sdk";
 import { ENGINES_CONFIG, type EnginesConfig } from "../engines/engines.service";
 import { PluginSecretsEngine } from "./plugin-secrets-engine";
@@ -126,6 +128,16 @@ export class PluginsService {
       await remote.close().catch(() => undefined);
       throw err;
     }
+  }
+
+  /**
+   * WASM/wasmtime variant of {@link mountRemoteSecretsPlugin}. Convenience wrapper that
+   * builds a deny-by-default wasmtime spec via {@link buildWasmtimeSpec} and mounts the
+   * resulting child the same way as any other remote plugin. The operator must have the
+   * `wasmtime` binary on PATH in the deployment image (or pin `wasmtimePath` in `spec`).
+   */
+  async mountWasmSecretsPlugin(spec: WasmPluginSpec, mountPath: string, config: unknown = {}): Promise<MountedPlugin> {
+    return this.mountRemoteSecretsPlugin(buildWasmtimeSpec(spec), mountPath, config);
   }
 
   /** List every plugin currently in the host. Each item shows its mount path if mounted. */
