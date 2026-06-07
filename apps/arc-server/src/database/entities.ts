@@ -343,6 +343,26 @@ export class VaultAuditLogEntity {
   @Column({ type: "text", nullable: true })
   targetId!: string | null;
 
+  // --- Engine-C agentic attribution (ADR-005). All nullable: human/service/device rows
+  // leave them empty and behave exactly as before; agent-driven rows fill them so the
+  // existing audit query API answers "who authorized this, which agent, under what
+  // delegation, in which task" with no new endpoint. ---
+
+  /** `user` | `agent` | `service` | `device`. Null ⇒ legacy/human (treated as `user`). */
+  @Column({ type: "text", nullable: true })
+  actorKind!: string | null;
+
+  @Index()
+  @Column({ type: "uuid", nullable: true })
+  agentId!: string | null;
+
+  @Column({ type: "uuid", nullable: true })
+  delegationId!: string | null;
+
+  @Index()
+  @Column({ type: "uuid", nullable: true })
+  taskId!: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 }
@@ -590,6 +610,114 @@ export class VaultAttachmentEntity {
   createdAt!: Date;
 }
 
+// --- Engine-C: agentic identity (ADR-005) ---
+
+export type AgentStatusCol = "active" | "suspended" | "retired";
+
+/**
+ * An AI agent principal (ADR-005). A first-class identity — not a user, not a service
+ * account — owned by a user, carrying its own Ed25519 signing key + X25519/ML-KEM-768
+ * hybrid identity (so VK grants and dynamic creds can be `pqSeal`-wrapped to it). Attaches
+ * to `@arc/grants` policies via the opaque `agent:<id>` subject handle.
+ */
+@Entity("vault_agents")
+export class VaultAgentEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "int" })
+  ownerUserId!: number;
+
+  @Column({ type: "text" })
+  displayName!: string;
+
+  /** Ed25519 verifying key (b64url) — verifies intents the agent signs. */
+  @Column({ type: "text" })
+  signingPublicKey!: string;
+
+  /** X25519 identity public key (b64url). */
+  @Column({ type: "text" })
+  identityPublicKey!: string;
+
+  /** ML-KEM-768 identity public key (b64url) — ADR-002 PQ half. */
+  @Column({ type: "text" })
+  identityPublicKeyMlkem!: string;
+
+  /** Opaque attestation (e.g. SPIFFE SVID) recorded at enrollment; null when none. */
+  @Column({ type: "simple-json", nullable: true })
+  attestation!: Record<string, unknown> | null;
+
+  /** Deny-by-default (ADR-005): false unless an admin enabled autonomous operation. */
+  @Column({ type: "boolean", default: false })
+  autonomousAllowed!: boolean;
+
+  @Column({ type: "text", default: "active" })
+  status!: AgentStatusCol;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @Column({ type: "datetime", nullable: true })
+  lastSeenAt!: Date | null;
+}
+
+/**
+ * A signed delegation: a user lending scoped, time-boxed Engine-A authority to an agent
+ * (ADR-005). `claims` is the canonical signed body; `signature` is the delegator's Ed25519
+ * envelope over it. Effective authority is the intersection of `claims.scopes` with the
+ * delegator's own policy and the agent's own policy — a delegation can only narrow.
+ */
+@Entity("vault_delegations")
+export class VaultDelegationEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  agentId!: string;
+
+  /** The delegating user (subject `user:<delegatorUserId>`). */
+  @Index()
+  @Column({ type: "int" })
+  delegatorUserId!: number;
+
+  /** Binds the delegation to a task unit (Phase 3). */
+  @Index()
+  @Column({ type: "uuid" })
+  taskId!: string;
+
+  /** The full signed claims object as received (source of truth for re-verification). */
+  @Column({ type: "simple-json" })
+  claims!: Record<string, unknown>;
+
+  /** The delegator's signature envelope over `claims`. */
+  @Column({ type: "simple-json" })
+  signature!: EnvelopeJson;
+
+  @Column({ type: "datetime" })
+  notBefore!: Date;
+
+  @Index()
+  @Column({ type: "datetime" })
+  notAfter!: Date;
+
+  @Column({ type: "int", nullable: true })
+  maxCalls!: number | null;
+
+  @Column({ type: "int", default: 0 })
+  callsUsed!: number;
+
+  @Column({ type: "boolean", default: false })
+  elevated!: boolean;
+
+  @Column({ type: "datetime", nullable: true })
+  revokedAt!: Date | null;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+}
+
 export const entities = [
   UserEntity,
   VaultUserKeysEntity,
@@ -607,4 +735,6 @@ export const entities = [
   PolicyAttachmentEntity,
   PolicyGroupMembershipEntity,
   PolicyGroupAttachmentEntity,
+  VaultAgentEntity,
+  VaultDelegationEntity,
 ];

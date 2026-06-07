@@ -8,6 +8,7 @@ export type {
   Scope,
 } from "./types";
 export { normalizePrefix, scope, scopeAllows } from "./scope";
+export { effectiveAllows, intersectScopes } from "./intersect";
 export { PolicyEngine } from "./engine";
 export type { DetailedDecision, PolicyEngineOptions } from "./engine";
 export { InMemoryPolicyStore } from "./in-memory-store";

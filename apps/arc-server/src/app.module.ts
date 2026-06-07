@@ -10,6 +10,8 @@ import { GrantsGroupsSchema1717500000000 } from "./migrations/1717500000000-gran
 import { AttachmentsSchema1717600000000 } from "./migrations/1717600000000-attachments-schema";
 import { DeviceHybridKey1717700000000 } from "./migrations/1717700000000-device-hybrid-key";
 import { VaultUi1717800000000 } from "./migrations/1717800000000-vault-ui";
+import { AgentIdentity1717900000000 } from "./migrations/1717900000000-agent-identity";
+import { AgentsModule } from "./agents/agents.module";
 import { AuthModule } from "./auth/auth.module";
 import { AuthMethodsModule } from "./auth-methods/auth-methods.module";
 import { EnginesModule } from "./engines/engines.module";
@@ -26,6 +28,7 @@ const migrations = [
   AttachmentsSchema1717600000000,
   DeviceHybridKey1717700000000,
   VaultUi1717800000000,
+  AgentIdentity1717900000000,
 ];
 
 /**
@@ -129,6 +132,7 @@ export function buildDataSourceOptions(): TypeOrmModuleOptions {
     AuthModule,
     GrantsModule,
     VaultModule,
+    AgentsModule,
     // AuthMethodsModule must precede EnginesModule: its POST /v1/auth/<mount>/login route has
     // to register ahead of the engines `/v1/*` catch-all (and it intentionally doesn't import
     // EnginesModule, so it isn't pulled in transitively first).

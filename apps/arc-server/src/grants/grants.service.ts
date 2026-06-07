@@ -7,6 +7,7 @@ import {
   type DetailedDecision,
   type MutablePolicyStore,
   type Policy,
+  type Scope,
 } from "@arc/grants";
 
 export const GRANTS_DEFAULT_MODE = Symbol("GRANTS_DEFAULT_MODE");
@@ -114,6 +115,20 @@ export class GrantsService implements OnModuleInit {
 
   decide(subject: string, path: string, capability: Capability): Promise<DetailedDecision> {
     return Promise.resolve(this.engine.decideDetailed(subject, path, capability));
+  }
+
+  /**
+   * The flattened set of scopes a subject holds across all its (direct + group) policies.
+   * Engine-C uses this as a subject's *ceiling* when composing delegated authority — the
+   * effective reach of a delegated agent is the intersection of the delegation's scopes,
+   * the delegator's scopes (this), and the agent's scopes (this). A subject with no
+   * policies returns `[]`, which intersects to nothing — correct fail-closed behaviour for
+   * delegation regardless of the engine's `defaultMode` (that default only governs the
+   * standalone `decide` path, never delegated composition).
+   */
+  async scopesForSubject(subject: string): Promise<Scope[]> {
+    const policies = await this.store.getPoliciesForSubject(subject);
+    return policies.flatMap((p) => [...p.scopes]);
   }
 }
 

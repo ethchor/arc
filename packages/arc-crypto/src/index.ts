@@ -11,3 +11,4 @@ export * from "./pq-hybrid";
 export * from "./sign";
 export * from "./totp";
 export * from "./vault";
+export * from "./agent";
