@@ -1,27 +1,65 @@
 {
   "name": "@arc/sdk",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Client SDK: composes the vault crypto core with the sync API. Consumer + machine-identity modes.",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for arc — the zero-knowledge vault crypto core + the sync/secrets API, for consumer and machine-identity modes.",
   "type": "module",
-  "main": "./dist/index.js",
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://github.com/ethchor/arc/tree/develop/sdks/arc-js-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ethchor/arc.git",
+    "directory": "sdks/arc-js-sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/ethchor/arc/issues"
+  },
+  "keywords": [
+    "arc",
+    "secrets",
+    "vault",
+    "zero-knowledge",
+    "end-to-end-encryption",
+    "password-manager",
+    "sdk"
+  ],
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup",
     "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {
-    "@arc/crypto": "workspace:*"
+    "@noble/ciphers": "^1.2.1",
+    "@noble/curves": "^1.8.1",
+    "@noble/hashes": "^1.7.1",
+    "@noble/post-quantum": "^0.6.1"
   },
   "devDependencies": {
+    "@arc/crypto": "workspace:*",
+    "@arc/types": "workspace:*",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

@@ -690,8 +690,30 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   cardinality on the histogram, ACL counter on allow path, gauge HELP/TYPE at
   zero, and unauthenticated scrape semantics. arc-server now 17 suites / 96
   tests passing.
-- [ ] `sdks/arc-js-sdk` publish to npm.
-- [ ] `sdks/arc-go-sdk` scaffold + publish.
+- [x] `sdks/arc-js-sdk` npm publish prep. `@arc/sdk` is now a publishable, **self-contained**
+  package: a tsup config bundles the workspace crypto (`@arc/crypto` + the type-only
+  `@arc/types`, including `dts.resolve` so the emitted `.d.ts` carries the inlined types) and
+  keeps the audited `@noble/*` libs as visible runtime `dependencies` — so an external
+  consumer gets zero unresolved `workspace:*` imports. Dual ESM + CJS + sourcemaps + types.
+  package.json gained the publish surface (`version 0.1.0`, `exports` map, `files`,
+  `sideEffects:false`, `repository`/`homepage`/`bugs`, `keywords`, `engines`,
+  `publishConfig:{access:public, provenance:true}`, `prepublishOnly`). New
+  `.github/workflows/publish-sdk.yml` (manual `workflow_dispatch` with a dry-run default, or a
+  `sdk-v*` tag) builds + verifies the dist is self-contained + `pnpm pack` + publishes with
+  npm provenance — gated behind an `NPM_TOKEN` secret. Two deliberate pre-publish blockers the
+  workflow enforces: a `LICENSE` file must exist (repo license is still TBD) and the version
+  must not be `0.0.0`. Jest is unaffected (its moduleNameMapper points `@arc/sdk` at source,
+  not the dist). The npm scope (`@arc`) is documented in the SDK README as the one thing to
+  confirm/rename before the first real publish.
+- [x] `sdks/arc-go-sdk` scaffold. New standard-library-only Go client for Engine-A:
+  `go.mod` (module `github.com/ethchor/arc/sdks/arc-go-sdk`), `arc.go` with a `Client`
+  (`New` + `WithToken`/`WithHTTPClient` options), `LoginKubernetes`, `KVGet`, `KVPut`,
+  `IssueDynamic`, `RevokeLease` — mirrors the operator/agent surface: caches the arc JWT,
+  forwards it as the bearer, retries once on 401, returns a typed `*APIError` on non-2xx
+  (403 without retry). Engine-B is intentionally not exposed (zero-knowledge client crypto
+  lives in the TS SDK). 5 `httptest`-backed tests (login caches+forwards the bearer, KV
+  version query, dynamic-cred ttl+shape, 401-retry-once-then-succeed, 403→APIError-no-retry).
+  A new `go` CI job (`actions/setup-go@v5`, go 1.23) runs build + vet + test on every PR.
 
 ### Open product questions
 

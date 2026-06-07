@@ -30,6 +30,20 @@ jobs:
         run: pnpm audit --audit-level=high
         continue-on-error: true
 
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: arc-go-sdk build + vet + test
+        working-directory: sdks/arc-go-sdk
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./...
+
   rust:
     runs-on: ubuntu-latest
     steps:
