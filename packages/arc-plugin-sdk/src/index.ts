@@ -16,3 +16,5 @@ export type {
 export { PluginHost, PluginError, scopeAllows } from "./host";
 export { RemoteSecretsPlugin, RemotePluginError } from "./remote";
 export type { RemoteProcessSpec } from "./remote";
+export { buildWasmtimeSpec } from "./wasm";
+export type { WasmPluginSpec } from "./wasm";
