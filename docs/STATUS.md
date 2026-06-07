@@ -177,6 +177,37 @@ Anything that ships *between* the phases gets folded into the closest one.
 
 Order is rough priority. Each [ ] is one focused commit's worth of work unless flagged.
 
+### Engine-C — agentic identity (ADR-005, proposed)
+
+Distilled from the agentic-AI security thesis (HashiCorp "continuous trust" / "shape of
+trust"): make agents first-class, attributable, revocable principals with a *cryptographic*
+human→agent→action chain rather than a stack of bearer JWTs. Composes with the engines
+already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
+`signObject`/`verifyObject` + `pqSeal` + `chainNext` — no new crypto. Full design in
+[`docs/arc-rfcs/ADR-005-agentic-identity-engine-c.md`](arc-rfcs/ADR-005-agentic-identity-engine-c.md).
+
+- [ ] **Phase 1+2 — principal + delegation** (`feat/agent-identity-and-delegation`).
+  `vault_agents` entity + registration + signing-key publish; additive nullable audit
+  columns (`actorKind`, `agentId`, `delegationId`, `taskId`, `toolCall`); `DelegationGrant`
+  signed envelope + verification; effective-scope **intersection** (delegated ∩ delegator
+  ceiling ∩ agent ceiling — delegation can only narrow) wired into the capability guard via
+  the `agent:<id>` subject handle.
+- [ ] **Phase 3 — signed intent + task budget** (`feat/signed-intent-and-task-budget`).
+  `SignedIntent` envelope (binds op/path/argsDigest, separates declared intent from observed
+  action); `vault_agent_tasks` with per-task `chainNext` action chain + signed head; budget
+  (wall-clock / max-calls / max-secrets); `task.close()` cascading revoke through
+  `@arc/leasing` (lease `taskId` tag).
+- [ ] **Phase 4 — push-consent CIBA via passkeys** (`feat/push-consent-ciba`). `elevated` /
+  `sudo` ops return `403 { approvalId }`; `vault_pending_approvals`; owner resolves with a
+  WebAuthn assertion (docs/13) — proof of control, no third-party IdP.
+- [ ] **Phase 5 — attestation + plugin-manifest provenance**
+  (`feat/attestation-and-plugin-manifest`). Optional SPIFFE/sigstore/TPM attestation behind
+  a verifier interface (v1 record, v2 enforce); signed plugin manifest + per-plugin `sha256`,
+  mount refused on hash mismatch (extends ADR-004).
+- [ ] **Quick wins.** RFC 8693 `act: { sub: "agent:<id>" }` JWT claim (SDK + guard); NHI
+  inventory view in `arc-vault-web` (agents + service accounts + last-seen + scope summary +
+  retire).
+
 ### Phase 1 finish
 
 - [x] Blob storage for encrypted attachments. New `apps/arc-server/src/blob/` with a tiny
