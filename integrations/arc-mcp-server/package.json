@@ -1,0 +1,36 @@
+{
+  "name": "@arc/mcp-server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "arc exposed over the Model Context Protocol. Lets any MCP-capable agent authenticate with an arc JWT and call KV / transit / dynamic-creds operations as MCP tools, gated by @arc/grants on the server side.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "arc-mcp-server": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/bin.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

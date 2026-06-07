@@ -462,6 +462,30 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   mount both methods with fake verifier/reviewer, and prove login → token → policy-bound access
   (covered path authorized, uncovered path 403) + 401 on unverifiable token / unknown role + 404
   on an unmounted method. Workspace total climbs accordingly (OIDC 19 + k8s 11 + 5 server e2e).
+- [x] `@arc/mcp-server` — arc exposed over the **Model Context Protocol**. New workspace at
+  `integrations/arc-mcp-server`: a stateless Node HTTP service that wraps arc-server's
+  Engine-A surface (KV v2, Transit, dynamic credentials, sys/mounts) as MCP tools so any
+  MCP-capable agent can use arc. Built on the official `@modelcontextprotocol/sdk`
+  (Streamable HTTP transport, JSON response mode). Architecture: every `POST /mcp` request
+  extracts `Authorization: Bearer <arc-jwt>`, builds a fresh `Server` instance bound to that
+  bearer, and dispatches via a tiny ArcClient that forwards the bearer verbatim to the
+  arc-server REST API. **arc-mcp-server is not the policy decision point** — `JwtAuthGuard`
+  + `CapabilityGuard` (against `@arc/grants`) gate every call on the arc-server side, and a
+  403 surfaces back as a structured `isError: true` tool result, not a JSON-RPC fault. Seven
+  tools: `arc_kv_get` / `arc_kv_put` / `arc_kv_list` / `arc_transit_encrypt` /
+  `arc_transit_decrypt` / `arc_dynamic_creds_issue` / `arc_list_mounts`. **Engine B is
+  deliberately not exposed** — the E2E vault is zero-knowledge; surfacing it over MCP would
+  break that property. 16 unit tests on the tool handlers (fake fetch, wire-shape asserts:
+  default mount, cas envelope, ?list=true, ?version=N, ?ttl=N, base64 context threading,
+  bearer forwarding, 403 → structured error) + 3 integration tests that boot the real HTTP
+  server on a random port and drive it with the MCP SDK's `Client` over Streamable HTTP —
+  initialize handshake, `tools/list` returns the seven tools, `tools/call(arc_kv_get)`
+  round-trips through a fake arc-server, and unauthenticated requests get 401 with
+  `WWW-Authenticate: Bearer`. Authentication for agents: `POST /v1/auth/oidc/login` (or
+  `/v1/auth/kubernetes/login`) returns the arc JWT, agent connects with that as the bearer.
+  Ships a `bin/arc-mcp-server` CLI configured via `ARC_SERVER_URL` / `PORT` / `HOST` env
+  vars + a `GET /healthz` liveness route + SIGTERM/SIGINT graceful drain. ESM-only build via
+  tsup. Tests live + green; workspace total 67 tasks all green.
 
 ### Phase 4 — deployment + ops
 
