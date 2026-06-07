@@ -86,3 +86,33 @@ describe("LeaseManager", () => {
     );
   });
 });
+
+describe("LeaseManager.revokeByTaskId (Engine-C cascade, ADR-005)", () => {
+  it("revokes only active leases tagged with the given taskId", () => {
+    const clk = fixedClock();
+    const m = new LeaseManager({ clock: clk.now, idGen: seqId });
+    const a1 = m.issue({ mount: "database", ttlSeconds: 60, taskId: "task-A" });
+    const a2 = m.issue({ mount: "pki", ttlSeconds: 60, taskId: "task-A" });
+    const b1 = m.issue({ mount: "database", ttlSeconds: 60, taskId: "task-B" });
+    const untagged = m.issue({ mount: "secret", ttlSeconds: 60 });
+
+    const revoked = m.revokeByTaskId("task-A");
+    expect(revoked).toBe(2);
+    expect(m.state(a1.id)).toBe("revoked");
+    expect(m.state(a2.id)).toBe("revoked");
+    expect(m.state(b1.id)).toBe("active");
+    expect(m.state(untagged.id)).toBe("active");
+
+    // Idempotent: a second call revokes nothing more.
+    expect(m.revokeByTaskId("task-A")).toBe(0);
+  });
+
+  it("skips already-expired leases when cascading", () => {
+    const clk = fixedClock();
+    const m = new LeaseManager({ clock: clk.now, idGen: seqId });
+    const l = m.issue({ mount: "database", ttlSeconds: 10, taskId: "task-C" });
+    clk.advance(20); // lease now expired
+    expect(m.revokeByTaskId("task-C")).toBe(0);
+    expect(m.state(l.id)).toBe("expired");
+  });
+})

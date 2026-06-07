@@ -6,7 +6,9 @@ import {
   IsOptional,
   IsString,
   Min,
+  ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
 import type { AgentStatusCol } from "../database/entities";
 
 const AGENT_STATUSES = ["active", "suspended", "retired"] as const;
@@ -60,4 +62,35 @@ export class AuthorizeAgentDto {
     | "list"
     | "sudo";
   @IsOptional() @IsString() delegationId?: string;
+}
+
+/** Optional budget overrides when opening a task; each dimension defaults if omitted. */
+export class TaskBudgetDto {
+  @IsOptional() @IsInt() @Min(1) wallClockMs?: number;
+  @IsOptional() @IsInt() @Min(1) maxCalls?: number;
+  @IsOptional() @IsInt() @Min(1) maxSecretsUnsealed?: number;
+}
+
+/**
+ * Open a task (ADR-005 Phase 3) — the revocable unit that meters an agent's actions and
+ * anchors its signed-intent chain. Optionally bind it to a delegation (the delegation's
+ * `taskId` must match the opened task's id).
+ */
+export class OpenTaskDto {
+  /** Use a specific task id (e.g. the one a delegation was signed against). A uuid. */
+  @IsOptional() @IsString() taskId?: string;
+  @IsOptional() @IsString() delegationId?: string;
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => TaskBudgetDto) budget?: TaskBudgetDto;
+}
+
+/**
+ * Submit a signed intent (ADR-005 Phase 3). `claims` is the {@link IntentClaims} the agent
+ * signed; `signature` is its Ed25519 envelope; `args` is the (optional) request body whose
+ * `sha256(JCS(args))` must equal `claims.argsDigest` — the server recomputes and compares,
+ * so it authorizes the *declared* action and never has to trust an unbound body.
+ */
+export class SubmitIntentDto {
+  @IsObject() claims!: Record<string, unknown>;
+  @IsObject() signature!: Record<string, unknown>;
+  @IsOptional() args?: unknown;
 }

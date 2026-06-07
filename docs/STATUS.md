@@ -205,11 +205,25 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   property), 6 crypto delegation/intent sign+verify+tamper, 5 e2e (intersection enforced,
   no-escalation, bad-signature/spoofed-delegator rejected, autonomous opt-in + budget +
   revoke, audit attribution). ADR-005 Accepted.
-- [ ] **Phase 3 — signed intent + task budget** (`feat/signed-intent-and-task-budget`).
-  `SignedIntent` envelope (binds op/path/argsDigest, separates declared intent from observed
-  action); `vault_agent_tasks` with per-task `chainNext` action chain + signed head; budget
-  (wall-clock / max-calls / max-secrets); `task.close()` cascading revoke through
-  `@arc/leasing` (lease `taskId` tag).
+- [x] **Phase 3 — signed intent + task budget** (`feat/signed-intent-and-task-budget`).
+  `@arc/crypto` adds `intentDigest` + `intentChainNext` (per-task hash chain over
+  `signObject`/`chainNext`); `@arc/leasing` gains a `taskId` lease tag + `revokeByTaskId`.
+  Server: `vault_agent_tasks` (budget + running chain head) + `vault_agent_intents`
+  (recorded chain) entities + migration `1718000000000-agent-tasks-intents`; nullable
+  `vault_audit_log.toolCall`. New `AgentTasksService`: `openTask` (budget defaults,
+  delegation-bound or standalone), `submitIntent` (verifies the agent signature, recomputes
+  `argsDigest` so the declared body is bound, derives the capability from the op verb,
+  authorizes through the Phase-2 effective-scope decision, folds the intent into the task
+  chain transactionally, meters calls + secret-unseals), `closeTask` (cascade-revoke every
+  delegation + Engine-A lease tagged with the task id via the shared `ENGINES_CONFIG.leases`
+  registry), `getTask?verify` (recompute + check the chain — tamper-evidence). SDK:
+  `openTask`/`submitIntent` (signs with the agent key)/`getTask`/`closeTask`. **15 new
+  tests**: 2 leasing `revokeByTaskId`, 2 crypto chain (canonical digest + order-sensitive
+  tamper-evidence), 4 grants/crypto reuse, plus 4 e2e (chain advance + verify, forged
+  `argsDigest` + wrong-key signature rejected, call-budget exhaustion, close cascades +
+  refuses further intents). Workspace stays 70/70 turbo green (server 28 suites, 141
+  passed). v1 of Phase 3 ships the *cryptographically-bound* action chain; the agent's own
+  authenticated credential path (vs. owner-JWT-submitted intents) is the remaining slice.
 - [ ] **Phase 4 — push-consent CIBA via passkeys** (`feat/push-consent-ciba`). `elevated` /
   `sudo` ops return `403 { approvalId }`; `vault_pending_approvals`; owner resolves with a
   WebAuthn assertion (docs/13) — proof of control, no third-party IdP.

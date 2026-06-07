@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   generateSigningKeyPair,
   intentArgsDigest,
+  intentChainNext,
+  intentDigest,
   randomBytes,
   signDelegation,
   signIntent,
   toB64u,
   verifyDelegation,
   verifyIntent,
+  ZERO_CHAIN,
 } from "../src/index";
 import type { DelegationClaims, IntentClaims } from "@arc/types";
 
@@ -102,3 +105,43 @@ describe("signIntent / verifyIntent + intentArgsDigest", () => {
     expect(verifyIntent(agent.pub, { ...intent, path: "secret/data/other" }, sig)).toBe(false);
   });
 });
+
+describe("intent chain (ADR-005 Phase 3)", () => {
+  const mk = (over: Partial<IntentClaims>): IntentClaims => ({
+    v: 1,
+    agent: "agent:abc",
+    delegation: "deleg-1",
+    taskId: "task-1",
+    op: "kv.read",
+    path: "secret/data/app/db",
+    argsDigest: intentArgsDigest({ k: "v" }),
+    ts: "2026-06-07T00:30:00.000Z",
+    nonce: "n1",
+    ...over,
+  });
+
+  it("intentDigest is canonical (key-order independent via JCS)", () => {
+    const a = mk({ nonce: "x" });
+    // Rebuild the same logical claims in a different literal field order.
+    const b: IntentClaims = {
+      path: a.path, op: a.op, agent: a.agent, v: 1, delegation: a.delegation,
+      taskId: a.taskId, argsDigest: a.argsDigest, ts: a.ts, nonce: "x",
+    };
+    expect(intentDigest(a)).toBe(intentDigest(b));
+  });
+
+  it("chain is order-sensitive and tamper-evident", () => {
+    const i1 = mk({ nonce: "1" });
+    const i2 = mk({ nonce: "2", op: "kv.update" });
+    const h1 = intentChainNext(ZERO_CHAIN, i1);
+    const h2 = intentChainNext(h1, i2);
+    expect(h1).not.toBe(ZERO_CHAIN);
+    expect(h2).not.toBe(h1);
+    // Swapping order yields a different head — ordering is bound into the chain.
+    const h1b = intentChainNext(ZERO_CHAIN, i2);
+    const h2b = intentChainNext(h1b, i1);
+    expect(h2b).not.toBe(h2);
+    // Re-folding the same sequence reproduces the head (deterministic verification).
+    expect(intentChainNext(intentChainNext(ZERO_CHAIN, i1), i2)).toBe(h2);
+  });
+})
