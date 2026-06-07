@@ -9,11 +9,13 @@ import {
   VaultPendingApprovalEntity,
   VaultUserKeysEntity,
 } from "../database/entities";
+import { AuthModule } from "../auth/auth.module";
 import { EnginesModule } from "../engines/engines.module";
 import { VaultModule } from "../vault/vault.module";
-import { AgentsController, ApprovalsController } from "./agents.controller";
+import { AgentAuthController, AgentsController, ApprovalsController } from "./agents.controller";
 import { AgentsService } from "./agents.service";
 import { AgentTasksService } from "./agent-tasks.service";
+import { AgentAuthService } from "./agent-auth.service";
 import { ApprovalsService } from "./approvals.service";
 import { AttestationService } from "./attestation";
 
@@ -37,9 +39,10 @@ import { AttestationService } from "./attestation";
     ]),
     EnginesModule,
     VaultModule,
+    AuthModule,
   ],
-  controllers: [AgentsController, ApprovalsController],
-  providers: [AgentsService, AgentTasksService, ApprovalsService, AttestationService],
+  controllers: [AgentsController, ApprovalsController, AgentAuthController],
+  providers: [AgentsService, AgentTasksService, ApprovalsService, AttestationService, AgentAuthService],
   exports: [AgentsService, AgentTasksService, ApprovalsService],
 })
 export class AgentsModule {}

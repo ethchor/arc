@@ -258,9 +258,20 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
 - [ ] **Phase 5b — plugin-manifest provenance** (`feat/plugin-manifest`). Signed plugin
   manifest + per-plugin `sha256`, mount refused on hash mismatch (extends ADR-004). Split
   from 5a — it's plugin-host territory, not agent identity.
-- [ ] **Quick wins.** RFC 8693 `act: { sub: "agent:<id>" }` JWT claim (SDK + guard); NHI
-  inventory view in `arc-vault-web` (agents + service accounts + last-seen + scope summary +
-  retire).
+- [x] **Agent self-authentication + RFC 8693 `act` claim** (`feat/agent-credential-path`).
+  Completes the Phase-3 credential path: an agent proves control of its Ed25519 signing key
+  via challenge-response (`POST /vault/agents/:id/auth/challenge` → sign the nonce →
+  `/auth/token`, both unauthenticated by design — the agent has its key but no session yet)
+  and receives a short-lived (10m) JWT carrying the owner as `sub`, the `agentId`, and the
+  RFC 8693 `act: { sub: "agent:<id>" }` actor claim. `JwtStrategy` + `CurrentUserData`
+  surface `agentId`/`actSub`; `POST :id/intents` now accepts the agent's **own** token and
+  refuses an agent token scoped to a different agent (`agent_token_scope_mismatch`). SDK:
+  `agentToken(agentId, signingPriv)` (challenge+sign+token) + `useBearerToken`. **3 e2e**:
+  agent self-auth → submits its own intent (allow) + token carries the `act` claim;
+  cross-agent token rejected (403); wrong-key challenge signature rejected (400). Workspace
+  70/70 turbo green (server 31 suites, 155 passed).
+- [ ] **NHI inventory view** in `arc-vault-web` (agents + service accounts + last-seen +
+  scope summary + retire) — surfaces the Engine-C principals in the UI.
 
 ### Phase 1 finish
 

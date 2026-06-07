@@ -29,6 +29,7 @@ import {
   sealOpen,
   signDelegation,
   signIntent,
+  signObject,
   toB64u,
   unlock as cryptoUnlock,
   unwrapIdentityFromPasskey,
@@ -489,6 +490,31 @@ export class VaultClient {
   }
 
   // ----- Engine-C: agent identity + delegation (ADR-005) -----
+
+  /**
+   * Authenticate **as an agent**: prove control of the agent's signing key via
+   * challenge-response and obtain a short-lived agent token (carries the owner as `sub` +
+   * the agent id + the RFC 8693 `act` claim). Pass the token to {@link useBearerToken} to
+   * have this client submit the agent's own intents.
+   */
+  async agentToken(
+    agentId: string,
+    agentSigningPriv: Uint8Array,
+  ): Promise<{ accessToken: string; expiresIn: string }> {
+    const ch = await this.http<{ nonce: string }>("POST", `/vault/agents/${agentId}/auth/challenge`, {});
+    const signature = signObject(agentSigningPriv, {
+      v: 1,
+      purpose: "agent-auth",
+      agent: agentSubject(agentId),
+      nonce: ch.nonce,
+    });
+    return this.http("POST", `/vault/agents/${agentId}/auth/token`, { signature });
+  }
+
+  /** Swap the bearer token this client sends (e.g. to an agent token from {@link agentToken}). */
+  useBearerToken(token: string): void {
+    this.token = token;
+  }
 
   /**
    * Generate a fresh agent keyset (Ed25519 signing + X25519/ML-KEM-768 hybrid identity).

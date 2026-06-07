@@ -1,11 +1,24 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type CurrentUserData } from "../auth/current-user.decorator";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/types";
 import { AgentsService } from "./agents.service";
 import { AgentTasksService } from "./agent-tasks.service";
+import { AgentAuthService } from "./agent-auth.service";
 import { ApprovalsService } from "./approvals.service";
 import {
+  AgentTokenDto,
   ApproveDto,
   AuthorizeAgentDto,
   CreateDelegationDto,
@@ -16,10 +29,11 @@ import {
 } from "./dto";
 
 /**
- * Engine-C agent + delegation management (ADR-005). Every route here is owner/delegator
- * authenticated with the normal user JWT — this is the *control plane* for agents, not the
- * agent's own data path. (The agent's authenticated action path arrives with signed intent
- * in Phase 3; v1 deliberately ships no bearer-token agent credential.)
+ * Engine-C agent + delegation management (ADR-005). The control-plane routes here are
+ * owner/delegator authenticated with the normal user JWT. The one exception is
+ * `POST :id/intents`, which also accepts the agent's **own** token (see
+ * {@link AgentAuthController}) — an agent submits its own signed intents once it has
+ * authenticated via challenge-response.
  */
 @UseGuards(JwtAuthGuard)
 @Controller("vault/agents")
@@ -112,12 +126,16 @@ export class AgentsController {
   }
 
   /**
-   * Submit a signed intent (the agent's cryptographically-bound action). Authenticated with
-   * the owner JWT in v1 (the agent's own credential path is a later pass); the *intent*
-   * itself is signed by the agent's key, which is what's actually verified + chained.
+   * Submit a signed intent (the agent's cryptographically-bound action). Accepts either the
+   * owner JWT or the **agent's own** token (from `POST :id/auth/token`); an agent token may
+   * only submit intents for its own id. The intent is agent-signed regardless, which is what
+   * gets verified + chained — the token just authenticates the submitter.
    */
   @Post(":id/intents")
-  submitIntent(@CurrentUser() _u: CurrentUserData, @Param("id") id: string, @Body() dto: SubmitIntentDto) {
+  submitIntent(@CurrentUser() u: CurrentUserData, @Param("id") id: string, @Body() dto: SubmitIntentDto) {
+    if (u.agentId !== undefined && u.agentId !== id) {
+      throw new ForbiddenException({ error: "agent_token_scope_mismatch" });
+    }
     return this.tasks.submitIntent(id, dto);
   }
 
@@ -129,6 +147,27 @@ export class AgentsController {
     @Param("taskId") taskId: string,
   ) {
     return this.tasks.closeTask(u.userId, id, taskId);
+  }
+}
+
+/**
+ * Agent self-authentication (ADR-005). **Unauthenticated** by design — an agent has its
+ * signing key but no arc session yet, so it proves control via challenge-response to obtain
+ * a short-lived token. Mirrors `/auth/dev-login` being open: the challenge is a public
+ * random nonce, and the token endpoint verifies the agent's signature over it.
+ */
+@Controller("vault/agents")
+export class AgentAuthController {
+  constructor(private readonly agentAuth: AgentAuthService) {}
+
+  @Post(":id/auth/challenge")
+  challenge(@Param("id") id: string) {
+    return this.agentAuth.challenge(id);
+  }
+
+  @Post(":id/auth/token")
+  token(@Param("id") id: string, @Body() dto: AgentTokenDto) {
+    return this.agentAuth.token(id, dto.signature);
   }
 }
 
