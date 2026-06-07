@@ -22,6 +22,8 @@ import {
   VaultUserKeysEntity,
 } from "../database/entities";
 import { GrantsService } from "../grants/grants.service";
+import { AttestationService } from "./attestation";
+import type { AgentAttestation } from "@arc/types";
 import type { CreateDelegationDto, RegisterAgentDto, UpdateAgentDto } from "./dto";
 
 /** Canonical capability vocabulary (mirrors `@arc/grants` `Capability` / Vault's verb set). */
@@ -54,11 +56,31 @@ export class AgentsService {
     @InjectRepository(VaultUserKeysEntity) private readonly userKeys: Repository<VaultUserKeysEntity>,
     @InjectRepository(VaultAuditLogEntity) private readonly audit: Repository<VaultAuditLogEntity>,
     private readonly grants: GrantsService,
+    private readonly attestation: AttestationService,
   ) {}
 
   // --- agent CRUD ---
 
   async register(ownerUserId: number, dto: RegisterAgentDto): Promise<AgentIdentity> {
+    // Attestation policy (ADR-005 Phase 5): verify a presented attestation and record the
+    // resolved workload identity; in `required` mode, refuse enrollment without one.
+    let attestation: Record<string, unknown> | null = null;
+    if (dto.attestation) {
+      const result = this.attestation.verify(dto.attestation as unknown as AgentAttestation);
+      if (!result.ok) {
+        throw new BadRequestException({ error: "attestation_rejected", reason: result.reason });
+      }
+      attestation = {
+        ...dto.attestation,
+        verified: true,
+        subject: result.subject,
+        trustAnchor: result.trustAnchor,
+        verifiedAt: new Date().toISOString(),
+      };
+    } else if (this.attestation.required) {
+      throw new BadRequestException({ error: "attestation_required" });
+    }
+
     const agent = await this.agents.save(
       this.agents.create({
         ownerUserId,
@@ -66,7 +88,7 @@ export class AgentsService {
         signingPublicKey: dto.signingPublicKey,
         identityPublicKey: dto.identityPublicKey,
         identityPublicKeyMlkem: dto.identityPublicKeyMlkem,
-        attestation: dto.attestation ?? null,
+        attestation,
         autonomousAllowed: false,
         status: "active",
       }),

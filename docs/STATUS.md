@@ -242,10 +242,22 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   elevated blocked → passkey grant → resubmit allowed + single-use; deny leaves it blocked;
   approve without an assertion is 401. Workspace 70/70 turbo green (server 29 suites, 144
   passed).
-- [ ] **Phase 5 — attestation + plugin-manifest provenance**
-  (`feat/attestation-and-plugin-manifest`). Optional SPIFFE/sigstore/TPM attestation behind
-  a verifier interface (v1 record, v2 enforce); signed plugin manifest + per-plugin `sha256`,
-  mount refused on hash mismatch (extends ADR-004).
+- [x] **Phase 5a — agent attestation** (`feat/agent-attestation`). Pluggable
+  `AttestationVerifier` interface (selected by `kind`) with `SpiffeAttestationVerifier` as
+  the first concrete input + an `AttestationService` policy layer. `AgentsService.register`
+  verifies a presented attestation and records the resolved workload identity
+  (`{ verified, subject, trustAnchor, verifiedAt }`); `ARC_AGENT_ATTESTATION=required`
+  refuses enrollment without one, `ARC_SPIFFE_TRUST_DOMAINS` is an optional trust-domain
+  allowlist. **Honest scope:** v1 validates the SVID *identity* (`spiffe://` format +
+  trust-domain policy) and records it — cryptographic SVID validation (X.509 chain /
+  JWT-SVID signature vs the trust bundle) is the enforce-mode follow-up; the interface is
+  the real decision so sigstore / TPM / cloud-IID slot in unchanged. **10 tests** (7 unit
+  on the verifier + service across allowlist / malformed / required-mode / kind selection,
+  3 e2e: valid SPIFFE recorded verified, malformed → 400 `attestation_rejected`, none in
+  optional mode allowed). Workspace 70/70 turbo green (server 30 suites, 152 passed).
+- [ ] **Phase 5b — plugin-manifest provenance** (`feat/plugin-manifest`). Signed plugin
+  manifest + per-plugin `sha256`, mount refused on hash mismatch (extends ADR-004). Split
+  from 5a — it's plugin-host territory, not agent identity.
 - [ ] **Quick wins.** RFC 8693 `act: { sub: "agent:<id>" }` JWT claim (SDK + guard); NHI
   inventory view in `arc-vault-web` (agents + service accounts + last-seen + scope summary +
   retire).

@@ -359,4 +359,43 @@ describe("Engine-C agent identity + delegation (ADR-005)", () => {
     expect(delRow.delegationId).toBe(del.body.id);
     expect(delRow.taskId).toBe(claims.taskId);
   });
+
+  it("verifies + records a SPIFFE attestation at registration; rejects a malformed one", async () => {
+    const E = enroll(PW, { profile });
+    const a = await login("attested@example.com");
+    await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
+    const keys = freshAgentKeys();
+    const base = {
+      displayName: "spiffe-bot",
+      signingPublicKey: keys.signingPublicKey,
+      identityPublicKey: keys.identityPublicKey,
+      identityPublicKeyMlkem: keys.identityPublicKeyMlkem,
+    };
+
+    // Valid SPIFFE id (default mode = optional, no trust-domain allowlist) → recorded verified.
+    const ok = await request(server)
+      .post("/vault/agents")
+      .set(auth(a.token))
+      .send({ ...base, attestation: { kind: "spiffe", doc: "spiffe://example.org/ns/prod/sa/ci-bot" } })
+      .expect(201);
+    expect(ok.body.attestation).toMatchObject({
+      kind: "spiffe",
+      verified: true,
+      subject: "spiffe://example.org/ns/prod/sa/ci-bot",
+      trustAnchor: "example.org",
+    });
+
+    // Malformed attestation → 400, agent not created.
+    const bad = await request(server)
+      .post("/vault/agents")
+      .set(auth(a.token))
+      .send({ ...base, displayName: "bad-bot", attestation: { kind: "spiffe", doc: "definitely-not-a-svid" } })
+      .expect(400);
+    expect(bad.body.error).toBe("attestation_rejected");
+    expect(bad.body.reason).toBe("malformed_spiffe_id");
+
+    // No attestation in optional mode is fine.
+    const none = await request(server).post("/vault/agents").set(auth(a.token)).send({ ...base, displayName: "plain-bot" }).expect(201);
+    expect(none.body.attestation).toBeNull();
+  });
 });

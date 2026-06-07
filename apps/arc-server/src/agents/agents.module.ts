@@ -15,6 +15,7 @@ import { AgentsController, ApprovalsController } from "./agents.controller";
 import { AgentsService } from "./agents.service";
 import { AgentTasksService } from "./agent-tasks.service";
 import { ApprovalsService } from "./approvals.service";
+import { AttestationService } from "./attestation";
 
 /**
  * Engine-C — agentic identity (ADR-005). Owns the agent principal + signed delegation
@@ -38,7 +39,7 @@ import { ApprovalsService } from "./approvals.service";
     VaultModule,
   ],
   controllers: [AgentsController, ApprovalsController],
-  providers: [AgentsService, AgentTasksService, ApprovalsService],
+  providers: [AgentsService, AgentTasksService, ApprovalsService, AttestationService],
   exports: [AgentsService, AgentTasksService, ApprovalsService],
 })
 export class AgentsModule {}
