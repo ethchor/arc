@@ -4,3 +4,4 @@ export * from "./items";
 export * from "./vault";
 export * from "./vault-ui";
 export * from "./agent";
+export * from "./plugin-manifest";

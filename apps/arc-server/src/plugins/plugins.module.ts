@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { EnginesModule } from "../engines/engines.module";
+import { PluginManifestService } from "./plugin-manifest.service";
 import { PluginsController } from "./plugins.controller";
 import { PluginsService } from "./plugins.service";
 
@@ -11,7 +12,7 @@ import { PluginsService } from "./plugins.service";
 @Module({
   imports: [EnginesModule],
   controllers: [PluginsController],
-  providers: [PluginsService],
+  providers: [PluginsService, PluginManifestService],
   exports: [PluginsService],
 })
 export class PluginsModule {}

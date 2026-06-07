@@ -12,3 +12,4 @@ export * from "./sign";
 export * from "./totp";
 export * from "./vault";
 export * from "./agent";
+export * from "./plugin-manifest";
