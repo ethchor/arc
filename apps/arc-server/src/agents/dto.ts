@@ -99,3 +99,8 @@ export class SubmitIntentDto {
 export class ApproveDto {
   @IsObject() assertion!: Record<string, unknown>;
 }
+
+/** Exchange a signed challenge for a short-lived agent token (agent self-authentication). */
+export class AgentTokenDto {
+  @IsObject() signature!: Record<string, unknown>;
+}
