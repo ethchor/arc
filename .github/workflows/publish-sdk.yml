@@ -1,0 +1,75 @@
+name: Publish SDK (npm)
+
+# Publishes @arc/sdk to npm. Manual by default; a `sdk-v*` tag also triggers it.
+# Requires an `NPM_TOKEN` repo secret (an npm automation token with publish rights to the
+# package's scope). Nothing publishes automatically on a normal push.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run npm pack only, don't publish (default true)."
+        type: boolean
+        default: true
+  push:
+    tags: ["sdk-v*"]
+
+permissions:
+  contents: read
+  id-token: write # npm provenance (publishConfig.provenance=true)
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Pre-publish guards — both are deliberate blockers (see the SDK README).
+      - name: Guard — a LICENSE file must exist
+        run: |
+          if [ ! -f sdks/arc-js-sdk/LICENSE ] && [ ! -f LICENSE ]; then
+            echo "::error::No LICENSE file found. Add sdks/arc-js-sdk/LICENSE (or a repo-root LICENSE) before publishing."
+            exit 1
+          fi
+      - name: Guard — version must not be 0.0.0
+        run: |
+          v=$(node -p "require('./sdks/arc-js-sdk/package.json').version")
+          if [ "$v" = "0.0.0" ]; then
+            echo "::error::SDK version is still 0.0.0 — bump it before publishing."
+            exit 1
+          fi
+          echo "Publishing @arc/sdk@$v"
+
+      - name: Build (self-contained — bundles @arc/crypto, keeps @noble external)
+        run: pnpm --filter @arc/sdk build
+
+      - name: Verify the dist has no unresolved @arc/* imports
+        run: |
+          if grep -rqE "from ['\"]@arc/|require\(['\"]@arc/|import\(['\"]@arc/" \
+              sdks/arc-js-sdk/dist/index.js sdks/arc-js-sdk/dist/index.cjs \
+              sdks/arc-js-sdk/dist/index.d.ts sdks/arc-js-sdk/dist/index.d.cts; then
+            echo "::error::dist still imports a workspace @arc/* package — external consumers can't resolve it."
+            exit 1
+          fi
+          echo "dist is self-contained ✓"
+
+      - name: Pack (dry run)
+        working-directory: sdks/arc-js-sdk
+        run: pnpm pack --json | tee ../pack.json
+
+      - name: Publish
+        if: ${{ github.event_name == 'push' || github.event.inputs.dry_run == 'false' }}
+        working-directory: sdks/arc-js-sdk
+        run: pnpm publish --no-git-checks --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
