@@ -270,8 +270,16 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   agent self-auth → submits its own intent (allow) + token carries the `act` claim;
   cross-agent token rejected (403); wrong-key challenge signature rejected (400). Workspace
   70/70 turbo green (server 31 suites, 155 passed).
-- [ ] **NHI inventory view** in `arc-vault-web` (agents + service accounts + last-seen +
-  scope summary + retire) — surfaces the Engine-C principals in the UI.
+- [x] **NHI inventory view** in `arc-vault-web` (`feat/nhi-inventory-view`). New "Identities"
+  section in the console (between Access and Policies) backed by `IdentitiesView` — surfaces
+  every agent the operator owns. Summary tiles (total / active / autonomous / attested) +
+  per-row card with display name, status badge (`active`/`suspended`/`retired`), SPIFFE
+  attestation badge (with `trustAnchor` tooltip), autonomous flag, owner, agent id, last-seen
+  (relative time), and quick controls for *toggle autonomy* / *suspend ↔ resume* / *retire*
+  via `VaultClient.updateAgent`. `AgentAttestation` in `@arc/types` extended (additively) to
+  surface the server-augmented `verified` / `subject` / `verifiedAt` fields the verifier
+  records. Zero-knowledge property preserved — only public agent state is fetched. Web build
+  is green (`pnpm --filter @arc/vault-web build` + workspace typecheck 70/70).
 
 ### Phase 1 finish
 
