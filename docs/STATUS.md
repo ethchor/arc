@@ -149,9 +149,29 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 1 finish
 
-- [ ] Cloud blob storage adapter for item ciphertext payloads (the entity column today
-  stores the envelope inline as JSONB — fine for now, will hit row-size limits on
-  attachments).
+- [x] Blob storage for encrypted attachments. New `apps/arc-server/src/blob/` with a tiny
+  `BlobStore` interface and three implementations: **`InMemoryBlobStore`** (default — dev /
+  tests / small single-replica), **`FilesystemBlobStore`** (SHA-256-hashed sharded paths so
+  the on-disk layout is traversal-proof; atomic write via temp+rename; mode 0600), and
+  **`S3BlobStore`** (talks through an injectable `S3Like` so the tests don't pull
+  `@aws-sdk/client-s3` at build time; the AWS SDK is **lazy-loaded only when
+  `ARC_BLOB_BACKEND=s3`** and declared as an optional peer dep, so arc-server boots fine
+  without it installed). Backend selection is env-driven via the `BlobModule`
+  (`ARC_BLOB_BACKEND` + per-backend vars). New `VaultAttachmentEntity` (id, vaultId, itemId,
+  blobKey, sizeBytes, wrappedKey, encMetadata envelopes, vaultKeyVersion, authorUserId,
+  createdAt) + migration `1717600000000-attachments-schema`. Four new endpoints under
+  `/vaults/:id/items/:itemId/attachments` (upload / list / download / delete) gated by the
+  existing `requireRole` (editor for write, viewer for read; non-members get 404 to hide
+  existence). The server stays zero-knowledge: ciphertext is opaque base64 it persists
+  verbatim, and the wrappedKey/encMetadata envelopes mean it never sees plaintext filenames
+  either. Hard 25 MiB ceiling per attachment enforced in the service (`PayloadTooLargeException`);
+  body-parser limit raised to 40 MiB to fit base64 inflation. Audit log records distinct
+  `attachment_added` / `attachment_deleted` actions (metadata only — asserted in the test).
+  **15 new tests**: 10 unit tests on the three backends + `newAttachmentKey` (put/get/delete
+  round-trips, buffer isolation, idempotent delete, `BlobNotFoundError` shape, S3 prefix
+  threading, opaque-key uniqueness) and 5 e2e tests through the full HTTP surface
+  (round-trip preserves bytes verbatim; 413 on oversized + empty; 404 hides the vault from
+  non-members; audit emits both actions without leaking ciphertext).
 
 ### Phase 2 — multi-device + shared vaults
 

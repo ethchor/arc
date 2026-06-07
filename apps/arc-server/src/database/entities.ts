@@ -521,6 +521,52 @@ export class PolicyGroupAttachmentEntity {
   createdAt!: Date;
 }
 
+/**
+ * Encrypted attachment metadata. The ciphertext bytes live in the BlobStore (memory / fs /
+ * S3) keyed by `blobKey`; this row keeps only the wrapped attachment key + encrypted
+ * filename/MIME envelope + size, so the server stays zero-knowledge about the attachment's
+ * content. Deleting the row deletes the blob.
+ */
+@Entity("vault_attachments")
+@Index(["vaultId", "itemId"])
+export class VaultAttachmentEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  vaultId!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  itemId!: string;
+
+  /** Opaque key into the BlobStore where the ciphertext bytes live. */
+  @Column({ type: "text" })
+  blobKey!: string;
+
+  /** Ciphertext size in bytes (for quotas / UI; not the plaintext size). */
+  @Column({ type: "int" })
+  sizeBytes!: number;
+
+  /** The attachment's content key, wrapped to the vault key (client-side). */
+  @Column({ type: "simple-json" })
+  wrappedKey!: EnvelopeJson;
+
+  /** Encrypted filename + MIME (an envelope the client decrypts). */
+  @Column({ type: "simple-json" })
+  encMetadata!: EnvelopeJson;
+
+  @Column({ type: "int" })
+  vaultKeyVersion!: number;
+
+  @Column({ type: "int" })
+  authorUserId!: number;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+}
+
 export const entities = [
   UserEntity,
   VaultUserKeysEntity,
@@ -533,6 +579,7 @@ export const entities = [
   VaultAuditLogEntity,
   VaultFolderEntity,
   VaultUserPasskeyEntity,
+  VaultAttachmentEntity,
   PolicyEntity,
   PolicyAttachmentEntity,
   PolicyGroupMembershipEntity,

@@ -2,16 +2,20 @@ import {
   ConflictException,
   ForbiddenException,
   HttpException,
+  Inject,
   Injectable,
   NotFoundException,
+  PayloadTooLargeException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
+import { BLOB_STORE, type BlobStore, newAttachmentKey, BlobNotFoundError } from "../blob/blob-store";
 import { DataSource, In, MoreThan, Repository } from "typeorm";
 import { ctEqual, fingerprint, fromB64u, randomBytes, serverHashAuth, toB64u } from "@arc/crypto";
 import {
   type MemberRole,
   UserEntity,
+  VaultAttachmentEntity,
   VaultAuditLogEntity,
   VaultDeviceEntity,
   VaultEntity,
@@ -32,7 +36,11 @@ import type {
   RegisterDeviceDto,
   RotateKeyDto,
   UpsertItemDto,
+  UploadAttachmentDto,
 } from "./dto";
+
+/** Hard ceiling for a single attachment's ciphertext, in bytes. 25 MiB. */
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 const ROLE_RANK: Record<MemberRole, number> = { viewer: 1, editor: 2, admin: 3, owner: 4 };
 const MAX_UNLOCK_FAILS = 5;
@@ -58,7 +66,9 @@ export class VaultService {
     @InjectRepository(VaultHeadEntity) private readonly heads: Repository<VaultHeadEntity>,
     @InjectRepository(VaultAuditLogEntity) private readonly audit: Repository<VaultAuditLogEntity>,
     @InjectRepository(VaultFolderEntity) private readonly folders: Repository<VaultFolderEntity>,
+    @InjectRepository(VaultAttachmentEntity) private readonly attachments: Repository<VaultAttachmentEntity>,
     @InjectDataSource() private readonly dataSource: DataSource,
+    @Inject(BLOB_STORE) private readonly blobs: BlobStore,
   ) {}
 
   /** Email→identity lookup used by the share dialog to find a member by their address. */
@@ -539,6 +549,108 @@ export class VaultService {
       await this.writeAudit(null, d.userId, "device_auto_revoked", d.id);
     }
     return { revokedIds: ids };
+  }
+
+  // --- attachments -------------------------------------------------------------
+
+  /**
+   * Upload an encrypted attachment. The body's `ciphertextB64` is an opaque envelope the
+   * client already encrypted under a one-shot attachment key (wrapped to the vault key in
+   * `wrappedKey`). The server decodes only to validate size + persist the bytes — it never
+   * sees plaintext.
+   */
+  async uploadAttachment(userId: number, vaultId: string, itemId: string, dto: UploadAttachmentDto) {
+    await this.requireRole(vaultId, userId, "editor");
+    const item = await this.items.findOne({ where: { id: itemId, vaultId } });
+    if (!item) throw new NotFoundException("item not found");
+
+    const bytes = Buffer.from(dto.ciphertextB64, "base64");
+    if (bytes.length === 0) throw new PayloadTooLargeException("ciphertextB64 is empty");
+    if (bytes.length > MAX_ATTACHMENT_BYTES) {
+      throw new PayloadTooLargeException(
+        `attachment ciphertext is ${bytes.length} bytes; max is ${MAX_ATTACHMENT_BYTES}`,
+      );
+    }
+
+    const blobKey = newAttachmentKey(vaultId);
+    await this.blobs.put(blobKey, bytes);
+
+    let row: VaultAttachmentEntity;
+    try {
+      row = await this.attachments.save(
+        this.attachments.create({
+          vaultId,
+          itemId,
+          blobKey,
+          sizeBytes: bytes.length,
+          wrappedKey: dto.wrappedKey,
+          encMetadata: dto.encMetadata,
+          vaultKeyVersion: dto.vaultKeyVersion,
+          authorUserId: userId,
+        }),
+      );
+    } catch (err) {
+      // Don't leave an orphaned blob if the metadata insert fails.
+      await this.blobs.delete(blobKey).catch(() => undefined);
+      throw err;
+    }
+
+    await this.writeAudit(vaultId, userId, "attachment_added", row.id);
+    return { id: row.id, sizeBytes: row.sizeBytes };
+  }
+
+  /** List attachment metadata for an item (no ciphertext bytes — those need a separate GET). */
+  async listAttachments(userId: number, vaultId: string, itemId: string) {
+    await this.requireRole(vaultId, userId, "viewer");
+    const rows = await this.attachments.find({ where: { vaultId, itemId }, order: { createdAt: "ASC" } });
+    return rows.map((r) => ({
+      id: r.id,
+      sizeBytes: r.sizeBytes,
+      wrappedKey: r.wrappedKey,
+      encMetadata: r.encMetadata,
+      vaultKeyVersion: r.vaultKeyVersion,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Download the attachment ciphertext (base64). The server never decrypts; the client opens
+   * the envelope with the unwrapped attachment key.
+   */
+  async downloadAttachment(userId: number, vaultId: string, itemId: string, attachmentId: string) {
+    await this.requireRole(vaultId, userId, "viewer");
+    const row = await this.attachments.findOne({ where: { id: attachmentId, vaultId, itemId } });
+    if (!row) throw new NotFoundException("attachment not found");
+    let bytes: Buffer;
+    try {
+      bytes = await this.blobs.get(row.blobKey);
+    } catch (err) {
+      if (err instanceof BlobNotFoundError) {
+        // Metadata-without-blob is an inconsistent state — surface it loudly rather than
+        // silently returning empty.
+        throw new NotFoundException("attachment ciphertext missing from blob store");
+      }
+      throw err;
+    }
+    return {
+      id: row.id,
+      sizeBytes: row.sizeBytes,
+      wrappedKey: row.wrappedKey,
+      encMetadata: row.encMetadata,
+      vaultKeyVersion: row.vaultKeyVersion,
+      ciphertextB64: bytes.toString("base64"),
+    };
+  }
+
+  /** Delete the metadata row + its blob. Idempotent at the blob layer. */
+  async deleteAttachment(userId: number, vaultId: string, itemId: string, attachmentId: string) {
+    await this.requireRole(vaultId, userId, "editor");
+    const row = await this.attachments.findOne({ where: { id: attachmentId, vaultId, itemId } });
+    if (!row) throw new NotFoundException("attachment not found");
+    await this.attachments.delete({ id: row.id });
+    await this.blobs.delete(row.blobKey).catch(() => undefined);
+    await this.writeAudit(vaultId, userId, "attachment_deleted", row.id);
+    return { ok: true };
   }
 
   // --- helpers ---

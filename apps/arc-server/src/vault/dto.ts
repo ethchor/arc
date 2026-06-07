@@ -86,6 +86,20 @@ export class TouchDeviceDto {
   @IsUUID() deviceId!: string;
 }
 
+/**
+ * Upload an encrypted attachment. The client encrypts the file under a one-shot attachment
+ * key, wraps that key to the vault key, and POSTs the base64 ciphertext bytes here. The
+ * server stays zero-knowledge — `ciphertextB64` is opaque and lands directly in the
+ * configured BlobStore (memory / fs / S3) keyed by the row's `blobKey`.
+ */
+export class UploadAttachmentDto {
+  /** Base64-encoded encrypted bytes. Body limit raised in `main.ts` to allow ≤ 25 MiB. */
+  @IsString() ciphertextB64!: string;
+  @IsObject() wrappedKey!: EnvelopeJson;
+  @IsObject() encMetadata!: EnvelopeJson;
+  @IsInt() @Min(1) vaultKeyVersion!: number;
+}
+
 export class RotateKeyDto {
   @IsInt() @Min(1) newKeyVersion!: number;
   @IsArray() grants!: Array<{ granteeUserId: number; wrappedVaultKey: EnvelopeJson; signature?: EnvelopeJson }>;
