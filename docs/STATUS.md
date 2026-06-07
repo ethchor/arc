@@ -186,12 +186,25 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
 `signObject`/`verifyObject` + `pqSeal` + `chainNext` — no new crypto. Full design in
 [`docs/arc-rfcs/ADR-005-agentic-identity-engine-c.md`](arc-rfcs/ADR-005-agentic-identity-engine-c.md).
 
-- [ ] **Phase 1+2 — principal + delegation** (`feat/agent-identity-and-delegation`).
-  `vault_agents` entity + registration + signing-key publish; additive nullable audit
-  columns (`actorKind`, `agentId`, `delegationId`, `taskId`, `toolCall`); `DelegationGrant`
-  signed envelope + verification; effective-scope **intersection** (delegated ∩ delegator
-  ceiling ∩ agent ceiling — delegation can only narrow) wired into the capability guard via
-  the `agent:<id>` subject handle.
+- [x] **Phase 1+2 — principal + delegation** (`architecture/engine-c-agent-identity`).
+  `@arc/types` ships the Engine-C wire shapes (`AgentIdentity`, `DelegationClaims` /
+  `SignedDelegation`, plus the Phase-3 `SignedIntent` / `AgentTask` types pinned now);
+  `@arc/crypto` adds `signDelegation`/`verifyDelegation`/`signIntent`/`verifyIntent` +
+  `intentArgsDigest` (thin wrappers over `signObject`/`verifyObject` — no new algorithm);
+  `@arc/grants` adds `effectiveAllows` + `intersectScopes` (the "delegation can only
+  narrow" lattice meet, property-tested to agree). Server: `vault_agents` +
+  `vault_delegations` entities + migration `1717900000000-agent-identity`; additive
+  nullable audit attribution columns (`actorKind`, `agentId`, `delegationId`, `taskId`);
+  `AgentsModule` (register / list / patch / delegate / revoke / **authorize** introspection)
+  with signature verification against the delegator's published key + effective-scope
+  intersection (delegated ∩ delegator-ceiling ∩ agent-ceiling) via the `agent:<id>` subject
+  handle; autonomous mode **deny-by-default** (`autonomousAllowed` opt-in). SDK:
+  `generateAgentKeyset` + `registerAgent`/`listAgents`/`updateAgent`/`createDelegation`
+  (signs client-side)/`revokeDelegation`/`authorizeAgent`. **19 new tests**: 8 grants
+  intersection (escalation/accumulation/sudo/disjoint truth-tables + meet⟺conjunction
+  property), 6 crypto delegation/intent sign+verify+tamper, 5 e2e (intersection enforced,
+  no-escalation, bad-signature/spoofed-delegator rejected, autonomous opt-in + budget +
+  revoke, audit attribution). ADR-005 Accepted.
 - [ ] **Phase 3 — signed intent + task budget** (`feat/signed-intent-and-task-budget`).
   `SignedIntent` envelope (binds op/path/argsDigest, separates declared intent from observed
   action); `vault_agent_tasks` with per-task `chainNext` action chain + signed head; budget

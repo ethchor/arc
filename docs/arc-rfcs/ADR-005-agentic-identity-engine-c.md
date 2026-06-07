@@ -1,6 +1,6 @@
 # ADR-005 — Engine-C: agentic identity, signed delegation, and continuous trust
 
-- **Status:** Proposed (draft for review)
+- **Status:** Accepted — v1 (Phases 1+2) implemented; Phases 3–5 queued
 - **Date:** 2026-06-07
 - **Deciders:** ethchor
 - **Depends on:** ADR-002 (PQ-hybrid grants), ADR-003 (hybrid device keys),
@@ -76,6 +76,35 @@ Notably, the HashiCorp posts **state the principles but decline to specify the
 wire shapes** — they explicitly do not define attestation formats, signed-intent
 schemas, or revocation protocols. That gap is arc's opening: we specify them,
 and we make them *cryptographic* rather than "centrally logged, trust us".
+
+## Decisions resolved
+
+Three open questions were settled before implementation; recorded here so the rationale
+travels with the design.
+
+1. **v1 scope = Phases 1+2 (principal + delegation + intersection + attribution), with the
+   Phase-3 wire types pinned now.** Delegation-with-intersection is independently safe — it
+   can only *narrow* authority and is server-enforced, scoped, expiring, and attributable —
+   and shipping a tested, coherent cut beats a rushed mega-PR. Pinning `SignedIntent` /
+   `AgentTask` in `@arc/types` in v1 keeps the cryptographic action chain (Phase 3) purely
+   additive. **Honest framing of the progression:** v1 is *server-enforced* delegation;
+   Phase 3 upgrades it to *cryptographically-bound* intent. v1 deliberately ships **no
+   bearer-token agent credential** — an agent's authenticated action path arrives with
+   signed intent in Phase 3, so we never ship the bearer weakness this ADR critiques.
+
+2. **Autonomous agents are deny-by-default; explicit per-agent `autonomousAllowed` opt-in.**
+   Autonomous mode is the highest-blast-radius principal (own authority, no human, outside
+   any user's scope), so secure-by-default + least-privilege demand it be off until an admin
+   deliberately enables it — mirroring `@arc/grants` deny-by-default and ADR-004's
+   deny-by-default WASI. Delegated mode works freely; autonomous remains bounded by the
+   agent's own policy ceiling even once enabled.
+
+3. **Attestation: SPIFFE/SPIRE first (X.509-SVID + JWT-SVID), behind a pluggable
+   `AttestationVerifier` interface.** arc's K8s/operator direction plus SPIFFE being the
+   CNCF workload-identity standard the reference posts name first makes it the right concrete
+   anchor; the *interface* is the real decision so sigstore/TPM/cloud-IID slot in later. v1
+   records the attestation blob (the `vault_agents.attestation` column + the wire type);
+   enforcement is Phase 5.
 
 ## Decision
 

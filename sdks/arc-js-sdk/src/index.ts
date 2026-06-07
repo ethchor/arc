@@ -13,15 +13,20 @@ import {
   fingerprint,
   fromB64u,
   generateHybridDeviceKeyPair,
+  generateHybridIdentityKeyPair,
+  generateIdentityKeyPair,
+  generateSigningKeyPair,
   type JsonValue,
   type Keyset,
   mlkemPubFromPriv,
   openVaultKeyGrant,
   pqSeal,
   pqSealOpen,
+  randomBytes,
   rewrapItemKey,
   seal,
   sealOpen,
+  signDelegation,
   toB64u,
   unlock as cryptoUnlock,
   unwrapIdentityFromPasskey,
@@ -33,6 +38,15 @@ import {
   wrapVaultKeyFor,
   x25519PubFromPriv,
 } from "@arc/crypto";
+
+import {
+  agentSubject,
+  userSubject,
+  type AgentIdentity,
+  type AgentStatus,
+  type DelegationClaims,
+  type DelegationScope,
+} from "@arc/types";
 
 export type VaultType = "personal" | "team" | "org";
 
@@ -49,6 +63,33 @@ export {
   isVaultIcon,
   isVaultColor,
 } from "@arc/types";
+
+/** Engine-C (ADR-005) agent identity + delegation wire shapes, re-exported for convenience. */
+export {
+  agentSubject,
+  userSubject,
+  type AgentIdentity,
+  type AgentStatus,
+  type DelegationClaims,
+  type DelegationScope,
+  type SignedDelegation,
+} from "@arc/types";
+
+/**
+ * A freshly generated agent keyset. The **private** keys are the agent's own secret
+ * material — the caller persists them in the agent's secure storage (they sign intents in
+ * Phase 3); only `publicKeys` is sent to the server at registration.
+ */
+export interface AgentKeyset {
+  signing: { priv: Uint8Array; pub: Uint8Array };
+  identity: { priv: Uint8Array; pub: Uint8Array };
+  identityMlkem: { publicKey: Uint8Array; secretKey: Uint8Array };
+  publicKeys: {
+    signingPublicKey: string;
+    identityPublicKey: string;
+    identityPublicKeyMlkem: string;
+  };
+}
 
 export interface VaultClientOptions {
   baseUrl: string;
@@ -218,6 +259,7 @@ export interface PasskeyAuthenticator {
  */
 export class VaultClient {
   private token?: string;
+  private userId?: number;
   private session?: ClientSession;
   private devicePriv?: Uint8Array;
   private devicePub?: Uint8Array;
@@ -296,6 +338,7 @@ export class VaultClient {
   async devLogin(email: string): Promise<{ userId: number; token: string }> {
     const r = await this.http<{ accessToken: string; userId: number }>("POST", "/auth/dev-login", { email });
     this.token = r.accessToken;
+    this.userId = r.userId;
     return { userId: r.userId, token: r.accessToken };
   }
 
@@ -439,6 +482,135 @@ export class VaultClient {
         ...(ui.color !== undefined ? { color: ui.color } : {}),
       },
     );
+  }
+
+  // ----- Engine-C: agent identity + delegation (ADR-005) -----
+
+  /**
+   * Generate a fresh agent keyset (Ed25519 signing + X25519/ML-KEM-768 hybrid identity).
+   * The private halves are the agent's secret material — persist them in the agent's secure
+   * storage; only `publicKeys` goes to the server at {@link registerAgent}.
+   */
+  static generateAgentKeyset(): AgentKeyset {
+    const signing = generateSigningKeyPair();
+    const identity = generateIdentityKeyPair();
+    const hybrid = generateHybridIdentityKeyPair();
+    return {
+      signing,
+      identity,
+      identityMlkem: hybrid.mlkem,
+      publicKeys: {
+        signingPublicKey: toB64u(signing.pub),
+        identityPublicKey: toB64u(identity.pub),
+        identityPublicKeyMlkem: toB64u(hybrid.mlkem.publicKey),
+      },
+    };
+  }
+
+  /** Register an agent the caller owns. Returns the public agent record (autonomy off by default). */
+  async registerAgent(input: {
+    displayName: string;
+    publicKeys: AgentKeyset["publicKeys"];
+    attestation?: { kind: string; doc: string; trustAnchor?: string };
+  }): Promise<AgentIdentity> {
+    return this.http<AgentIdentity>("POST", "/vault/agents", {
+      displayName: input.displayName,
+      ...input.publicKeys,
+      ...(input.attestation ? { attestation: input.attestation } : {}),
+    });
+  }
+
+  async listAgents(): Promise<AgentIdentity[]> {
+    return this.http<AgentIdentity[]>("GET", "/vault/agents");
+  }
+
+  async getAgent(agentId: string): Promise<AgentIdentity> {
+    return this.http<AgentIdentity>("GET", `/vault/agents/${agentId}`);
+  }
+
+  /** Patch an agent's lifecycle / autonomy / label (owner only). */
+  async updateAgent(
+    agentId: string,
+    patch: { status?: AgentStatus; autonomousAllowed?: boolean; displayName?: string },
+  ): Promise<AgentIdentity> {
+    return this.http<AgentIdentity>("PATCH", `/vault/agents/${agentId}`, patch);
+  }
+
+  /**
+   * Sign and record a delegation: lend the agent scoped, time-boxed authority on your
+   * behalf. Signed with the caller's identity key (requires {@link devLogin} + an unlocked
+   * session). Effective authority is the intersection of these scopes with your own policy
+   * and the agent's policy — a delegation can only narrow.
+   */
+  async createDelegation(
+    agentId: string,
+    opts: {
+      scopes: DelegationScope[];
+      /** Validity window length from now, in ms. */
+      ttlMs: number;
+      maxCalls?: number | null;
+      elevated?: boolean;
+    },
+  ): Promise<{ id: string; taskId: string; notAfter: string; elevated: boolean }> {
+    if (this.userId === undefined) throw new Error("not logged in: call devLogin first");
+    if (!this.session?.signingPriv) throw new Error("not unlocked: no identity signing key");
+    const now = Date.now();
+    const claims: DelegationClaims = {
+      v: 1,
+      delegator: userSubject(this.userId),
+      agent: agentSubject(agentId),
+      scopes: opts.scopes,
+      taskId: globalThis.crypto.randomUUID(),
+      // Small backdate absorbs benign client/server clock skew at the window's start.
+      notBefore: new Date(now - 5_000).toISOString(),
+      notAfter: new Date(now + opts.ttlMs).toISOString(),
+      maxCalls: opts.maxCalls ?? null,
+      elevated: opts.elevated ?? false,
+      nonce: toB64u(randomBytes(16)),
+    };
+    const signature = signDelegation(this.session.signingPriv, claims);
+    return this.http("POST", `/vault/agents/${agentId}/delegations`, { claims, signature });
+  }
+
+  async listDelegations(agentId: string): Promise<
+    Array<{
+      id: string;
+      taskId: string;
+      delegatorUserId: number;
+      scopes: DelegationScope[];
+      notBefore: string;
+      notAfter: string;
+      maxCalls: number | null;
+      callsUsed: number;
+      elevated: boolean;
+      revoked: boolean;
+    }>
+  > {
+    return this.http("GET", `/vault/agents/${agentId}/delegations`);
+  }
+
+  async revokeDelegation(agentId: string, delegationId: string): Promise<{ ok: boolean }> {
+    return this.http("DELETE", `/vault/agents/${agentId}/delegations/${delegationId}`);
+  }
+
+  /**
+   * Introspect the effective-authority decision for an agent (delegation ∩ delegator ∩
+   * agent ceilings). Read-only; does not consume a delegation's call budget.
+   */
+  async authorizeAgent(
+    agentId: string,
+    input: {
+      path: string;
+      capability: "create" | "read" | "update" | "delete" | "list" | "sudo";
+      delegationId?: string;
+    },
+  ): Promise<{
+    decision: "allow" | "deny";
+    mode: "delegated" | "autonomous";
+    reason: string;
+    elevated: boolean;
+  }> {
+    return this.http("POST", `/vault/agents/${agentId}/authorize`, input);
   }
 
   /**
