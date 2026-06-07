@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
-import { DataSource, MoreThan, Repository } from "typeorm";
+import { DataSource, In, MoreThan, Repository } from "typeorm";
 import { ctEqual, fingerprint, fromB64u, randomBytes, serverHashAuth, toB64u } from "@arc/crypto";
 import {
   type MemberRole,
@@ -454,6 +454,36 @@ export class VaultService {
     }));
   }
 
+  /**
+   * List the user's approved devices with their last-seen timestamp + trusted flag. Used
+   * by the device-management UI ("My devices") and by the auto-revoke job to drive its
+   * stale-device scan.
+   */
+  async listApprovedDevices(userId: number) {
+    const devs = await this.devices.find({ where: { userId, approved: true } });
+    return devs.map((d) => ({
+      id: d.id,
+      name: d.name,
+      publicKey: d.publicKey,
+      trusted: d.trusted,
+      lastSeenAt: d.lastSeenAt ? d.lastSeenAt.toISOString() : null,
+      createdAt: d.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Update a device's `lastSeenAt` to now. Validates that the device belongs to the
+   * authenticated user — a different user's deviceId is rejected as 404. Cheap enough to
+   * call on a heartbeat from each unlocked client; pairs with the auto-revoke job.
+   */
+  async touchDevice(userId: number, deviceId: string) {
+    const dev = await this.devices.findOne({ where: { id: deviceId, userId } });
+    if (!dev) throw new NotFoundException("device not found");
+    dev.lastSeenAt = new Date();
+    await this.devices.save(dev);
+    return { ok: true, lastSeenAt: dev.lastSeenAt.toISOString() };
+  }
+
   async approveDevice(userId: number, deviceId: string, dto: ApproveDeviceDto) {
     const dev = await this.devices.findOne({ where: { id: deviceId, userId } });
     if (!dev) throw new NotFoundException("device not found");
@@ -482,6 +512,33 @@ export class VaultService {
     await this.devices.delete({ id: deviceId });
     await this.writeAudit(null, userId, "device_revoked", deviceId);
     return { ok: true };
+  }
+
+  /**
+   * Scan every approved-but-untrusted device whose `lastSeenAt` is older than
+   * `inactiveBeforeMs` (or whose `lastSeenAt` is null and `createdAt` is older). Revoke
+   * each one and write a distinct `device_auto_revoked` audit entry so the operator can
+   * tell apart "user intentionally retired this device" from "device went inactive".
+   *
+   * Trusted devices are exempt from auto-revoke — that's what `trusted: true` is for.
+   * Pending (`approved: false`) devices are also skipped; they have their own TTL story
+   * (operator-defined cleanup), and revoking them confuses the approval flow.
+   *
+   * Returns the IDs of devices that were revoked, so the caller (the schedule loop, or
+   * an admin-triggered run) can log + assert in tests.
+   */
+  async autoRevokeStaleDevices(inactiveBeforeMs: number): Promise<{ revokedIds: string[] }> {
+    const cutoff = new Date(Date.now() - inactiveBeforeMs);
+    const candidates = await this.devices.find({ where: { approved: true } });
+    const stale = candidates.filter((d) => !d.trusted && referenceAt(d) < cutoff);
+    if (stale.length === 0) return { revokedIds: [] };
+    const ids = stale.map((d) => d.id);
+    await this.grants.delete({ granteeDeviceId: In(ids) });
+    await this.devices.delete({ id: In(ids) });
+    for (const d of stale) {
+      await this.writeAudit(null, d.userId, "device_auto_revoked", d.id);
+    }
+    return { revokedIds: ids };
   }
 
   // --- helpers ---
@@ -542,4 +599,14 @@ export class VaultService {
       ts: r.createdAt.toISOString(),
     }));
   }
+}
+
+/**
+ * The "is this device inactive?" reference timestamp. Devices that have been seen at least
+ * once (the SDK calls /vault/devices/me/touch on unlock + periodically) use `lastSeenAt`;
+ * devices that were enrolled but never touched fall back to `createdAt` so they don't
+ * become immortal just because no client ever heart-beat them.
+ */
+function referenceAt(d: VaultDeviceEntity): Date {
+  return d.lastSeenAt ?? d.createdAt;
 }

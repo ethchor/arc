@@ -97,6 +97,18 @@ export interface PendingDevice {
   verificationCode: string;
 }
 
+/** An already-enrolled device on the calling user's account. Returned by `listDevices()`. */
+export interface EnrolledDevice {
+  id: string;
+  name: string;
+  publicKey: string;
+  /** `true` exempts this device from the auto-revoke inactivity policy. */
+  trusted: boolean;
+  /** ISO 8601 timestamp of the last touch, or null if never seen since enrollment. */
+  lastSeenAt: string | null;
+  createdAt: string;
+}
+
 export interface AuditEvent {
   id: string;
   action: string;
@@ -573,6 +585,33 @@ export class VaultClient {
   /** Trusted device: list devices awaiting approval (with their verification codes). */
   async listPendingDevices(): Promise<PendingDevice[]> {
     return this.http("GET", "/vault/devices?pending=true");
+  }
+
+  /**
+   * List this user's currently-enrolled (approved) devices. Includes `lastSeenAt` and
+   * `trusted`, so a "My devices" UI can warn about devices that haven't checked in for a
+   * while or surface which devices are exempt from the inactivity policy.
+   */
+  async listDevices(): Promise<EnrolledDevice[]> {
+    return this.http("GET", "/vault/devices?approved=true&pending=false");
+  }
+
+  /**
+   * Update a device's `lastSeenAt` to now. Call this on unlock + periodically thereafter
+   * so the device doesn't get auto-revoked by the inactivity policy. Server validates the
+   * device belongs to the authenticated user (404 otherwise).
+   */
+  async touchDevice(deviceId: string): Promise<{ ok: true; lastSeenAt: string }> {
+    return this.http("POST", "/vault/devices/me/touch", { deviceId });
+  }
+
+  /**
+   * Revoke a device. Deletes the device row + its vault-key grants, writes a
+   * `device_revoked` audit event. Use this for explicit retirement; the inactivity policy
+   * is a separate path that writes `device_auto_revoked` instead.
+   */
+  async revokeDevice(deviceId: string): Promise<{ ok: true }> {
+    return this.http("DELETE", `/vault/devices/${encodeURIComponent(deviceId)}`);
   }
 
   /**

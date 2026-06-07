@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type CurrentUserData } from "../auth/current-user.decorator";
+import { DevicesAutoRevokeService } from "./devices-auto-revoke.service";
 import { PasskeyService } from "./passkey.service";
 import { VaultService } from "./vault.service";
 import {
@@ -25,6 +26,7 @@ import {
   PutHeadDto,
   RegisterDeviceDto,
   RotateKeyDto,
+  TouchDeviceDto,
   UnlockDto,
   UpsertItemDto,
 } from "./dto";
@@ -39,6 +41,7 @@ export class VaultController {
   constructor(
     private readonly vault: VaultService,
     private readonly passkey: PasskeyService,
+    private readonly autoRevoke: DevicesAutoRevokeService,
   ) {}
 
   @Post("vault/enroll")
@@ -191,8 +194,23 @@ export class VaultController {
   }
 
   @Get("vault/devices")
-  pendingDevices(@CurrentUser() u: CurrentUserData) {
+  listDevices(
+    @CurrentUser() u: CurrentUserData,
+    @Query("approved") approved?: string,
+    @Query("pending") pending?: string,
+  ) {
+    // Default is the historical behaviour: pending devices awaiting approval. The new
+    // approved=true variant returns the user's already-enrolled devices with lastSeenAt +
+    // trusted, used by the "my devices" UI and the auto-revoke admin tooling.
+    const wantsApproved = approved === "true" || approved === "1";
+    const wantsPending = pending === "true" || pending === "1" || pending === undefined;
+    if (wantsApproved && !wantsPending) return this.vault.listApprovedDevices(u.userId);
     return this.vault.listPendingDevices(u.userId);
+  }
+
+  @Post("vault/devices/me/touch")
+  touchDevice(@CurrentUser() u: CurrentUserData, @Body() dto: TouchDeviceDto) {
+    return this.vault.touchDevice(u.userId, dto.deviceId);
   }
 
   @Get("vault/devices/me/keyset")
@@ -212,6 +230,22 @@ export class VaultController {
   @Delete("vault/devices/:id")
   revokeDevice(@CurrentUser() u: CurrentUserData, @Param("id") id: string) {
     return this.vault.revokeDevice(u.userId, id);
+  }
+
+  /**
+   * Manual trigger for the auto-revoke scan. Useful in tests + as an operator escape
+   * hatch ("apply the inactivity policy right now, don't wait for the timer"). Reuses the
+   * JwtAuthGuard so any authenticated user can poke it for their own account — the scan
+   * looks at every user's devices though, so in practice this is admin-only behaviour
+   * that we'll gate behind a capability once `@arc/grants` covers /vault/*.
+   *
+   * Returns the IDs that were revoked + whether the feature is currently enabled.
+   */
+  @Post("vault/devices/auto-revoke/run")
+  async runAutoRevoke(@CurrentUser() _u: CurrentUserData) {
+    const enabled = this.autoRevoke.enabled;
+    const { revokedIds } = await this.autoRevoke.runOnce();
+    return { enabled, revokedIds };
   }
 
   @Get("vaults/:id/audit")
