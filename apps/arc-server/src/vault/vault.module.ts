@@ -13,6 +13,7 @@ import {
   VaultUserKeysEntity,
   VaultUserPasskeyEntity,
 } from "../database/entities";
+import { DevicesAutoRevokeService } from "./devices-auto-revoke.service";
 import { PasskeyService } from "./passkey.service";
 import { VaultController } from "./vault.controller";
 import { VaultService } from "./vault.service";
@@ -34,6 +35,7 @@ import { VaultService } from "./vault.service";
     ]),
   ],
   controllers: [VaultController],
-  providers: [VaultService, PasskeyService],
+  providers: [VaultService, PasskeyService, DevicesAutoRevokeService],
+  exports: [DevicesAutoRevokeService],
 })
 export class VaultModule {}

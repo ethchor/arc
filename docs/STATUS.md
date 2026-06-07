@@ -233,8 +233,32 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   attestation, real signed assertions) through register → list → unlock → signCount-replay
   rejected → 404 for no-passkey user → corrupted-sig rejected → delete. Workspace total:
   295 tests passing.
-- [ ] Multi-device key rotation including auto-revoke for retired devices (the
-  manual-rotate path works today; needs UX + audit hooks).
+- [x] Multi-device key rotation — **auto-revoke for retired devices + audit hooks**.
+  Adds two pieces above the existing manual rotation path. (1) `POST /vault/devices/me/touch`
+  — the SDK calls this on unlock and periodically so the device's `lastSeenAt` stays
+  fresh; ownership-checked (a different user's deviceId → 404). (2) New
+  `DevicesAutoRevokeService` — env-gated (`ARC_DEVICE_INACTIVE_DAYS`, default 0 = OFF) and
+  configurable (`ARC_DEVICE_AUTO_REVOKE_INTERVAL_MS`, default 1 h). Plain `setInterval` —
+  no `@nestjs/schedule` dep — `.unref()`'d so it never holds the process up. Each scan
+  finds approved-but-untrusted devices whose `lastSeenAt` (fallback `createdAt`) is older
+  than the inactivity cutoff, deletes the device + its `vault_key_grants` rows, and
+  writes a **distinct `device_auto_revoked` audit entry** so investigators can tell apart
+  intentional retirement from inactivity sweep. **Trusted devices (`trusted: true`) are
+  exempt** — that's the operator's "never auto-revoke" escape hatch. Pending devices
+  (`approved: false`) are also skipped — they have their own onboarding cleanup story.
+  New admin trigger: `POST /vault/devices/auto-revoke/run` for "apply the policy now"
+  (returns `{ enabled, revokedIds }`). `GET /vault/devices?approved=true&pending=false`
+  surfaces approved devices with `lastSeenAt` + `trusted` so a "My devices" UI can warn
+  about inactive devices. **SDK** (`@arc/sdk`): new `listDevices()`, `touchDevice(id)`,
+  `revokeDevice(id)` methods + `EnrolledDevice` type. **8 new e2e tests** (7 in
+  `devices-auto-revoke.e2e-spec.ts` + 1 in `sdk-devices.e2e-spec.ts`): touch updates
+  `lastSeenAt`; ownership check 404s a foreign device; approved-only listing returns the
+  right shape; runOnce retires stale-untrusted, keeps fresh + trusted + pending, writes
+  `device_auto_revoked`; HTTP admin trigger reports `enabled` + `revokedIds`; manual
+  DELETE still works alongside auto-revoke and writes `device_revoked` (not the auto
+  variant); the feature is OFF by default when the env var isn't set; SDK round-trip
+  through CJS dist. Workspace totals climb to 70 turbo tasks + 109 server tests + 6
+  skipped.
 
 ### Phase 3 — Engine A + plugin host
 - [x] Group / role attachments shipped. `MutablePolicyStore` contract extended with

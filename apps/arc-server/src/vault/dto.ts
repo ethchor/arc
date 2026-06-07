@@ -82,6 +82,10 @@ export class ApproveDeviceDto {
   @IsArray() grants!: Array<{ keyVersion: number; wrappedVaultKey: EnvelopeJson; vaultId: string }>;
 }
 
+export class TouchDeviceDto {
+  @IsUUID() deviceId!: string;
+}
+
 export class RotateKeyDto {
   @IsInt() @Min(1) newKeyVersion!: number;
   @IsArray() grants!: Array<{ granteeUserId: number; wrappedVaultKey: EnvelopeJson; signature?: EnvelopeJson }>;
