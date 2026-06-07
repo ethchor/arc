@@ -1,5 +1,13 @@
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
-import { PluginError, PluginHost, type Plugin, type PluginMeta, type SecretsPlugin } from "@arc/plugin-sdk";
+import {
+  PluginError,
+  PluginHost,
+  RemoteSecretsPlugin,
+  type Plugin,
+  type PluginMeta,
+  type RemoteProcessSpec,
+  type SecretsPlugin,
+} from "@arc/plugin-sdk";
 import { ENGINES_CONFIG, type EnginesConfig } from "../engines/engines.service";
 import { PluginSecretsEngine } from "./plugin-secrets-engine";
 
@@ -29,6 +37,8 @@ export class PluginsService {
   private readonly logger = new Logger(PluginsService.name);
   private readonly host = new PluginHost();
   private readonly mountByName = new Map<string, string>();
+  /** Remote process handles, keyed by plugin name; closed on unmount() for clean shutdown. */
+  private readonly remoteByName = new Map<string, RemoteSecretsPlugin>();
 
   constructor(@Inject(ENGINES_CONFIG) private readonly config: EnginesConfig) {}
 
@@ -88,6 +98,36 @@ export class PluginsService {
     }
   }
 
+  /**
+   * Out-of-process variant of {@link mountSecretsPlugin}. Spawns the plugin in its own
+   * child process and wires the same `SecretsPlugin` contract through JSON-RPC over stdio
+   * — so the plugin runs sandboxed off the server process (no shared heap, no shared file
+   * descriptors beyond stdio, only the env vars the spec lists, killable via SIGTERM).
+   *
+   * Lifecycle is the same as the in-process flavour: `register → configure → mount`.
+   * `unmount(name)` additionally closes the child cleanly.
+   */
+  async mountRemoteSecretsPlugin(spec: RemoteProcessSpec, mountPath: string, config: unknown = {}): Promise<MountedPlugin> {
+    let remote: RemoteSecretsPlugin;
+    try {
+      remote = await RemoteSecretsPlugin.spawn(spec);
+    } catch (err) {
+      throw new BadRequestException({
+        errors: [`failed to spawn remote plugin: ${(err as Error).message}`],
+      });
+    }
+    try {
+      const mounted = await this.mountSecretsPlugin(remote, mountPath, config);
+      this.remoteByName.set(mounted.meta.name, remote);
+      this.logger.log(`mounted remote plugin ${mounted.meta.name} (pid via child)`);
+      return mounted;
+    } catch (err) {
+      // mountSecretsPlugin already rolled back the host side; just kill the child too.
+      await remote.close().catch(() => undefined);
+      throw err;
+    }
+  }
+
   /** List every plugin currently in the host. Each item shows its mount path if mounted. */
   list(): MountedPlugin[] {
     return this.host.list().map((meta) => ({ meta, mount: this.mountByName.get(meta.name) ?? "" }));
@@ -106,6 +146,13 @@ export class PluginsService {
     this.config.enginesByMount.delete(mount);
     this.mountByName.delete(name);
     this.host.unregister(name);
+    // Close the remote child if this was a remote plugin. Closing is best-effort — if the
+    // child was already dead we silently move on.
+    const remote = this.remoteByName.get(name);
+    if (remote) {
+      this.remoteByName.delete(name);
+      await remote.close().catch(() => undefined);
+    }
     this.logger.log(`unmounted plugin ${name} from ${mount}`);
     return true;
   }

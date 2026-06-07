@@ -474,8 +474,31 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   is derived from `expiresAt - now` so renewal increments propagate to the wire even though
   `LeaseManager.renew` keeps `ttlSeconds` readonly. `@arc/leasing` now dual-publishes ESM + CJS
   so Jest can `require()` `LeaseError` / `LeaseManager` directly.
-- [ ] `arc-server`: out-of-process plugin host (gRPC / WASM backend). The in-process
-  module shipped above; out-of-process transport for sandboxed plugins is the follow-up.
+- [x] Out-of-process plugin host (process backend over stdio). The in-process host shipped
+  above; this lands the **sandbox boundary** — sandboxed plugins now run in their own child
+  process, talk to arc-server via **JSON-RPC 2.0 over stdio**, and implement the same
+  `SecretsPlugin` contract so the rest of arc-server can't tell them apart from in-process
+  plugins. Two pieces in `@arc/plugin-sdk`: **`RemoteSecretsPlugin`** (host side — spawns
+  the child, performs a `meta` handshake, then proxies `configure/issue/renew/revoke` over
+  line-delimited JSON-RPC; tracks pending requests with timeouts, mirrors stderr to the
+  server logs, gracefully shuts down via SIGTERM → 5 s grace → SIGKILL, fails in-flight
+  calls when the child exits unexpectedly); **`runSecretsPlugin(plugin)`** (plugin-author
+  side — a tiny stdio loop the plugin author drops into their bin entry to turn any
+  in-process `SecretsPlugin` into a stdio server, exported at `@arc/plugin-sdk/runtime`
+  so it isn't pulled by host-only consumers). arc-server gains
+  `PluginsService.mountRemoteSecretsPlugin(spec, mountPath, config)` mirroring the
+  in-process API; `unmount(name)` now also closes the child cleanly via `RemoteSecretsPlugin.close()`.
+  The transport boundary is real: the child sees **only the env vars the spec lists**, has
+  no access to arc-server's heap or open FDs beyond stdio, and is process-bound to its
+  child lifetime. WASM (wasmtime) is queued as a separate backend behind the same
+  contract — the wire stays JSON-RPC, only the transport changes. **10 new tests** (7 in
+  `@arc/plugin-sdk` driving a real Node child through the runtime: meta handshake;
+  configure → issue → revoke; error propagation as `RemotePluginError`; in-flight call
+  fails when child exits; idempotent `close()`; spawn-without-handshake rejected; runtime
+  dist exists; plus 3 in arc-server: spawn + mount + dispatch `creds/<role>` + renew + clean
+  unmount; unspawnable plugin → BadRequest with the spawn error; configure() throws → host
+  rolls back the child). Workspace stays 70/70 turbo green; arc-server 128 tests / 24
+  suites; `@arc/plugin-sdk` 14 tests.
 - [x] `arc-plugin-azure` — Azure AD service-principal access tokens via the v2.0
   client_credentials grant. Mirrors the AWS / GCP / GitHub layout: core plugin + optional
   `@arc/plugin-azure/node` default client using `fetch` only (no external deps). Form-encoded
