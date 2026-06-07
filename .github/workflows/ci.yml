@@ -5,6 +5,13 @@ on:
     branches: [develop, main]
   pull_request:
 
+# Opt every JavaScript-based action into Node.js 24 ahead of GitHub's June 16, 2026 forced
+# cutover. Without this, third-party actions still running on Node 20 inside the runner emit
+# a deprecation warning on every step. arc is a security platform: we run on **LTS only**
+# and stay one major ahead of the runner's forced minimum.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   node:
     runs-on: ubuntu-latest
@@ -13,7 +20,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
@@ -65,7 +72,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build adapter + deps

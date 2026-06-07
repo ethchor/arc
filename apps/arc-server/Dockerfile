@@ -7,7 +7,7 @@
 # Stage 1 installs the whole pnpm workspace + builds arc-server and its @arc/* deps, then
 # `pnpm deploy` carves out a self-contained, production-only tree. Stage 2 copies just that
 # tree onto a slim, non-root runtime.
-ARG NODE_VERSION=22
+ARG NODE_VERSION=24
 
 # ---------------------------------------------------------------------------
 FROM node:${NODE_VERSION}-bookworm-slim AS build

@@ -15,7 +15,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts src/bin.ts --format esm --dts --clean",
     "typecheck": "tsc --noEmit"
@@ -26,7 +28,7 @@
     "@arc/types": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
+    "@types/node": "^24.0.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2"
   }

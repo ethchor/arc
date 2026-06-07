@@ -64,7 +64,7 @@
     "@arc/sdk": "workspace:*",
     "@nestjs/testing": "^11.0.0",
     "@types/jest": "^29.5.14",
-    "@types/node": "^22.10.2",
+    "@types/node": "^24.0.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/sql.js": "^1.4.9",
     "@types/supertest": "^6.0.2",
