@@ -19,6 +19,8 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ethchor/arc-server
+  # Same posture as ci.yml — opt JS actions into Node 24 ahead of GitHub's June 16, 2026 cutover.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   image:

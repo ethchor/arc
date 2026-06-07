@@ -35,7 +35,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   apps/arc-cli:
     dependencies:
@@ -50,8 +50,8 @@ importers:
         version: link:../../packages/arc-types
     devDependencies:
       '@types/node':
-        specifier: ^22.10.2
-        version: 22.19.19
+        specifier: ^24.0.0
+        version: 24.13.1
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
@@ -207,8 +207,8 @@ importers:
         specifier: ^29.5.14
         version: 29.5.14
       '@types/node':
-        specifier: ^22.10.2
-        version: 22.19.19
+        specifier: ^24.0.0
+        version: 24.13.1
       '@types/passport-jwt':
         specifier: ^4.0.1
         version: 4.0.1
@@ -220,13 +220,13 @@ importers:
         version: 6.0.3
       jest:
         specifier: ^29.7.0
-        version: 29.7.0(@types/node@22.19.19)
+        version: 29.7.0(@types/node@24.13.1)
       supertest:
         specifier: ^7.0.0
         version: 7.2.2
       ts-jest:
         specifier: ^29.2.5
-        version: 29.4.11(@babel/core@7.29.0)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.0))(jest-util@29.7.0)(jest@29.7.0(@types/node@22.19.19))(typescript@5.9.3)
+        version: 29.4.11(@babel/core@7.29.0)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.0))(jest-util@29.7.0)(jest@29.7.0(@types/node@24.13.1))(typescript@5.9.3)
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -292,8 +292,8 @@ importers:
         version: 1.0.7(tailwindcss@3.4.19)
     devDependencies:
       '@types/node':
-        specifier: ^22.10.2
-        version: 22.19.19
+        specifier: ^24.0.0
+        version: 24.13.1
       '@types/react':
         specifier: ^18.3.12
         version: 18.3.29
@@ -319,8 +319,8 @@ importers:
         specifier: ^4.0.9
         version: 4.0.9
       '@types/node':
-        specifier: ^22.10.5
-        version: 22.19.19
+        specifier: ^24.0.0
+        version: 24.13.1
       js-yaml:
         specifier: ^4.1.0
         version: 4.2.0
@@ -329,7 +329,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   infra/arc-release:
     devDependencies:
@@ -337,8 +337,8 @@ importers:
         specifier: ^4.0.9
         version: 4.0.9
       '@types/node':
-        specifier: ^22.10.5
-        version: 22.19.19
+        specifier: ^24.0.0
+        version: 24.13.1
       js-yaml:
         specifier: ^4.1.0
         version: 4.2.0
@@ -347,7 +347,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   infra/arc-terraform:
     devDependencies:
@@ -355,8 +355,8 @@ importers:
         specifier: ^4.0.9
         version: 4.0.9
       '@types/node':
-        specifier: ^22.10.5
-        version: 22.19.19
+        specifier: ^24.0.0
+        version: 24.13.1
       js-yaml:
         specifier: ^4.1.0
         version: 4.2.0
@@ -365,7 +365,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   integrations/arc-mcp-server:
     dependencies:
@@ -374,8 +374,8 @@ importers:
         version: 1.29.0(zod@4.4.3)
     devDependencies:
       '@types/node':
-        specifier: ^22.10.5
-        version: 22.19.19
+        specifier: ^24.0.0
+        version: 24.13.1
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
@@ -384,7 +384,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   integrations/arc-openbao-adapter:
     dependencies:
@@ -403,7 +403,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   packages/arc-crypto:
     dependencies:
@@ -431,7 +431,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   packages/arc-grants:
     devDependencies:
@@ -443,7 +443,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   packages/arc-leasing:
     devDependencies:
@@ -455,7 +455,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   packages/arc-plugin-sdk:
     devDependencies:
@@ -467,7 +467,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   packages/arc-secrets-engine:
     dependencies:
@@ -483,7 +483,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   packages/arc-types:
     devDependencies:
@@ -495,7 +495,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   plugins/auth/arc-plugin-kubernetes:
     dependencies:
@@ -507,8 +507,8 @@ importers:
         version: link:../../../packages/arc-types
     devDependencies:
       '@types/node':
-        specifier: ^22.10.2
-        version: 22.19.19
+        specifier: ^24.0.0
+        version: 24.13.1
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
@@ -517,7 +517,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   plugins/auth/arc-plugin-oidc:
     dependencies:
@@ -529,8 +529,8 @@ importers:
         version: link:../../../packages/arc-types
     devDependencies:
       '@types/node':
-        specifier: ^22.10.2
-        version: 22.19.19
+        specifier: ^24.0.0
+        version: 24.13.1
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
@@ -539,7 +539,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   plugins/cloud/arc-plugin-aws:
     dependencies:
@@ -561,7 +561,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   plugins/cloud/arc-plugin-azure:
     dependencies:
@@ -580,7 +580,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   plugins/cloud/arc-plugin-gcp:
     dependencies:
@@ -602,7 +602,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   plugins/scm/arc-plugin-bitbucket:
     dependencies:
@@ -621,7 +621,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   plugins/scm/arc-plugin-github:
     dependencies:
@@ -633,8 +633,8 @@ importers:
         version: link:../../../packages/arc-types
     devDependencies:
       '@types/node':
-        specifier: ^22.10.2
-        version: 22.19.19
+        specifier: ^24.0.0
+        version: 24.13.1
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
@@ -643,7 +643,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   plugins/scm/arc-plugin-gitlab:
     dependencies:
@@ -662,7 +662,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
   sdks/arc-js-sdk:
     dependencies:
@@ -678,7 +678,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.19)(happy-dom@16.8.1)
+        version: 2.1.9(@types/node@24.13.1)(happy-dom@16.8.1)
 
 packages:
 
@@ -2730,8 +2730,8 @@ packages:
   '@types/mysql@2.15.26':
     resolution: {integrity: sha512-DSLCOXhkvfS5WNNPbfn2KdICAmk8lLc+/PNvnPnF7gOdMZCxopXduqv0OQ13y/yA/zXTSikZZqVgybUxOEg6YQ==}
 
-  '@types/node@22.19.19':
-    resolution: {integrity: sha512-dyh/xO2Fh5bYrfWaaqGrRQQGkNdmYw6AmaAUvYeUMNTWQtvb796ikLdmTchRmOlOiIJ1TDXfWgVx1QkUlQ6Hew==}
+  '@types/node@24.13.1':
+    resolution: {integrity: sha512-RSpUJGmvsJ1ZeBehQZFhIdpsz+bIpES0nIQXko4Ybq+N+kX6XvOq3Jo+iJ82FWLdblFq85AsMikd3m35jgezYg==}
 
   '@types/passport-jwt@4.0.1':
     resolution: {integrity: sha512-Y0Ykz6nWP4jpxgEUYq8NoVZeCQPo1ZndJLfapI249g1jHChvRfZRO/LS3tqu26YgAS/laI1qx98sYGz0IalRXQ==}
@@ -5075,8 +5075,8 @@ packages:
     resolution: {integrity: sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A==}
     engines: {node: '>=18'}
 
-  undici-types@6.21.0:
-    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
+  undici-types@7.18.2:
+    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
   unpipe@1.0.0:
     resolution: {integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==}
@@ -5867,7 +5867,7 @@ snapshots:
   '@jest/console@29.7.0':
     dependencies:
       '@jest/types': 29.6.3
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       chalk: 4.1.2
       jest-message-util: 29.7.0
       jest-util: 29.7.0
@@ -5880,14 +5880,14 @@ snapshots:
       '@jest/test-result': 29.7.0
       '@jest/transform': 29.7.0
       '@jest/types': 29.6.3
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       ansi-escapes: 4.3.2
       chalk: 4.1.2
       ci-info: 3.9.0
       exit: 0.1.2
       graceful-fs: 4.2.11
       jest-changed-files: 29.7.0
-      jest-config: 29.7.0(@types/node@22.19.19)
+      jest-config: 29.7.0(@types/node@24.13.1)
       jest-haste-map: 29.7.0
       jest-message-util: 29.7.0
       jest-regex-util: 29.6.3
@@ -5912,7 +5912,7 @@ snapshots:
     dependencies:
       '@jest/fake-timers': 29.7.0
       '@jest/types': 29.6.3
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       jest-mock: 29.7.0
 
   '@jest/expect-utils@29.7.0':
@@ -5930,7 +5930,7 @@ snapshots:
     dependencies:
       '@jest/types': 29.6.3
       '@sinonjs/fake-timers': 10.3.0
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       jest-message-util: 29.7.0
       jest-mock: 29.7.0
       jest-util: 29.7.0
@@ -5952,7 +5952,7 @@ snapshots:
       '@jest/transform': 29.7.0
       '@jest/types': 29.6.3
       '@jridgewell/trace-mapping': 0.3.31
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       chalk: 4.1.2
       collect-v8-coverage: 1.0.3
       exit: 0.1.2
@@ -6022,7 +6022,7 @@ snapshots:
       '@jest/schemas': 29.6.3
       '@types/istanbul-lib-coverage': 2.0.6
       '@types/istanbul-reports': 3.0.4
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       '@types/yargs': 17.0.35
       chalk: 4.1.2
 
@@ -7461,11 +7461,11 @@ snapshots:
   '@types/body-parser@1.19.6':
     dependencies:
       '@types/connect': 3.4.38
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
   '@types/bunyan@1.8.11':
     dependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
   '@types/chrome@0.1.42':
     dependencies:
@@ -7474,7 +7474,7 @@ snapshots:
 
   '@types/connect@3.4.38':
     dependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
   '@types/cookiejar@2.1.5': {}
 
@@ -7486,7 +7486,7 @@ snapshots:
 
   '@types/express-serve-static-core@5.1.1':
     dependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       '@types/qs': 6.15.1
       '@types/range-parser': 1.2.7
       '@types/send': 1.2.1
@@ -7505,7 +7505,7 @@ snapshots:
 
   '@types/graceful-fs@4.1.9':
     dependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
   '@types/har-format@1.2.16': {}
 
@@ -7531,11 +7531,11 @@ snapshots:
   '@types/jsonwebtoken@9.0.10':
     dependencies:
       '@types/ms': 2.1.0
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
   '@types/memcached@2.2.10':
     dependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
   '@types/methods@1.1.4': {}
 
@@ -7543,11 +7543,11 @@ snapshots:
 
   '@types/mysql@2.15.26':
     dependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
-  '@types/node@22.19.19':
+  '@types/node@24.13.1':
     dependencies:
-      undici-types: 6.21.0
+      undici-types: 7.18.2
 
   '@types/passport-jwt@4.0.1':
     dependencies:
@@ -7569,7 +7569,7 @@ snapshots:
 
   '@types/pg@8.6.1':
     dependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       pg-protocol: 1.14.0
       pg-types: 2.2.0
 
@@ -7590,19 +7590,19 @@ snapshots:
 
   '@types/send@1.2.1':
     dependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
   '@types/serve-static@2.2.0':
     dependencies:
       '@types/http-errors': 2.0.5
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
   '@types/shimmer@1.2.0': {}
 
   '@types/sql.js@1.4.11':
     dependencies:
       '@types/emscripten': 1.41.5
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
   '@types/stack-utils@2.0.3': {}
 
@@ -7610,7 +7610,7 @@ snapshots:
     dependencies:
       '@types/cookiejar': 2.1.5
       '@types/methods': 1.1.4
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       form-data: 4.0.5
 
   '@types/supertest@6.0.3':
@@ -7620,7 +7620,7 @@ snapshots:
 
   '@types/tedious@4.0.14':
     dependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
 
   '@types/validator@13.15.10': {}
 
@@ -7637,13 +7637,13 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 1.2.0
 
-  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@22.19.19))':
+  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@24.13.1))':
     dependencies:
       '@vitest/spy': 2.1.9
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 5.4.21(@types/node@22.19.19)
+      vite: 5.4.21(@types/node@24.13.1)
 
   '@vitest/pretty-format@2.1.9':
     dependencies:
@@ -8034,13 +8034,13 @@ snapshots:
       object-assign: 4.1.1
       vary: 1.1.2
 
-  create-jest@29.7.0(@types/node@22.19.19):
+  create-jest@29.7.0(@types/node@24.13.1):
     dependencies:
       '@jest/types': 29.6.3
       chalk: 4.1.2
       exit: 0.1.2
       graceful-fs: 4.2.11
-      jest-config: 29.7.0(@types/node@22.19.19)
+      jest-config: 29.7.0(@types/node@24.13.1)
       jest-util: 29.7.0
       prompts: 2.4.2
     transitivePeerDependencies:
@@ -8692,7 +8692,7 @@ snapshots:
       '@jest/expect': 29.7.0
       '@jest/test-result': 29.7.0
       '@jest/types': 29.6.3
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       chalk: 4.1.2
       co: 4.6.0
       dedent: 1.7.2
@@ -8712,16 +8712,16 @@ snapshots:
       - babel-plugin-macros
       - supports-color
 
-  jest-cli@29.7.0(@types/node@22.19.19):
+  jest-cli@29.7.0(@types/node@24.13.1):
     dependencies:
       '@jest/core': 29.7.0
       '@jest/test-result': 29.7.0
       '@jest/types': 29.6.3
       chalk: 4.1.2
-      create-jest: 29.7.0(@types/node@22.19.19)
+      create-jest: 29.7.0(@types/node@24.13.1)
       exit: 0.1.2
       import-local: 3.2.0
-      jest-config: 29.7.0(@types/node@22.19.19)
+      jest-config: 29.7.0(@types/node@24.13.1)
       jest-util: 29.7.0
       jest-validate: 29.7.0
       yargs: 17.7.2
@@ -8731,7 +8731,7 @@ snapshots:
       - supports-color
       - ts-node
 
-  jest-config@29.7.0(@types/node@22.19.19):
+  jest-config@29.7.0(@types/node@24.13.1):
     dependencies:
       '@babel/core': 7.29.0
       '@jest/test-sequencer': 29.7.0
@@ -8756,7 +8756,7 @@ snapshots:
       slash: 3.0.0
       strip-json-comments: 3.1.1
     optionalDependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
     transitivePeerDependencies:
       - babel-plugin-macros
       - supports-color
@@ -8785,7 +8785,7 @@ snapshots:
       '@jest/environment': 29.7.0
       '@jest/fake-timers': 29.7.0
       '@jest/types': 29.6.3
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       jest-mock: 29.7.0
       jest-util: 29.7.0
 
@@ -8795,7 +8795,7 @@ snapshots:
     dependencies:
       '@jest/types': 29.6.3
       '@types/graceful-fs': 4.1.9
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       anymatch: 3.1.3
       fb-watchman: 2.0.2
       graceful-fs: 4.2.11
@@ -8834,7 +8834,7 @@ snapshots:
   jest-mock@29.7.0:
     dependencies:
       '@jest/types': 29.6.3
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       jest-util: 29.7.0
 
   jest-pnp-resolver@1.2.3(jest-resolve@29.7.0):
@@ -8869,7 +8869,7 @@ snapshots:
       '@jest/test-result': 29.7.0
       '@jest/transform': 29.7.0
       '@jest/types': 29.6.3
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       chalk: 4.1.2
       emittery: 0.13.1
       graceful-fs: 4.2.11
@@ -8897,7 +8897,7 @@ snapshots:
       '@jest/test-result': 29.7.0
       '@jest/transform': 29.7.0
       '@jest/types': 29.6.3
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       chalk: 4.1.2
       cjs-module-lexer: 1.4.3
       collect-v8-coverage: 1.0.3
@@ -8943,7 +8943,7 @@ snapshots:
   jest-util@29.7.0:
     dependencies:
       '@jest/types': 29.6.3
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       chalk: 4.1.2
       ci-info: 3.9.0
       graceful-fs: 4.2.11
@@ -8962,7 +8962,7 @@ snapshots:
     dependencies:
       '@jest/test-result': 29.7.0
       '@jest/types': 29.6.3
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       ansi-escapes: 4.3.2
       chalk: 4.1.2
       emittery: 0.13.1
@@ -8971,17 +8971,17 @@ snapshots:
 
   jest-worker@29.7.0:
     dependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       jest-util: 29.7.0
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
-  jest@29.7.0(@types/node@22.19.19):
+  jest@29.7.0(@types/node@24.13.1):
     dependencies:
       '@jest/core': 29.7.0
       '@jest/types': 29.6.3
       import-local: 3.2.0
-      jest-cli: 29.7.0(@types/node@22.19.19)
+      jest-cli: 29.7.0(@types/node@24.13.1)
     transitivePeerDependencies:
       - '@types/node'
       - babel-plugin-macros
@@ -9514,7 +9514,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.1
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       long: 5.3.2
 
   proxy-addr@2.0.7:
@@ -10020,12 +10020,12 @@ snapshots:
 
   ts-interface-checker@0.1.13: {}
 
-  ts-jest@29.4.11(@babel/core@7.29.0)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.0))(jest-util@29.7.0)(jest@29.7.0(@types/node@22.19.19))(typescript@5.9.3):
+  ts-jest@29.4.11(@babel/core@7.29.0)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.0))(jest-util@29.7.0)(jest@29.7.0(@types/node@24.13.1))(typescript@5.9.3):
     dependencies:
       bs-logger: 0.2.6
       fast-json-stable-stringify: 2.1.0
       handlebars: 4.7.9
-      jest: 29.7.0(@types/node@22.19.19)
+      jest: 29.7.0(@types/node@24.13.1)
       json5: 2.2.3
       lodash.memoize: 4.1.2
       make-error: 1.3.6
@@ -10141,7 +10141,7 @@ snapshots:
 
   uint8array-extras@1.5.0: {}
 
-  undici-types@6.21.0: {}
+  undici-types@7.18.2: {}
 
   unpipe@1.0.0: {}
 
@@ -10184,13 +10184,13 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vite-node@2.1.9(@types/node@22.19.19):
+  vite-node@2.1.9(@types/node@24.13.1):
     dependencies:
       cac: 6.7.14
       debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 1.1.2
-      vite: 5.4.21(@types/node@22.19.19)
+      vite: 5.4.21(@types/node@24.13.1)
     transitivePeerDependencies:
       - '@types/node'
       - less
@@ -10202,19 +10202,19 @@ snapshots:
       - supports-color
       - terser
 
-  vite@5.4.21(@types/node@22.19.19):
+  vite@5.4.21(@types/node@24.13.1):
     dependencies:
       esbuild: 0.21.5
       postcss: 8.5.15
       rollup: 4.60.4
     optionalDependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       fsevents: 2.3.3
 
-  vitest@2.1.9(@types/node@22.19.19)(happy-dom@16.8.1):
+  vitest@2.1.9(@types/node@24.13.1)(happy-dom@16.8.1):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@22.19.19))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@24.13.1))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
@@ -10230,11 +10230,11 @@ snapshots:
       tinyexec: 0.3.2
       tinypool: 1.1.1
       tinyrainbow: 1.2.0
-      vite: 5.4.21(@types/node@22.19.19)
-      vite-node: 2.1.9(@types/node@22.19.19)
+      vite: 5.4.21(@types/node@24.13.1)
+      vite-node: 2.1.9(@types/node@24.13.1)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 22.19.19
+      '@types/node': 24.13.1
       happy-dom: 16.8.1
     transitivePeerDependencies:
       - less
