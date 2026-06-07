@@ -448,7 +448,14 @@ export class VaultService {
 
   async registerDevice(userId: number, dto: RegisterDeviceDto) {
     const dev = await this.devices.save(
-      this.devices.create({ userId, name: dto.name, publicKey: dto.publicKey, trusted: false, approved: false }),
+      this.devices.create({
+        userId,
+        name: dto.name,
+        publicKey: dto.publicKey,
+        publicKeyMlkem: dto.publicKeyMlkem ?? null,
+        trusted: false,
+        approved: false,
+      }),
     );
     await this.writeAudit(null, userId, "device_added", dev.id);
     return { id: dev.id, approved: false };
@@ -460,6 +467,9 @@ export class VaultService {
       id: d.id,
       name: d.name,
       publicKey: d.publicKey,
+      // Exposed so the trusted approver knows whether to wrap with `pqSeal` (ADR-003) vs
+      // the classical `seal` envelope. `null` for legacy X25519-only devices.
+      publicKeyMlkem: d.publicKeyMlkem,
       verificationCode: fingerprint(fromB64u(d.publicKey), 3),
     }));
   }
@@ -475,6 +485,8 @@ export class VaultService {
       id: d.id,
       name: d.name,
       publicKey: d.publicKey,
+      // `null` for legacy X25519-only devices (enrolled before ADR-003).
+      publicKeyMlkem: d.publicKeyMlkem,
       trusted: d.trusted,
       lastSeenAt: d.lastSeenAt ? d.lastSeenAt.toISOString() : null,
       createdAt: d.createdAt.toISOString(),

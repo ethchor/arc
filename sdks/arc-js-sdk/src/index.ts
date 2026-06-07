@@ -12,11 +12,13 @@ import {
   type Envelope,
   fingerprint,
   fromB64u,
-  generateDeviceKeyPair,
+  generateHybridDeviceKeyPair,
   type JsonValue,
   type Keyset,
   mlkemPubFromPriv,
   openVaultKeyGrant,
+  pqSeal,
+  pqSealOpen,
   rewrapItemKey,
   seal,
   sealOpen,
@@ -94,6 +96,8 @@ export interface PendingDevice {
   id: string;
   name: string;
   publicKey: string;
+  /** Optional ML-KEM-768 public key (b64url) — present on ADR-003 hybrid-device enrollments. */
+  publicKeyMlkem?: string | null;
   verificationCode: string;
 }
 
@@ -102,6 +106,8 @@ export interface EnrolledDevice {
   id: string;
   name: string;
   publicKey: string;
+  /** Optional ML-KEM-768 public key (b64url). Present on ADR-003 devices; `null` on legacy. */
+  publicKeyMlkem?: string | null;
   /** `true` exempts this device from the auto-revoke inactivity policy. */
   trusted: boolean;
   /** ISO 8601 timestamp of the last touch, or null if never seen since enrollment. */
@@ -195,6 +201,9 @@ export class VaultClient {
   private session?: ClientSession;
   private devicePriv?: Uint8Array;
   private devicePub?: Uint8Array;
+  /** Device ML-KEM-768 secret + public (ADR-003). Set alongside `devicePriv`/`devicePub`. */
+  private deviceMlkemPriv?: Uint8Array;
+  private deviceMlkemPub?: Uint8Array;
   private readonly vkCache = new Map<string, { vk: Uint8Array; keyVersion: number }>();
   private readonly fetchImpl: typeof fetch;
 
@@ -570,16 +579,26 @@ export class VaultClient {
 
   // --- multi-device onboarding (docs/06 §6.3) ---
 
-  /** New device: generate a device keypair (kept in memory) and register its public key. */
+  /**
+   * New device: generate a **hybrid** device keypair (X25519 + ML-KEM-768) and register
+   * both public keys (ADR-003). The trusted approver picks `pqSeal` to wrap VKs for this
+   * device so device-grant material is HNDL-resistant.
+   */
   async registerDevice(name: string): Promise<{ deviceId: string; verificationCode: string }> {
-    const kp = generateDeviceKeyPair();
-    this.devicePriv = kp.priv;
-    this.devicePub = kp.pub;
+    const kp = generateHybridDeviceKeyPair();
+    this.devicePriv = kp.x25519.priv;
+    this.devicePub = kp.x25519.pub;
+    this.deviceMlkemPriv = kp.mlkem.secretKey;
+    this.deviceMlkemPub = kp.mlkem.publicKey;
     const r = await this.http<{ id: string; approved: boolean }>("POST", "/vault/devices", {
-      publicKey: toB64u(kp.pub),
+      publicKey: toB64u(kp.x25519.pub),
+      publicKeyMlkem: toB64u(kp.mlkem.publicKey),
       name,
     });
-    return { deviceId: r.id, verificationCode: fingerprint(kp.pub, 3) };
+    // Verification code is over the X25519 pub for back-compat with existing devices'
+    // out-of-band code displays; the ML-KEM pub joins the same trust anchor by construction
+    // (it's registered in the same atomic call).
+    return { deviceId: r.id, verificationCode: fingerprint(kp.x25519.pub, 3) };
   }
 
   /** Trusted device: list devices awaiting approval (with their verification codes). */
@@ -615,21 +634,35 @@ export class VaultClient {
   }
 
   /**
-   * Trusted device: wrap every cached VK to the new device's public key and approve it.
-   * Devices use the classical X25519 `seal` envelope (ADR-002 Phase 4 will add hybrid
-   * device keys once the Rust core ships ML-KEM).
+   * Trusted device: wrap every cached VK to the new device's public key(s) and approve it.
+   * When `devicePublicKeyMlkemB64` is provided (ADR-003 hybrid device), the VKs are wrapped
+   * with `pqSeal` so the resulting device grant is HNDL-resistant. Legacy callers that omit
+   * it fall back to the classical `seal` envelope.
    */
-  async approveDevice(deviceId: string, devicePublicKeyB64: string): Promise<void> {
+  async approveDevice(
+    deviceId: string,
+    devicePublicKeyB64: string,
+    devicePublicKeyMlkemB64?: string | null,
+  ): Promise<void> {
     const devicePub = fromB64u(devicePublicKeyB64);
+    const useHybrid = !!devicePublicKeyMlkemB64;
+    const recipient = useHybrid
+      ? { x25519Pub: devicePub, mlkemPub: fromB64u(devicePublicKeyMlkemB64 as string) }
+      : null;
     const grants = [...this.vkCache.entries()].map(([vaultId, { vk, keyVersion }]) => ({
       vaultId,
       keyVersion,
-      wrappedVaultKey: seal(devicePub, vk),
+      wrappedVaultKey: recipient ? pqSeal(recipient, vk) : seal(devicePub, vk),
     }));
     await this.http("POST", `/vault/devices/${deviceId}/approve`, { grants });
   }
 
-  /** New device: fetch and open this device's VK grants with the device private key. */
+  /**
+   * New device: fetch and open this device's VK grants. Picks `pqSealOpen` when the
+   * envelope's `alg` is the hybrid one and the device has its ML-KEM private; falls back
+   * to the classical `sealOpen` otherwise. Mixed-envelope keysets (some pq-hybrid, some
+   * legacy) work transparently.
+   */
   async loadDeviceGrants(deviceId: string): Promise<Array<{ id: string; keyVersion: number }>> {
     if (!this.devicePriv) throw new Error("no device key; call registerDevice first");
     const grants = await this.http<
@@ -637,10 +670,22 @@ export class VaultClient {
     >("GET", `/vault/devices/me/keyset?deviceId=${deviceId}`);
     const out: Array<{ id: string; keyVersion: number }> = [];
     for (const g of grants) {
-      this.vkCache.set(g.vaultId, {
-        vk: sealOpen(this.devicePriv, g.wrappedVaultKey),
-        keyVersion: g.keyVersion,
-      });
+      const alg = g.wrappedVaultKey.alg;
+      // The hybrid envelope alg is `pq-seal-x25519-mlkem768-hkdf-xc20p` (see ALG.PQ_SEAL
+      // in @arc/crypto). Classical seal is `seal-x25519-hkdf-xc20p`. Disambiguate by the
+      // `pq-` prefix so future PQ algs flow into this branch automatically.
+      const isHybrid = typeof alg === "string" && alg.startsWith("pq-");
+      let vk: Uint8Array;
+      if (isHybrid) {
+        if (!this.deviceMlkemPriv) throw new Error("device grant is hybrid but device has no ML-KEM private key");
+        vk = pqSealOpen(g.wrappedVaultKey, {
+          x25519Priv: this.devicePriv,
+          mlkemPriv: this.deviceMlkemPriv,
+        });
+      } else {
+        vk = sealOpen(this.devicePriv, g.wrappedVaultKey);
+      }
+      this.vkCache.set(g.vaultId, { vk, keyVersion: g.keyVersion });
       out.push({ id: g.vaultId, keyVersion: g.keyVersion });
     }
     return out;

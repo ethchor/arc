@@ -260,8 +260,17 @@ export class VaultDeviceEntity {
   @Column({ type: "text" })
   name!: string;
 
+  /** Device X25519 public key (b64url). Always present for back-compat with classical seal. */
   @Column({ type: "text" })
   publicKey!: string;
+
+  /**
+   * Optional device ML-KEM-768 public key (b64url). Present when the device was enrolled by
+   * an ADR-003 client; absent for legacy X25519-only devices. When present, the trusted
+   * approver wraps the VK with `pqSeal` instead of `seal`.
+   */
+  @Column({ type: "text", nullable: true })
+  publicKeyMlkem!: string | null;
 
   @Column({ type: "boolean", default: false })
   trusted!: boolean;
