@@ -224,9 +224,24 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   refuses further intents). Workspace stays 70/70 turbo green (server 28 suites, 141
   passed). v1 of Phase 3 ships the *cryptographically-bound* action chain; the agent's own
   authenticated credential path (vs. owner-JWT-submitted intents) is the remaining slice.
-- [ ] **Phase 4 — push-consent CIBA via passkeys** (`feat/push-consent-ciba`). `elevated` /
-  `sudo` ops return `403 { approvalId }`; `vault_pending_approvals`; owner resolves with a
-  WebAuthn assertion (docs/13) — proof of control, no third-party IdP.
+- [x] **Phase 4 — push-consent CIBA via passkeys** (`feat/push-consent-ciba`). An action the
+  policy would allow but which runs under an `elevated` delegation is blocked pending
+  out-of-band human approval — arc's CIBA, on our own passkeys, no third-party IdP. New
+  `vault_pending_approvals` entity + migration `1718100000000`, each row pinned to one
+  `intentDigest` (a grant authorizes exactly the action shown to the human). `submitIntent`
+  gate: an allowed-but-elevated intent registers a pending approval and returns
+  `{ decision: "deny", reason: "approval-required", approvalId }` **without** recording or
+  metering the action; the agent re-submits the identical signed intent once granted.
+  `ApprovalsService` (`ensurePending` idempotent, single-use `tryConsume`, `listPending`,
+  `beginApproval`→challenge, `approve`→verify, `deny`) reuses `PasskeyService` via two new
+  generic methods (`beginAssertionChallenge` + `verifyAssertionWithChallenge`) so proof of
+  control is a real WebAuthn assertion (UV required, anti-clone counter), not a tappable yes.
+  New `ApprovalsController` under `/vault/approvals`. SDK:
+  `listApprovals`/`beginApproval`/`approve`/`denyApproval` + `approvalId` on the intent
+  result. **3 e2e** (shared `FakeAuthenticator` helper — real ES256/CBOR, no bypass):
+  elevated blocked → passkey grant → resubmit allowed + single-use; deny leaves it blocked;
+  approve without an assertion is 401. Workspace 70/70 turbo green (server 29 suites, 144
+  passed).
 - [ ] **Phase 5 — attestation + plugin-manifest provenance**
   (`feat/attestation-and-plugin-manifest`). Optional SPIFFE/sigstore/TPM attestation behind
   a verifier interface (v1 record, v2 enforce); signed plugin manifest + per-plugin `sha256`,

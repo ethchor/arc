@@ -94,3 +94,8 @@ export class SubmitIntentDto {
   @IsObject() signature!: Record<string, unknown>;
   @IsOptional() args?: unknown;
 }
+
+/** Approve a pending push-consent request with a WebAuthn assertion (proof of control). */
+export class ApproveDto {
+  @IsObject() assertion!: Record<string, unknown>;
+}

@@ -40,6 +40,6 @@ import { VaultService } from "./vault.service";
   ],
   controllers: [VaultController],
   providers: [VaultService, PasskeyService, DevicesAutoRevokeService],
-  exports: [DevicesAutoRevokeService],
+  exports: [DevicesAutoRevokeService, PasskeyService],
 })
 export class VaultModule {}

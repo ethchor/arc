@@ -1,6 +1,6 @@
 # ADR-005 — Engine-C: agentic identity, signed delegation, and continuous trust
 
-- **Status:** Accepted — Phases 1+2+3 implemented; Phases 4–5 queued
+- **Status:** Accepted — Phases 1+2+3+4 implemented; Phase 5 queued
 - **Date:** 2026-06-07
 - **Deciders:** ethchor
 - **Depends on:** ADR-002 (PQ-hybrid grants), ADR-003 (hybrid device keys),

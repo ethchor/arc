@@ -810,6 +810,59 @@ export class VaultAgentIntentEntity {
   createdAt!: Date;
 }
 
+export type ApprovalStatusCol = "pending" | "approved" | "denied" | "consumed";
+
+/**
+ * A push-consent approval (ADR-005 Phase 4). An `elevated` delegation can't act until the
+ * owning human proves control out-of-band (a WebAuthn assertion) — arc's CIBA. The row binds
+ * the approval to a specific intent via `intentDigest`, so a granted approval authorizes
+ * exactly the action that was shown to the human, and nothing else.
+ */
+@Entity("vault_pending_approvals")
+export class VaultPendingApprovalEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  agentId!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  taskId!: string;
+
+  @Index()
+  @Column({ type: "int" })
+  ownerUserId!: number;
+
+  /** `intentDigest(claims)` — pins the approval to one exact action. */
+  @Index()
+  @Column({ type: "text" })
+  intentDigest!: string;
+
+  @Column({ type: "text" })
+  op!: string;
+
+  @Column({ type: "text" })
+  path!: string;
+
+  @Column({ type: "text", default: "pending" })
+  status!: ApprovalStatusCol;
+
+  /** WebAuthn challenge issued when the owner begins approval; null until then. */
+  @Column({ type: "text", nullable: true })
+  challenge!: string | null;
+
+  @Column({ type: "datetime" })
+  expiresAt!: Date;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @Column({ type: "datetime", nullable: true })
+  resolvedAt!: Date | null;
+}
+
 export const entities = [
   UserEntity,
   VaultUserKeysEntity,
@@ -831,4 +884,5 @@ export const entities = [
   VaultDelegationEntity,
   VaultAgentTaskEntity,
   VaultAgentIntentEntity,
+  VaultPendingApprovalEntity,
 ];

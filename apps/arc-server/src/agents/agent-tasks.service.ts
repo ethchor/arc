@@ -11,6 +11,7 @@ import {
   fromB64u,
   intentArgsDigest,
   intentChainNext,
+  intentDigest,
   verifyIntent,
   ZERO_CHAIN,
 } from "@arc/crypto";
@@ -25,6 +26,7 @@ import {
 } from "../database/entities";
 import { ENGINES_CONFIG, type EnginesConfig } from "../engines/engines.service";
 import { AgentsService } from "./agents.service";
+import { ApprovalsService } from "./approvals.service";
 import type { OpenTaskDto, SubmitIntentDto } from "./dto";
 
 /** Default task budget — deliberately conservative; the owner can widen per task. */
@@ -59,6 +61,7 @@ export class AgentTasksService {
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(ENGINES_CONFIG) private readonly engines: EnginesConfig,
     private readonly agentsService: AgentsService,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   /** Open a task. If bound to a delegation, the task id is the delegation's `taskId`. */
@@ -151,6 +154,44 @@ export class AgentTasksService {
         capability,
         ...(claims.delegation ? { delegationId: claims.delegation } : {}),
       });
+
+      // Push-consent gate (ADR-005 Phase 4): an action the policy would allow but which runs
+      // under an `elevated` delegation needs a fresh human approval bound to this exact
+      // intent. Without a granted approval we register a pending one and return *without*
+      // recording or metering the action — the agent re-submits the identical intent once
+      // the owner has approved out-of-band (a WebAuthn assertion).
+      if (decision.decision === "allow" && decision.elevated) {
+        const digest = intentDigest(claims);
+        const approved = await this.approvals.tryConsume(agentId, task.taskId, digest);
+        if (!approved) {
+          const approvalId = await this.approvals.ensurePending({
+            agentId,
+            taskId: task.taskId,
+            ownerUserId: agent.ownerUserId,
+            intentDigest: digest,
+            op: claims.op,
+            path: claims.path,
+          });
+          await this.writeAudit({
+            actorUserId: null,
+            action: "agent_intent_pending_approval",
+            agentId,
+            delegationId: claims.delegation ?? null,
+            taskId: task.taskId,
+            toolCall: { op: claims.op, path: claims.path, capability, decision: "approval-required" },
+          });
+          return {
+            decision: "deny" as const,
+            reason: "approval-required",
+            mode: decision.mode,
+            elevated: true,
+            approvalId,
+            seq: task.callsUsed,
+            chainHead: task.chainHead,
+            callsRemaining: Math.max(0, task.budget.maxCalls - task.callsUsed),
+          };
+        }
+      }
 
       // Secret-unseal sub-budget: an allowed read counts against maxSecretsUnsealed; exceeding
       // it converts the action to a deny (still recorded in the chain for the audit trail).

@@ -1,9 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type CurrentUserData } from "../auth/current-user.decorator";
+import type { AuthenticationResponseJSON } from "@simplewebauthn/types";
 import { AgentsService } from "./agents.service";
 import { AgentTasksService } from "./agent-tasks.service";
+import { ApprovalsService } from "./approvals.service";
 import {
+  ApproveDto,
   AuthorizeAgentDto,
   CreateDelegationDto,
   OpenTaskDto,
@@ -24,6 +27,7 @@ export class AgentsController {
   constructor(
     private readonly agents: AgentsService,
     private readonly tasks: AgentTasksService,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   @Post()
@@ -125,5 +129,44 @@ export class AgentsController {
     @Param("taskId") taskId: string,
   ) {
     return this.tasks.closeTask(u.userId, id, taskId);
+  }
+}
+
+/**
+ * Push-consent approvals (ADR-005 Phase 4). Owner-scoped — these are the human-in-the-loop
+ * endpoints for `elevated` agent actions. Separate controller so the routes live under
+ * `/vault/approvals`, not under a specific agent.
+ */
+@UseGuards(JwtAuthGuard)
+@Controller("vault/approvals")
+export class ApprovalsController {
+  constructor(private readonly approvals: ApprovalsService) {}
+
+  /** The owner's actionable (pending, unexpired) approvals. */
+  @Get()
+  list(@CurrentUser() u: CurrentUserData) {
+    return this.approvals.listPending(u.userId);
+  }
+
+  /** Begin the WebAuthn ceremony — get a challenge bound to this approval. */
+  @Post(":id/challenge")
+  challenge(@CurrentUser() u: CurrentUserData, @Param("id") id: string) {
+    return this.approvals.beginApproval(u.userId, id);
+  }
+
+  /** Grant by proving control with a WebAuthn assertion. */
+  @Post(":id/approve")
+  approve(@CurrentUser() u: CurrentUserData, @Param("id") id: string, @Body() dto: ApproveDto) {
+    return this.approvals.approve(
+      u.userId,
+      id,
+      dto.assertion as unknown as AuthenticationResponseJSON,
+    );
+  }
+
+  /** Deny outright (no proof-of-control needed to say no). */
+  @Post(":id/deny")
+  deny(@CurrentUser() u: CurrentUserData, @Param("id") id: string) {
+    return this.approvals.deny(u.userId, id);
   }
 }
