@@ -14,3 +14,5 @@ export type {
   Plugin,
 } from "./types";
 export { PluginHost, PluginError, scopeAllows } from "./host";
+export { RemoteSecretsPlugin, RemotePluginError } from "./remote";
+export type { RemoteProcessSpec } from "./remote";
