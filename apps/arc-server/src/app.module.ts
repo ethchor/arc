@@ -7,6 +7,7 @@ import { InitSchema1717200000000 } from "./migrations/1717200000000-init-schema"
 import { GrantsSchema1717300000000 } from "./migrations/1717300000000-grants-schema";
 import { PasskeySchema1717400000000 } from "./migrations/1717400000000-passkey-schema";
 import { GrantsGroupsSchema1717500000000 } from "./migrations/1717500000000-grants-groups-schema";
+import { AttachmentsSchema1717600000000 } from "./migrations/1717600000000-attachments-schema";
 import { AuthModule } from "./auth/auth.module";
 import { AuthMethodsModule } from "./auth-methods/auth-methods.module";
 import { EnginesModule } from "./engines/engines.module";
@@ -20,6 +21,7 @@ const migrations = [
   GrantsSchema1717300000000,
   PasskeySchema1717400000000,
   GrantsGroupsSchema1717500000000,
+  AttachmentsSchema1717600000000,
 ];
 
 /**

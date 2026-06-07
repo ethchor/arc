@@ -28,6 +28,7 @@ import {
   RotateKeyDto,
   TouchDeviceDto,
   UnlockDto,
+  UploadAttachmentDto,
   UpsertItemDto,
 } from "./dto";
 import type {
@@ -147,6 +148,47 @@ export class VaultController {
     @Param("itemId") itemId: string,
   ) {
     return this.vault.deleteItem(u.userId, id, itemId);
+  }
+
+  // ----- Encrypted attachments (large item payloads kept in BlobStore) -----
+
+  @Post("vaults/:id/items/:itemId/attachments")
+  uploadAttachment(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+    @Body() dto: UploadAttachmentDto,
+  ) {
+    return this.vault.uploadAttachment(u.userId, id, itemId, dto);
+  }
+
+  @Get("vaults/:id/items/:itemId/attachments")
+  listAttachments(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+  ) {
+    return this.vault.listAttachments(u.userId, id, itemId);
+  }
+
+  @Get("vaults/:id/items/:itemId/attachments/:attId")
+  downloadAttachment(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+    @Param("attId") attId: string,
+  ) {
+    return this.vault.downloadAttachment(u.userId, id, itemId, attId);
+  }
+
+  @Delete("vaults/:id/items/:itemId/attachments/:attId")
+  deleteAttachment(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+    @Param("attId") attId: string,
+  ) {
+    return this.vault.deleteAttachment(u.userId, id, itemId, attId);
   }
 
   @Get("vaults/:id/folders")
