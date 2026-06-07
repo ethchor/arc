@@ -294,6 +294,74 @@ export class PasskeyService {
       credentialId,
     };
   }
+
+  // --- generic proof-of-control (reused by Engine-C push-consent, ADR-005 Phase 4) ---
+
+  /**
+   * Generate a WebAuthn assertion challenge for a *generic* proof-of-control ceremony (not
+   * tied to vault unlock). The caller persists the returned `challenge` against whatever it
+   * is gating (e.g. a pending approval) and later passes it to
+   * {@link verifyAssertionWithChallenge}. Throws if the user has no registered passkeys.
+   */
+  async beginAssertionChallenge(userId: number): Promise<PublicKeyCredentialRequestOptionsJSON> {
+    const credentials = await this.passkeys.find({ where: { userId } });
+    if (credentials.length === 0) throw new NotFoundException("no passkeys registered");
+    return generateAuthenticationOptions({
+      rpID: this.rpId(),
+      userVerification: "required",
+      allowCredentials: credentials.map((c) => ({
+        id: c.credentialId,
+        transports: (c.transports ?? undefined) as AuthenticatorTransportLike[] | undefined,
+      })),
+    });
+  }
+
+  /**
+   * Verify a WebAuthn assertion against a caller-supplied `expectedChallenge` (the reusable
+   * core of {@link finishUnlock}, minus the unlock-specific key return). Bumps the anti-clone
+   * counter. Returns the verified credential id. Throws on any verification failure.
+   */
+  async verifyAssertionWithChallenge(
+    userId: number,
+    assertion: AuthenticationResponseJSON,
+    expectedChallenge: string,
+  ): Promise<{ credentialId: string }> {
+    const stored = await this.passkeys.findOne({ where: { userId, credentialId: assertion.id } });
+    if (!stored) throw new UnauthorizedException("passkey not registered for this user");
+
+    let verification;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response: assertion,
+        expectedChallenge,
+        expectedOrigin: this.origin(),
+        expectedRPID: this.rpId(),
+        credential: {
+          id: stored.credentialId,
+          publicKey: Buffer.from(stored.publicKey, "base64url"),
+          counter: Number(stored.counter),
+          transports: (stored.transports ?? undefined) as AuthenticatorTransportLike[] | undefined,
+        },
+        requireUserVerification: true,
+      });
+    } catch (err) {
+      this.logger.warn(`passkey assertion verify failed: ${(err as Error).message}`);
+      throw new UnauthorizedException("passkey assertion verification failed");
+    }
+    if (!verification.verified) throw new UnauthorizedException("passkey assertion not verified");
+
+    const newCounter = String(verification.authenticationInfo.newCounter);
+    if (Number(newCounter) > Number(stored.counter)) {
+      stored.counter = newCounter;
+      await this.passkeys.save(stored);
+    } else if (Number(newCounter) < Number(stored.counter)) {
+      this.logger.warn(
+        `passkey counter regression for user=${userId} cred=${assertion.id}: ${stored.counter} → ${newCounter}`,
+      );
+      throw new UnauthorizedException("passkey counter regression (possible clone)");
+    }
+    return { credentialId: assertion.id };
+  }
 }
 
 /** AuthenticatorTransport from the WebAuthn spec, narrowed loosely for our pass-through use. */

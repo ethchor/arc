@@ -649,6 +649,8 @@ export class VaultClient {
     seq: number;
     chainHead: string;
     callsRemaining: number;
+    /** Present when `reason === "approval-required"` — the push-consent request to satisfy. */
+    approvalId?: string;
   }> {
     const args = (input.args ?? null) as JsonValue;
     const claims: IntentClaims = {
@@ -682,6 +684,33 @@ export class VaultClient {
     taskId: string,
   ): Promise<{ ok: boolean; revokedDelegations: number; revokedLeases: number }> {
     return this.http("POST", `/vault/agents/${agentId}/tasks/${taskId}/close`, {});
+  }
+
+  // ----- Phase 4: push-consent approvals (ADR-005) -----
+
+  /** The owner's actionable (pending, unexpired) push-consent requests. */
+  async listApprovals(): Promise<
+    Array<{ id: string; agentId: string; taskId: string; op: string; path: string; expiresAt: string; createdAt: string }>
+  > {
+    return this.http("GET", "/vault/approvals");
+  }
+
+  /** Begin the WebAuthn ceremony for an approval — returns the assertion options (challenge). */
+  async beginApproval(approvalId: string): Promise<Record<string, unknown>> {
+    return this.http("POST", `/vault/approvals/${approvalId}/challenge`, {});
+  }
+
+  /** Grant an approval by proving control with a WebAuthn assertion (proof of control). */
+  async approve(
+    approvalId: string,
+    assertion: Record<string, unknown>,
+  ): Promise<{ ok: boolean; approvalId: string; status: string }> {
+    return this.http("POST", `/vault/approvals/${approvalId}/approve`, { assertion });
+  }
+
+  /** Deny an approval outright. */
+  async denyApproval(approvalId: string): Promise<{ ok: boolean; approvalId: string; status: string }> {
+    return this.http("POST", `/vault/approvals/${approvalId}/deny`, {});
   }
 
   /**

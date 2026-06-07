@@ -12,6 +12,7 @@ import { DeviceHybridKey1717700000000 } from "./migrations/1717700000000-device-
 import { VaultUi1717800000000 } from "./migrations/1717800000000-vault-ui";
 import { AgentIdentity1717900000000 } from "./migrations/1717900000000-agent-identity";
 import { AgentTasksIntents1718000000000 } from "./migrations/1718000000000-agent-tasks-intents";
+import { PendingApprovals1718100000000 } from "./migrations/1718100000000-pending-approvals";
 import { AgentsModule } from "./agents/agents.module";
 import { AuthModule } from "./auth/auth.module";
 import { AuthMethodsModule } from "./auth-methods/auth-methods.module";
@@ -31,6 +32,7 @@ const migrations = [
   VaultUi1717800000000,
   AgentIdentity1717900000000,
   AgentTasksIntents1718000000000,
+  PendingApprovals1718100000000,
 ];
 
 /**
