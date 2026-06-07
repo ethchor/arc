@@ -36,6 +36,20 @@ import {
 
 export type VaultType = "personal" | "team" | "org";
 
+/**
+ * Re-exports of the closed UI-affordance allowlists from `@arc/types`. Callers building a
+ * vault picker can iterate `VAULT_ICONS` / `VAULT_COLORS` to render the options without
+ * pulling in `@arc/types` separately.
+ */
+export {
+  VAULT_ICONS,
+  VAULT_COLORS,
+  type VaultIcon,
+  type VaultColor,
+  isVaultIcon,
+  isVaultColor,
+} from "@arc/types";
+
 export interface VaultClientOptions {
   baseUrl: string;
   /** Override fetch (tests / non-global environments). */
@@ -70,6 +84,12 @@ export interface VaultSummary {
   keyVersion: number;
   /** Decrypted vault name, if one was set. */
   name?: string;
+  /**
+   * Optional UI affordances (`@arc/types` `VaultIcon` / `VaultColor`). Plaintext on the
+   * wire — picker chrome, not secret material. `null` when the owner never picked one.
+   */
+  icon?: string | null;
+  color?: string | null;
 }
 
 export interface VaultMember {
@@ -339,6 +359,8 @@ export class VaultClient {
         currentKeyVersion: number;
         grant: Envelope | null;
         encName: Envelope | null;
+        icon?: string | null;
+        color?: string | null;
       }>
     >("GET", "/vaults");
     const out: VaultSummary[] = [];
@@ -355,23 +377,68 @@ export class VaultClient {
           }
         }
       }
-      out.push({ id: v.id, type: v.type, role: v.role, keyVersion: v.currentKeyVersion, name });
+      out.push({
+        id: v.id,
+        type: v.type,
+        role: v.role,
+        keyVersion: v.currentKeyVersion,
+        name,
+        icon: v.icon ?? null,
+        color: v.color ?? null,
+      });
     }
     return out;
   }
 
-  async createVault(type: VaultType = "team", name?: string): Promise<{ id: string; keyVersion: number }> {
+  /**
+   * Create a vault. `ui` is optional — pass `{ icon, color }` from the closed allowlists
+   * exported by `@arc/types` (`VAULT_ICONS`, `VAULT_COLORS`) to render a coloured icon
+   * chip in the picker. The server validates both against the same allowlists and rejects
+   * 400 on anything else, so the SDK keeps this loosely typed and lets the server be the
+   * source of truth.
+   */
+  async createVault(
+    type: VaultType = "team",
+    name?: string,
+    ui?: { icon?: string; color?: string },
+  ): Promise<{ id: string; keyVersion: number; icon: string | null; color: string | null }> {
     if (!this.session) throw new Error("not unlocked");
     const vkm = createVaultKey(1);
     const ownerGrant = wrapVaultKeyFor(vkm.vk, this.hybridPub());
     const encName = name ? encryptVaultName(vkm.vk, name, 1) : undefined;
-    const r = await this.http<{ id: string; currentKeyVersion: number }>("POST", "/vaults", {
+    const r = await this.http<{
+      id: string;
+      currentKeyVersion: number;
+      icon: string | null;
+      color: string | null;
+    }>("POST", "/vaults", {
       type,
       ownerGrant,
       ...(encName ? { encName } : {}),
+      ...(ui?.icon !== undefined ? { icon: ui.icon } : {}),
+      ...(ui?.color !== undefined ? { color: ui.color } : {}),
     });
     this.vkCache.set(r.id, { vk: vkm.vk, keyVersion: r.currentKeyVersion });
-    return { id: r.id, keyVersion: r.currentKeyVersion };
+    return { id: r.id, keyVersion: r.currentKeyVersion, icon: r.icon, color: r.color };
+  }
+
+  /**
+   * Patch the per-vault UI affordance. `undefined` leaves a field alone, `null` clears
+   * it. Server enforces admin-or-higher membership and validates both fields against the
+   * `@arc/types` allowlists.
+   */
+  async updateVaultUi(
+    vaultId: string,
+    ui: { icon?: string | null; color?: string | null },
+  ): Promise<{ id: string; icon: string | null; color: string | null }> {
+    return this.http<{ id: string; icon: string | null; color: string | null }>(
+      "PATCH",
+      `/vaults/${vaultId}/ui`,
+      {
+        ...(ui.icon !== undefined ? { icon: ui.icon } : {}),
+        ...(ui.color !== undefined ? { color: ui.color } : {}),
+      },
+    );
   }
 
   /**

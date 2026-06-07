@@ -123,6 +123,20 @@ export class VaultEntity {
   @Column({ type: "int", default: 0 })
   seqCounter!: number;
 
+  /**
+   * Optional UI icon name from `VAULT_ICONS` (`@arc/types`). Plaintext — this is a
+   * picker affordance, not a secret. Nullable for back-compat with existing vaults.
+   */
+  @Column({ type: "text", nullable: true })
+  icon!: string | null;
+
+  /**
+   * Optional UI brand colour as `#RRGGBB`, drawn from `VAULT_COLORS`. Same posture as
+   * `icon`: plaintext UI metadata, nullable for back-compat, allowlist-validated server-side.
+   */
+  @Column({ type: "text", nullable: true })
+  color!: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

@@ -41,6 +41,24 @@ export class CreateVaultDto {
   @IsIn(VAULT_TYPES) type!: VaultType;
   @IsObject() ownerGrant!: EnvelopeJson;
   @IsOptional() @IsObject() encName?: EnvelopeJson | null;
+  /**
+   * Optional UI affordance. Validated against the closed `VAULT_ICONS` allowlist in
+   * `@arc/types`; reject 400 on anything outside it so the column can never store
+   * arbitrary content rendered by the picker.
+   */
+  @IsOptional() @IsString() icon?: string;
+  /** Same story as `icon`, validated against `VAULT_COLORS`. */
+  @IsOptional() @IsString() color?: string;
+}
+
+/**
+ * Partial update for the UI affordance columns. Both fields are optional — if a caller
+ * sends only `icon` we leave `color` alone, and vice versa. Sending `null` is the explicit
+ * "clear it" signal (versus `undefined` which means "don't touch").
+ */
+export class UpdateVaultUiDto {
+  @IsOptional() @IsString() icon?: string | null;
+  @IsOptional() @IsString() color?: string | null;
 }
 
 export class UpsertItemDto {

@@ -26,6 +26,10 @@ module.exports = {
     "^@arc/plugin-bitbucket$": "<rootDir>/../../plugins/scm/arc-plugin-bitbucket/dist/index.cjs",
     "^@arc/sdk$": "<rootDir>/../../sdks/arc-js-sdk/src/index.ts",
     "^@arc/cli$": "<rootDir>/../../apps/arc-cli/src/index.ts",
+    // @arc/types now ships runtime values (VAULT_ICONS / VAULT_COLORS / type guards) in
+    // addition to type declarations. The package is ESM-only and ts-jest needs the
+    // source TS, so we point at it directly — same approach as @arc/sdk above.
+    "^@arc/types$": "<rootDir>/../../packages/arc-types/src/index.ts",
   },
   transform: {
     "^.+\\.ts$": ["ts-jest", { tsconfig: "<rootDir>/tsconfig.json", isolatedModules: true }],
