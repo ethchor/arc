@@ -71,6 +71,12 @@ export class PutHeadDto {
 
 export class RegisterDeviceDto {
   @IsString() publicKey!: string;
+  /**
+   * Optional device ML-KEM-768 public key (b64url) — ADR-003. Present when the client is
+   * the hybrid-aware desktop / SDK; absent for legacy X25519-only devices. The trusted
+   * approver picks `seal` vs `pqSeal` based on its presence.
+   */
+  @IsOptional() @IsString() publicKeyMlkem?: string;
   @IsString() name!: string;
 }
 

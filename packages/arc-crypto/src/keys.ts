@@ -1,4 +1,5 @@
 import { ed25519KeyPair, randomBytes, sha256, x25519KeyPair } from "./primitives";
+import { generateHybridIdentityKeyPair, type HybridKeyPair } from "./pq-hybrid";
 import { VaultCryptoError } from "./types";
 
 export interface KeyPair {
@@ -12,8 +13,20 @@ export const generateIdentityKeyPair = (): KeyPair => x25519KeyPair();
 /** Per-user Ed25519 signing keypair — signs mutations and grants (docs/05 §5.1). */
 export const generateSigningKeyPair = (): KeyPair => ed25519KeyPair();
 
-/** Per-device X25519 keypair — enrollment/approval + fast-unlock caching (docs/06). */
+/**
+ * Per-device X25519-only keypair (legacy device flow). Preserved so older clients keep
+ * working — new code should call {@link generateHybridDeviceKeyPair} instead so device
+ * grants ride the X25519 + ML-KEM-768 envelope (ADR-002 → ADR-003) and close the
+ * harvest-now-decrypt-later window for the device-grant material.
+ */
 export const generateDeviceKeyPair = (): KeyPair => x25519KeyPair();
+
+/**
+ * Per-device **hybrid** keypair: classical X25519 (back-compat) + ML-KEM-768 (PQ). Closes
+ * the ADR-002 footnote on device-grant HNDL exposure. Same shape as the identity hybrid
+ * keypair, just used by a different surface (device enrollment vs user enrollment).
+ */
+export const generateHybridDeviceKeyPair = (): HybridKeyPair => generateHybridIdentityKeyPair();
 
 // --- Base32 (RFC 4648, no padding) for recovery keys & fingerprints ---
 const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";

@@ -195,8 +195,31 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
   idle TTL drives the same UX as the browser-side input listeners. `crates/desktop-core`
   tests (5) still pass locally; the Tauri shell itself only builds with GTK system libs
   installed (Linux) — documented in the shell's README.
-- [ ] Desktop: switch the device identity to the hybrid keypair so device grants can use
-  `pqSeal` too (closes the device-grant HNDL footnote in ADR-002 — possibly ADR-003).
+- [x] Hybrid (X25519 + ML-KEM-768) device keypair — **ADR-003**. Every new device
+  registered through `@arc/sdk` now generates a `HybridKeyPair`, registers both pubs in a
+  single atomic `POST /vault/devices`, and the trusted approver wraps VKs to that device
+  with `pqSeal` so device-grant material is HNDL-resistant. Closes the ADR-002 §Phase-4
+  footnote that had left device grants on classical X25519 only. Server:
+  `vault_devices.publicKeyMlkem` (nullable b64url column; migration
+  `1717700000000-device-hybrid-key`) so legacy X25519-only devices stay valid and new ADR-003
+  devices populate it. DTO: `RegisterDeviceDto.publicKeyMlkem` (optional).
+  `listPendingDevices` + `listApprovedDevices` surface the new pub so the approver can pick
+  `pqSeal` vs `seal` per device with no guess. **SDK is the path of truth** for now — the
+  Rust desktop core gets the same primitive in a follow-up (`vault-crypto-rs` PQ + Tauri
+  commands), tracked in the ADR. SDK behaviour: `registerDevice` keeps both privates in
+  process memory and registers both pubs; `approveDevice(deviceId, x25519Pub, mlkemPub?)`
+  uses `pqSeal` when the mlkem pub is provided and falls back to classical `seal` so a
+  legacy device approved by a new SDK still works; `loadDeviceGrants` disambiguates by the
+  envelope's `alg` (`pq-*` → `pqSealOpen`, classical `seal-*` → `sealOpen`) so
+  **mixed-envelope keysets work transparently** — a single device can have pre-ADR-003 and
+  new grants and both decrypt. Verification code stays over the X25519 pub for back-compat
+  with existing SAS displays; the ML-KEM pub joins the same trust anchor by atomic
+  registration. The verifier ceremony is unchanged for users. New 1 e2e test
+  (`sdk-device-hybrid.e2e-spec.ts`) drives the full path through the real server: trusted
+  enrolls + writes a probe → new device registers hybrid → trusted approves with `pqSeal`
+  → new device opens with `pqSealOpen` → decrypts the probe. New ADR doc:
+  `docs/arc-rfcs/ADR-003-hybrid-device-keys.md`. Workspace gate stays 70/70 turbo green;
+  server tests 23 suites / 125 passing (was 124).
 - [x] Browser extension autofill is real now (was just messaging scaffold). Three
   upgrades land here. **(1) Background auto-lock TTL** — the worker exposes
   `arc:setAutolock` (30–3600s, default 300s) + `arc:status` (`{unlocked, lockInSeconds}`),
