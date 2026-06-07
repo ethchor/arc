@@ -45,10 +45,45 @@ The chart does **not** install Postgres — production uses a managed offering. 
   instead of writing values into the chart.
 - Set `arcServer.env.OTEL_EXPORTER_OTLP_ENDPOINT` to your collector to enable tracing.
 
+## Ops components (operator · agent · MCP server)
+
+The chart can also deploy the three secret-delivery + agent surfaces. All are **off by
+default**; enable the ones you need.
+
+### arc-operator (`operator.enabled=true`)
+
+Reconciles the `ArcSecret` + `ArcDynamicCredential` CRDs into K8s Secrets. The chart ships
+the two CRDs in its `crds/` directory (Helm installs them on first `helm install`; use
+`--skip-crds` to manage them out-of-band) and creates the operator's Deployment +
+ServiceAccount + ClusterRole/Binding (`operator.rbac.create`, `operator.serviceAccount.create`).
+The operator authenticates to arc-server with its own ServiceAccount token via the
+Kubernetes auth method — set `operator.auth.role` to a role configured on arc-server's
+`kubernetes` auth mount.
+
+```bash
+helm upgrade --install arc infra/arc-helm-charts/arc \
+  --set operator.enabled=true \
+  --set operator.auth.role=arc-operator
+```
+
+### arc-mcp-server (`mcpServer.enabled=true`)
+
+Exposes Engine-A (KV / transit / dynamic creds) over the Model Context Protocol for AI
+agents. Stateless Deployment + Service on port 8800; forwards each agent's bearer to
+arc-server (where `@arc/grants` gates it). No cluster RBAC — it only talks to arc-server.
+`mcpServer.arcServerUrl` defaults to the in-chart server Service.
+
+### arc-agent (`agent.sampleConfig.enabled=true`)
+
+The agent runs as an **init container + sidecar inside your own workload pods**, so the
+chart doesn't own a Deployment for it — it only ships a sample config ConfigMap when
+`agent.sampleConfig.enabled=true`. Mount that ConfigMap at `/etc/arc-agent/` in your pod
+and add the `ghcr.io/ethchor/arc-agent` sidecar (see the arc-agent README for the snippet).
+
 ## Values reference
 
 See [`values.yaml`](values.yaml) — every knob is documented inline with the production-safe
-default first.
+default first. The ops blocks are `operator.*`, `mcpServer.*`, and `agent.*`.
 
 ## Local validation
 

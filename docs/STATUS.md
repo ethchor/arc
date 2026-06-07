@@ -513,6 +513,22 @@ Order is rough priority. Each [ ] is one focused commit's worth of work unless f
 
 ### Phase 4 — deployment + ops
 
+- [x] Helm chart for the ops trio (operator + agent + mcp-server). Extends
+  `infra/arc-helm-charts/arc` (now chart v0.2.0) with three opt-in, off-by-default surfaces:
+  **`operator.enabled`** ships the operator Deployment + ServiceAccount + ClusterRole/Binding
+  (secrets get/list/create/update/patch; arcsecrets/arcdynamiccredentials get/list/watch +
+  their /status patch — no wildcards) and vendors the two CRDs into the chart's `crds/`
+  directory (Helm installs them; a smoke test asserts they stay byte-identical to
+  `apps/arc-operator/crds`, so they can't drift). **`mcpServer.enabled`** ships the MCP
+  Deployment + Service on :8800 with a `/healthz` liveness/readiness probe and no cluster
+  RBAC (it only talks to arc-server). **`agent.sampleConfig.enabled`** ships a starter
+  ConfigMap (the agent runs as an init+sidecar in the user's own pods, so the chart can't own
+  its Deployment). Operator + mcp-server auto-wire `ARC_SERVER_URL` to the in-chart server
+  Service via a new `arc.server.internalUrl` helper, so a single-chart install needs no extra
+  config. NOTES.txt surfaces each enabled component. Validated with real `helm lint` +
+  `helm template --include-crds` (all components on → clean render; all off → zero ops
+  resources leak). Smoke tests grew 13 → 24 (new-file presence, operator-RBAC verb scoping,
+  values shape, CRD drift). `helm lint` + `helm template` already run in CI on every PR.
 - [x] `arc-agent`: Rust workload sidecar — pairs with `arc-operator` as the two
   "deliver secrets to workloads" surfaces (operator = cluster-wide CRDs into K8s Secrets;
   agent = direct in-pod templating into config files). Lives in `crates/arc-agent` as a

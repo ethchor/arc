@@ -155,3 +155,104 @@ serviceMonitor:
   labels: {}
   # Drop very high-cardinality labels at the relabel layer if needed.
   metricRelabelings: []
+
+# ---------------------------------------------------------------------------
+# arc-mcp-server — Engine-A exposed over the Model Context Protocol for AI agents.
+# Stateless HTTP service; forwards each agent's bearer to arc-server, where @arc/grants
+# gates the call. Agents authenticate via the OIDC / Kubernetes auth methods to get a
+# policy-bound arc JWT, then connect here with it as the bearer. No cluster RBAC needed
+# (it talks to arc-server over HTTP, not the kube API).
+# ---------------------------------------------------------------------------
+mcpServer:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/ethchor/arc-mcp-server
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Base URL the MCP server uses to reach arc-server. Empty = the in-chart server Service.
+  arcServerUrl: ""
+  service:
+    type: ClusterIP
+    port: 8800
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    fsGroup: 10001
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# arc-operator — Kubernetes operator reconciling ArcSecret + ArcDynamicCredential CRDs
+# into K8s Secrets. Needs real cluster RBAC (watch the CRDs, write Secrets everywhere) and
+# authenticates to arc-server with its own ServiceAccount token via the Kubernetes auth
+# method. The CRDs themselves ship in the chart's `crds/` directory (Helm installs them).
+# ---------------------------------------------------------------------------
+operator:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/ethchor/arc-operator
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Base URL the operator uses to reach arc-server. Empty = the in-chart server Service.
+  arcServerUrl: ""
+  # Auth method + role the operator logs into. The role must be configured on arc-server's
+  # `kubernetes` auth mount and bound to the policies the operator's secrets require.
+  auth:
+    mount: kubernetes
+    role: arc-operator
+  pollIntervalSeconds: 30
+  serviceAccount:
+    create: true
+    # Leave empty to use the generated name. Annotate for IRSA / Workload Identity if the
+    # operator also needs cloud IAM (it usually doesn't — arc brokers that).
+    name: ""
+    annotations: {}
+  rbac:
+    create: true
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    fsGroup: 10001
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# arc-agent — the workload sidecar runs INSIDE your application pods (init container +
+# sidecar), not as its own Deployment, so the chart can't "deploy" it. What it ships is an
+# optional sample config ConfigMap + the sidecar snippet (see the chart README / NOTES).
+# The agent needs no cluster RBAC — it talks to arc-server over HTTP and authenticates with
+# the workload pod's own ServiceAccount token.
+# ---------------------------------------------------------------------------
+agent:
+  image:
+    repository: ghcr.io/ethchor/arc-agent
+    tag: ""
+  auth:
+    mount: kubernetes
+    role: arc-agent
+  # Ship a starter /etc/arc-agent/config.yaml as a ConfigMap you can reference from your
+  # workload's volume. Off by default; turn on for a demo or to copy-and-edit.
+  sampleConfig:
+    enabled: false

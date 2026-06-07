@@ -1,0 +1,39 @@
+{{- if .Values.agent.sampleConfig.enabled -}}
+# Starter arc-agent config. The agent itself runs as an init container + sidecar INSIDE
+# your application pods (it is not a Deployment this chart owns), so all the chart ships is
+# this ConfigMap you can mount at /etc/arc-agent/. Copy + edit `sinks` for your workload.
+# See the arc-agent README for the sidecar snippet.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "arc.agent.fullname" . }}-sample-config
+  labels:
+    {{- include "arc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: arc-agent
+data:
+  config.yaml: |
+    arc:
+      server: {{ include "arc.server.internalUrl" . | quote }}
+      auth:
+        type: kubernetes
+        mount: {{ .Values.agent.auth.mount | quote }}
+        role: {{ .Values.agent.auth.role | quote }}
+    sinks:
+      - id: example-db
+        template_file: /etc/arc-agent/templates/db.tmpl
+        output_path: /etc/app/db.conf
+        source:
+          type: kv_get
+          mount: secret
+          path: app/prod/db
+        refresh_interval_seconds: 300
+      - id: example-aws
+        template_file: /etc/arc-agent/templates/aws.tmpl
+        output_path: /etc/app/aws.env
+        source:
+          type: dynamic_creds
+          mount: aws
+          role: deployer
+          ttl_seconds: 900
+        refresh_lead_seconds: 60
+{{- end }}
