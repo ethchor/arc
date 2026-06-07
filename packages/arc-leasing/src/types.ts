@@ -22,6 +22,12 @@ export interface Lease {
   expiresAt: number;
   /** Unix epoch milliseconds at which the lease was explicitly revoked, if ever. Terminal. */
   revokedAt?: number;
+  /**
+   * Engine-C task binding (ADR-005). When an agent issues a credential under a task, the
+   * lease is tagged with that `taskId` so closing the task can cascade-revoke it
+   * (`revokeByTaskId`). Absent for non-agent / human-issued leases.
+   */
+  readonly taskId?: string;
 }
 
 export type LeaseState = "active" | "expired" | "revoked";
@@ -34,6 +40,8 @@ export interface IssueLeaseInput {
   /** Defaults to `true`. */
   renewable?: boolean;
   backendLeaseId?: string;
+  /** Engine-C task binding (ADR-005) — tag the lease so task close can cascade-revoke it. */
+  taskId?: string;
 }
 
 export type LeaseErrorCode =

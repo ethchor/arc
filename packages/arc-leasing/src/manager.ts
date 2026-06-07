@@ -50,6 +50,7 @@ export class LeaseManager {
       renewable: input.renewable ?? true,
       issuedAt: now,
       expiresAt: now + ttlSeconds * 1000,
+      ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
     };
     this.leases.set(lease.id, lease);
     return lease;
@@ -102,6 +103,24 @@ export class LeaseManager {
     let count = 0;
     for (const lease of this.leases.values()) {
       if (lease.mount.startsWith(prefix) && computeState(lease, now) === "active") {
+        lease.revokedAt = now;
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Revoke every *active* lease tagged with `taskId` (ADR-005 Engine-C cascade). Returns the
+   * count revoked. Closing an agent task calls this so every credential the agent minted
+   * during the task is revoked in one shot — the "access opened during a task closes when
+   * the task does" guarantee. Idempotent; already-revoked/expired leases are skipped.
+   */
+  revokeByTaskId(taskId: string): number {
+    const now = this.clock();
+    let count = 0;
+    for (const lease of this.leases.values()) {
+      if (lease.taskId === taskId && computeState(lease, now) === "active") {
         lease.revokedAt = now;
         count++;
       }

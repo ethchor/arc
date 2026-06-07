@@ -1,8 +1,16 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type CurrentUserData } from "../auth/current-user.decorator";
 import { AgentsService } from "./agents.service";
-import { AuthorizeAgentDto, CreateDelegationDto, RegisterAgentDto, UpdateAgentDto } from "./dto";
+import { AgentTasksService } from "./agent-tasks.service";
+import {
+  AuthorizeAgentDto,
+  CreateDelegationDto,
+  OpenTaskDto,
+  RegisterAgentDto,
+  SubmitIntentDto,
+  UpdateAgentDto,
+} from "./dto";
 
 /**
  * Engine-C agent + delegation management (ADR-005). Every route here is owner/delegator
@@ -13,7 +21,10 @@ import { AuthorizeAgentDto, CreateDelegationDto, RegisterAgentDto, UpdateAgentDt
 @UseGuards(JwtAuthGuard)
 @Controller("vault/agents")
 export class AgentsController {
-  constructor(private readonly agents: AgentsService) {}
+  constructor(
+    private readonly agents: AgentsService,
+    private readonly tasks: AgentTasksService,
+  ) {}
 
   @Post()
   register(@CurrentUser() u: CurrentUserData, @Body() dto: RegisterAgentDto) {
@@ -76,5 +87,43 @@ export class AgentsController {
       capability: dto.capability,
       ...(dto.delegationId !== undefined ? { delegationId: dto.delegationId } : {}),
     });
+  }
+
+  // --- Phase 3: tasks + signed intents (ADR-005) ---
+
+  /** Open a task (the revocable unit + intent-chain anchor). Owner only. */
+  @Post(":id/tasks")
+  openTask(@CurrentUser() u: CurrentUserData, @Param("id") id: string, @Body() dto: OpenTaskDto) {
+    return this.tasks.openTask(u.userId, id, dto);
+  }
+
+  @Get(":id/tasks/:taskId")
+  getTask(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("taskId") taskId: string,
+    @Query("verify") verify?: string,
+  ) {
+    return this.tasks.getTask(u.userId, id, taskId, verify === "true" || verify === "1");
+  }
+
+  /**
+   * Submit a signed intent (the agent's cryptographically-bound action). Authenticated with
+   * the owner JWT in v1 (the agent's own credential path is a later pass); the *intent*
+   * itself is signed by the agent's key, which is what's actually verified + chained.
+   */
+  @Post(":id/intents")
+  submitIntent(@CurrentUser() _u: CurrentUserData, @Param("id") id: string, @Body() dto: SubmitIntentDto) {
+    return this.tasks.submitIntent(id, dto);
+  }
+
+  /** Close a task → cascade-revoke its delegations + leases. Owner only. */
+  @Post(":id/tasks/:taskId/close")
+  closeTask(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("taskId") taskId: string,
+  ) {
+    return this.tasks.closeTask(u.userId, id, taskId);
   }
 }

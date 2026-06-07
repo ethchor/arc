@@ -16,6 +16,7 @@ import { sha256 } from "./primitives";
 import { toHex, utf8 } from "./bytes";
 import { jcs } from "./jcs";
 import { signObject, verifyObject } from "./sign";
+import { chainNext } from "./sign";
 import type { SignatureEnvelope } from "./envelope";
 import type { JsonValue } from "./types";
 
@@ -62,4 +63,22 @@ export function verifyIntent(
   sig: SignatureEnvelope,
 ): boolean {
   return verifyObject(agentSigningPub, claims as unknown as JsonValue, sig);
+}
+
+/**
+ * Per-intent chain digest: `SHA-256( JCS(intentClaims) )`, hex. This is the value folded
+ * into the per-task hash chain (`chainNext`), giving a tamper-evident, replay/gap-detectable
+ * ordering of every action in a task — the same construction docs/10 uses for vault
+ * mutations, applied to agent intents (ADR-005 Phase 3).
+ */
+export function intentDigest(claims: IntentClaims): string {
+  return toHex(sha256(utf8(jcs(claims as unknown as JsonValue))));
+}
+
+/**
+ * Advance a task's intent chain by one signed intent: `chainNext(prev, intentDigest(claims))`.
+ * Re-exported convenience so server + SDK + a Rust verifier all fold the chain identically.
+ */
+export function intentChainNext(prevChainHex: string, claims: IntentClaims): string {
+  return chainNext(prevChainHex, intentDigest(claims));
 }

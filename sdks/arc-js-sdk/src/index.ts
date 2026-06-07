@@ -23,10 +23,12 @@ import {
   pqSeal,
   pqSealOpen,
   randomBytes,
+  intentArgsDigest,
   rewrapItemKey,
   seal,
   sealOpen,
   signDelegation,
+  signIntent,
   toB64u,
   unlock as cryptoUnlock,
   unwrapIdentityFromPasskey,
@@ -44,8 +46,10 @@ import {
   userSubject,
   type AgentIdentity,
   type AgentStatus,
+  type AgentTaskBudget,
   type DelegationClaims,
   type DelegationScope,
+  type IntentClaims,
 } from "@arc/types";
 
 export type VaultType = "personal" | "team" | "org";
@@ -611,6 +615,73 @@ export class VaultClient {
     elevated: boolean;
   }> {
     return this.http("POST", `/vault/agents/${agentId}/authorize`, input);
+  }
+
+  // ----- Phase 3: tasks + signed intents (ADR-005) -----
+
+  /**
+   * Open a task — the revocable unit that meters an agent's actions and anchors its
+   * signed-intent chain. Bind it to a delegation (the task id becomes the delegation's
+   * `taskId`) or open a standalone task for an autonomous agent.
+   */
+  async openTask(
+    agentId: string,
+    opts: { taskId?: string; delegationId?: string; budget?: Partial<AgentTaskBudget> } = {},
+  ): Promise<{ taskId: string; status: string; budget: AgentTaskBudget; deadlineAt: string }> {
+    return this.http("POST", `/vault/agents/${agentId}/tasks`, opts);
+  }
+
+  /**
+   * Sign and submit an intent — the agent's cryptographically-bound action. Signed with the
+   * **agent's** Ed25519 key (`agentSigningPriv`, from its {@link AgentKeyset}); the server
+   * verifies the signature + that `args` matches `argsDigest`, authorizes the declared
+   * op/path, and folds the intent into the task's hash chain.
+   */
+  async submitIntent(
+    agentId: string,
+    agentSigningPriv: Uint8Array,
+    input: { taskId: string; op: string; path: string; args?: JsonValue; delegationId?: string | null },
+  ): Promise<{
+    decision: "allow" | "deny";
+    reason: string;
+    mode: string;
+    elevated: boolean;
+    seq: number;
+    chainHead: string;
+    callsRemaining: number;
+  }> {
+    const args = (input.args ?? null) as JsonValue;
+    const claims: IntentClaims = {
+      v: 1,
+      agent: agentSubject(agentId),
+      delegation: input.delegationId ?? null,
+      taskId: input.taskId,
+      op: input.op,
+      path: input.path,
+      argsDigest: intentArgsDigest(args),
+      ts: new Date().toISOString(),
+      nonce: toB64u(randomBytes(16)),
+    };
+    const signature = signIntent(agentSigningPriv, claims);
+    return this.http("POST", `/vault/agents/${agentId}/intents`, { claims, signature, args });
+  }
+
+  /** Read a task; pass `verify: true` to recompute + check the intent chain (tamper-evidence). */
+  async getTask(
+    agentId: string,
+    taskId: string,
+    opts: { verify?: boolean } = {},
+  ): Promise<Record<string, unknown>> {
+    const qs = opts.verify ? "?verify=true" : "";
+    return this.http("GET", `/vault/agents/${agentId}/tasks/${taskId}${qs}`);
+  }
+
+  /** Close a task → cascade-revoke its delegations + Engine-A leases. */
+  async closeTask(
+    agentId: string,
+    taskId: string,
+  ): Promise<{ ok: boolean; revokedDelegations: number; revokedLeases: number }> {
+    return this.http("POST", `/vault/agents/${agentId}/tasks/${taskId}/close`, {});
   }
 
   /**

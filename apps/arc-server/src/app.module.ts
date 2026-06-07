@@ -11,6 +11,7 @@ import { AttachmentsSchema1717600000000 } from "./migrations/1717600000000-attac
 import { DeviceHybridKey1717700000000 } from "./migrations/1717700000000-device-hybrid-key";
 import { VaultUi1717800000000 } from "./migrations/1717800000000-vault-ui";
 import { AgentIdentity1717900000000 } from "./migrations/1717900000000-agent-identity";
+import { AgentTasksIntents1718000000000 } from "./migrations/1718000000000-agent-tasks-intents";
 import { AgentsModule } from "./agents/agents.module";
 import { AuthModule } from "./auth/auth.module";
 import { AuthMethodsModule } from "./auth-methods/auth-methods.module";
@@ -29,6 +30,7 @@ const migrations = [
   DeviceHybridKey1717700000000,
   VaultUi1717800000000,
   AgentIdentity1717900000000,
+  AgentTasksIntents1718000000000,
 ];
 
 /**
@@ -132,12 +134,15 @@ export function buildDataSourceOptions(): TypeOrmModuleOptions {
     AuthModule,
     GrantsModule,
     VaultModule,
-    AgentsModule,
     // AuthMethodsModule must precede EnginesModule: its POST /v1/auth/<mount>/login route has
     // to register ahead of the engines `/v1/*` catch-all (and it intentionally doesn't import
     // EnginesModule, so it isn't pulled in transitively first).
     AuthMethodsModule,
     EnginesModule,
+    // AgentsModule imports EnginesModule (for the shared lease registry), so it must come
+    // *after* EnginesModule here — otherwise EnginesModule resolves transitively at the
+    // agents position and its `/v1/*` catch-all would register ahead of `/v1/auth/*`.
+    AgentsModule,
     PluginsModule,
   ],
 })

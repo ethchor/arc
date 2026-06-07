@@ -17,7 +17,7 @@ export type EnvelopeJson = Record<string, unknown>;
 // reference the same union without depending on the server's TypeORM entities. Imported
 // for local use in this file's column type annotations, re-exported for the DTO + service
 // modules that already import from this entities barrel.
-import type { MemberRole, VaultType } from "@arc/types";
+import type { AgentTaskBudget, MemberRole, VaultType } from "@arc/types";
 export type { MemberRole, VaultType };
 export type MemberStatus = "invited" | "active" | "revoked";
 
@@ -362,6 +362,10 @@ export class VaultAuditLogEntity {
   @Index()
   @Column({ type: "uuid", nullable: true })
   taskId!: string | null;
+
+  /** Optional tool-call detail for agent-driven Engine-A actions (ADR-005 Phase 3). */
+  @Column({ type: "simple-json", nullable: true })
+  toolCall!: Record<string, unknown> | null;
 
   @CreateDateColumn()
   createdAt!: Date;
@@ -718,6 +722,94 @@ export class VaultDelegationEntity {
   createdAt!: Date;
 }
 
+export type AgentTaskStatusCol = "open" | "closed" | "expired" | "exhausted";
+
+/**
+ * A task (ADR-005 Phase 3): the revocable unit binding an agent's delegation, its leases,
+ * and its signed-intent chain. `chainHead` is the running per-task hash-chain head;
+ * closing the task cascades revoke to every delegation + lease tagged with `taskId`.
+ */
+@Entity("vault_agent_tasks")
+export class VaultAgentTaskEntity {
+  /** The task id is the shared key with the delegation + lease tags. */
+  @PrimaryColumn({ type: "uuid" })
+  taskId!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  agentId!: string;
+
+  @Column({ type: "int" })
+  ownerUserId!: number;
+
+  @Column({ type: "uuid", nullable: true })
+  delegationId!: string | null;
+
+  /** `{ wallClockMs, maxCalls, maxSecretsUnsealed }`. */
+  @Column({ type: "simple-json" })
+  budget!: AgentTaskBudget;
+
+  @Column({ type: "int", default: 0 })
+  callsUsed!: number;
+
+  @Column({ type: "int", default: 0 })
+  secretsUnsealed!: number;
+
+  /** Running per-task intent-chain head (hex). Starts at ZERO_CHAIN. */
+  @Column({ type: "text" })
+  chainHead!: string;
+
+  @Column({ type: "text", default: "open" })
+  status!: AgentTaskStatusCol;
+
+  @Column({ type: "datetime" })
+  deadlineAt!: Date;
+
+  @CreateDateColumn()
+  openedAt!: Date;
+
+  @Column({ type: "datetime", nullable: true })
+  closedAt!: Date | null;
+}
+
+/**
+ * One recorded signed intent (ADR-005 Phase 3): the agent's signed declaration of an action,
+ * its authorization decision, and the chain head *after* folding it in. The ordered set of
+ * these for a task reproduces `task.chainHead` — tamper-evidence + gap detection.
+ */
+@Entity("vault_agent_intents")
+export class VaultAgentIntentEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  taskId!: string;
+
+  @Column({ type: "uuid" })
+  agentId!: string;
+
+  /** 0-based position within the task's chain. */
+  @Column({ type: "int" })
+  seq!: number;
+
+  @Column({ type: "simple-json" })
+  claims!: Record<string, unknown>;
+
+  @Column({ type: "simple-json" })
+  signature!: EnvelopeJson;
+
+  /** Chain head after folding this intent (`chainNext(prev, intentDigest(claims))`). */
+  @Column({ type: "text" })
+  chainHead!: string;
+
+  @Column({ type: "text" })
+  decision!: string;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+}
+
 export const entities = [
   UserEntity,
   VaultUserKeysEntity,
@@ -737,4 +829,6 @@ export const entities = [
   PolicyGroupAttachmentEntity,
   VaultAgentEntity,
   VaultDelegationEntity,
+  VaultAgentTaskEntity,
+  VaultAgentIntentEntity,
 ];
