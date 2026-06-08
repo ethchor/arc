@@ -3,12 +3,14 @@ import {
   createVaultKey,
   decryptFolderName,
   decryptItem,
+  decryptItemWithIK,
   decryptVaultName,
   edPubFromPriv,
   encryptFolderName,
   encryptItem,
   encryptVaultName,
   enroll as cryptoEnroll,
+  extractItemKey,
   type Envelope,
   fingerprint,
   fromB64u,
@@ -19,6 +21,7 @@ import {
   type JsonValue,
   type Keyset,
   mlkemPubFromPriv,
+  openItemKeyShare,
   openVaultKeyGrant,
   pqSeal,
   pqSealOpen,
@@ -38,6 +41,7 @@ import {
   unwrapSigningFromPasskey,
   wrapIdentityForPasskey,
   wrapIdentityMlkemForPasskey,
+  wrapItemKeyForShare,
   wrapSigningForPasskey,
   wrapVaultKeyFor,
   x25519PubFromPriv,
@@ -152,6 +156,26 @@ export interface PulledItem {
   deleted: boolean;
   folderId: string | null;
   data: JsonValue | null;
+}
+
+/**
+ * Item-level share (ADR-007). The recipient's view of the wire shape: enough to decrypt
+ * (`wrappedIK` + `ciphertext` + AAD context) plus metadata for an inbox-style UI.
+ */
+export interface ItemShare {
+  id: string;
+  vaultId: string;
+  itemId: string;
+  granterUserId: number;
+  granteeUserId: number;
+  permission: "view";
+  wrappedIK: Envelope;
+  ciphertext: Envelope;
+  vaultKeyVersion: number;
+  itemVersion: number;
+  itemType: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface VaultFolder {
@@ -912,6 +936,77 @@ export class VaultClient {
 
   async deleteItem(vaultId: string, id: string): Promise<{ ok: boolean }> {
     return this.http("DELETE", `/vaults/${vaultId}/items/${id}`);
+  }
+
+  // ----- Item-level shares (ADR-007) -----
+
+  /**
+   * Share **one** item with **one** user — they decrypt only that item, never become a
+   * vault member, and don't receive the vault key. Looks up the recipient's hybrid identity
+   * public key, derives the item's IK from the local VK cache, `pqSeal`s the IK to the
+   * recipient, and uploads it; the server snapshots the ciphertext alongside.
+   *
+   * Re-sharing the same item to the same user upserts to the latest version (snapshot
+   * semantics — recipients see the version that was shared, edits don't propagate).
+   */
+  async shareItem(
+    vaultId: string,
+    itemId: string,
+    granteeUserId: number,
+  ): Promise<ItemShare> {
+    const vk = this.requireVk(vaultId);
+    // Fetch the *current* item to grab its wrappedItemKey + version (so the IK we derive
+    // matches the ciphertext the server will snapshot).
+    const rows = await this.rawItems(vaultId);
+    const row = rows.find((r) => r.id === itemId);
+    if (!row || row.deletedAt) throw new Error(`item ${itemId} not found in vault`);
+
+    const ik = extractItemKey(
+      vk.vk,
+      { vaultId, itemId, version: row.version, keyVersion: row.vaultKeyVersion },
+      row.wrappedItemKey,
+    );
+
+    const recipient = await this.getUserIdentityKey(granteeUserId);
+    const wrappedIK = wrapItemKeyForShare(ik, {
+      x25519Pub: fromB64u(recipient.identityPublicKey),
+      mlkemPub: fromB64u(recipient.identityPublicKeyMlkem),
+    });
+
+    return this.http<ItemShare>("POST", `/vaults/${vaultId}/items/${itemId}/share`, {
+      itemId,
+      granteeUserId,
+      wrappedIK,
+    });
+  }
+
+  /** Every share where this user is the grantee — items others have shared with them. */
+  async listIncomingShares(): Promise<ItemShare[]> {
+    return this.http<ItemShare[]>("GET", "/vault/shares/incoming");
+  }
+
+  /** Every share this user has granted (across any vault they can read). */
+  async listOutgoingShares(): Promise<ItemShare[]> {
+    return this.http<ItemShare[]>("GET", "/vault/shares/outgoing");
+  }
+
+  /**
+   * Decrypt one incoming share. The recipient `pqSealOpen`s the IK with their hybrid
+   * identity private key, then `aeadOpen`s the snapshot ciphertext — no VK needed.
+   */
+  decryptIncomingShare(share: ItemShare): JsonValue {
+    if (!this.session) throw new Error("not unlocked");
+    const ik = openItemKeyShare(share.wrappedIK, this.hybridPriv());
+    return decryptItemWithIK(
+      ik,
+      { vaultId: share.vaultId, itemId: share.itemId, version: share.itemVersion, keyVersion: share.vaultKeyVersion },
+      share.ciphertext,
+    );
+  }
+
+  /** Revoke a share. Granter and grantee both have authority. */
+  async revokeShare(shareId: string): Promise<{ ok: boolean }> {
+    return this.http("DELETE", `/vault/shares/${shareId}`);
   }
 
   private async rawItems(vaultId: string): Promise<ItemRow[]> {

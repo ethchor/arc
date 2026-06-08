@@ -485,6 +485,43 @@ export function openVaultKeyGrant(grant: Envelope, recipient: HybridPriv): Uint8
   return pqSealOpen(grant, recipient);
 }
 
+/**
+ * Recover the IK for an item the caller already holds the VK for (ADR-007 — used by the
+ * granter side of an item-share). Mirrors what `decryptItem` does internally before opening
+ * the ciphertext, but returns the IK itself so the granter can re-wrap it for a recipient.
+ */
+export function extractItemKey(vk: Uint8Array, ref: ItemRef, wrappedItemKey: Envelope): Uint8Array {
+  return aeadOpen(vk, wrappedItemKey, ikAad(ref));
+}
+
+/**
+ * Item-level share (ADR-007). Re-wraps the item's IK to the recipient's hybrid identity so
+ * the recipient can decrypt **one** item without ever receiving the vault key. Same
+ * primitive as `wrapVaultKeyFor` — `pqSeal` is opaque to what 32-byte key it's wrapping.
+ */
+export function wrapItemKeyForShare(ik: Uint8Array, recipient: HybridPub): Envelope {
+  return pqSeal(recipient, ik);
+}
+
+/** Open a share envelope to recover the IK — the recipient's side of {@link wrapItemKeyForShare}. */
+export function openItemKeyShare(env: Envelope, recipient: HybridPriv): Uint8Array {
+  return pqSealOpen(env, recipient);
+}
+
+/**
+ * Decrypt a shared item from the **IK** (not the VK). The recipient already holds the IK
+ * (via {@link openItemKeyShare}); this just opens the ciphertext + JSON-parses, mirroring
+ * the trailing half of {@link decryptItem}.
+ */
+export function decryptItemWithIK(ik: Uint8Array, ref: ItemRef, ciphertext: Envelope): JsonValue {
+  const pt = aeadOpen(ik, ciphertext, itemAad(ref));
+  try {
+    return JSON.parse(fromUtf8(pt)) as JsonValue;
+  } catch {
+    throw new VaultCryptoError("shared-item payload is not valid JSON after decrypt");
+  }
+}
+
 /** Detached Ed25519 signature over a grant tuple (docs/03 §3.5 (c)) for the grant chain. */
 export function signGrant(
   signingPriv: Uint8Array,

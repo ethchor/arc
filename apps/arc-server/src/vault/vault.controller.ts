@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   ParseIntPipe,
@@ -20,6 +21,7 @@ import {
   AddMemberDto,
   ApproveDeviceDto,
   CreateFolderDto,
+  CreateItemShareDto,
   CreateVaultDto,
   EnrollDto,
   PasskeyRegisterDto,
@@ -175,6 +177,47 @@ export class VaultController {
     @Param("itemId") itemId: string,
   ) {
     return this.vault.deleteItem(u.userId, id, itemId);
+  }
+
+  // ----- Item-level shares (ADR-007) -----
+
+  /**
+   * Share one item from a vault you're a viewer-or-higher of. Body carries the recipient
+   * id + the granter's pre-computed `pqSeal(IK, recipient hybrid identity)` envelope; the
+   * server snapshots the item's current ciphertext + versions and persists alongside.
+   * Server never sees the IK; the recipient never becomes a vault member.
+   */
+  @Post("vaults/:id/items/:itemId/share")
+  shareItem(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+    @Body() dto: CreateItemShareDto,
+  ) {
+    // The path param is the canonical itemId; the DTO must agree (refuse otherwise so we
+    // never share a different item than the URL claims).
+    if (dto.itemId !== itemId) {
+      throw new ForbiddenException({ error: "item_id_mismatch" });
+    }
+    return this.vault.createItemShare(u.userId, id, dto);
+  }
+
+  /** Every share where the caller is the grantee. No vault membership required. */
+  @Get("vault/shares/incoming")
+  listIncomingShares(@CurrentUser() u: CurrentUserData) {
+    return this.vault.listIncomingShares(u.userId);
+  }
+
+  /** Every share the caller has granted. */
+  @Get("vault/shares/outgoing")
+  listOutgoingShares(@CurrentUser() u: CurrentUserData) {
+    return this.vault.listOutgoingShares(u.userId);
+  }
+
+  /** Revoke a share. The granter or the grantee can revoke. Idempotent (404 on miss). */
+  @Delete("vault/shares/:shareId")
+  revokeShare(@CurrentUser() u: CurrentUserData, @Param("shareId") shareId: string) {
+    return this.vault.revokeItemShare(u.userId, shareId);
   }
 
   // ----- Encrypted attachments (large item payloads kept in BlobStore) -----

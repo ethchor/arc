@@ -69,8 +69,11 @@ Dynamic, short-lived credentials and encryption-as-a-service for your fleet.
 A zero-knowledge vault for the humans and teams who run the infrastructure.
 
 - **Items**: passwords, TOTP/2FA, secure notes, and generic secrets — encrypted client-side.
-- **Sharing & teams**: vaults with role-based membership (owner / admin / editor / viewer),
-  per-item sharing, and cryptographic key grants.
+- **Sharing & teams**: vaults with role-based membership (owner / admin / editor / viewer)
+  and **item-level sharing** ([ADR-007](docs/arc-rfcs/ADR-007-item-level-sharing.md)) —
+  share *one item* with *one user* by `pqSeal`-wrapping its item key to the recipient's
+  hybrid identity. Recipients decrypt that one item without becoming vault members or
+  receiving the vault key.
 - **Multi-device**: enroll devices with a verifiable code; each device gets its own keypair.
 - **Passkeys**: unlock with WebAuthn (PRF) in addition to your master password.
 - **Recovery**: a dedicated recovery flow ([ADR-006](docs/arc-rfcs/ADR-006-master-password-recovery.md))
@@ -255,7 +258,7 @@ sdks/        arc-js-sdk
 plugins/     cloud/{aws,gcp,azure} · scm/{github,gitlab,bitbucket}
 integrations/ arc-openbao-adapter · arc-mcp-server      crates/ vault-crypto-rs · desktop-core
 infra/       arc-helm-charts · arc-terraform · arc-release
-docs/        protocol specs · ADRs (ADR-001..006) · manual-testing playbook · STATUS.md
+docs/        protocol specs · ADRs (ADR-001..007) · manual-testing playbook · STATUS.md
 ```
 
 The canonical "where does code belong" map and the dependency rules live in

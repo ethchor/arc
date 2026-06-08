@@ -24,6 +24,7 @@ import {
   VaultFolderEntity,
   VaultHeadEntity,
   VaultItemEntity,
+  VaultItemShareEntity,
   VaultKeyGrantEntity,
   VaultMembershipEntity,
   VaultUserKeysEntity,
@@ -32,6 +33,7 @@ import type {
   AddMemberDto,
   ApproveDeviceDto,
   CreateFolderDto,
+  CreateItemShareDto,
   CreateVaultDto,
   EnrollDto,
   PutHeadDto,
@@ -71,6 +73,7 @@ export class VaultService {
     @InjectRepository(VaultAuditLogEntity) private readonly audit: Repository<VaultAuditLogEntity>,
     @InjectRepository(VaultFolderEntity) private readonly folders: Repository<VaultFolderEntity>,
     @InjectRepository(VaultAttachmentEntity) private readonly attachments: Repository<VaultAttachmentEntity>,
+    @InjectRepository(VaultItemShareEntity) private readonly itemShares: Repository<VaultItemShareEntity>,
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(BLOB_STORE) private readonly blobs: BlobStore,
   ) {}
@@ -764,6 +767,114 @@ export class VaultService {
     await this.blobs.delete(row.blobKey).catch(() => undefined);
     await this.writeAudit(vaultId, userId, "attachment_deleted", row.id);
     return { ok: true };
+  }
+
+  // --- item-level shares (ADR-007) -------------------------------------------
+
+  /**
+   * Share one item with one user. The granter must be a viewer-or-higher of the source
+   * vault — `requireRole("viewer")` *also* enforces "not a member → 404 vault not found",
+   * so a non-member can't share something they can't read. The server snapshots the item's
+   * *current* ciphertext + versions and persists alongside the granter's pre-computed
+   * `pqSeal(IK, recipientHybridPub)` envelope. Server never sees the IK.
+   *
+   * Unique on `(itemId, granteeUserId)` — re-sharing the same item to the same user is an
+   * **upsert** to the newest version, not an error.
+   */
+  async createItemShare(granterUserId: number, vaultId: string, dto: CreateItemShareDto) {
+    await this.requireRole(vaultId, granterUserId, "viewer");
+    if (granterUserId === dto.granteeUserId) {
+      // Sharing with yourself is a no-op that masks a bug — refuse cleanly rather than
+      // creating a row that won't tell you anything new.
+      throw new BadRequestException({ error: "cannot_share_with_self" });
+    }
+    const recipient = await this.users.findOne({ where: { id: dto.granteeUserId } });
+    if (!recipient) throw new NotFoundException("grantee not found");
+    const item = await this.items.findOne({ where: { id: dto.itemId, vaultId } });
+    if (!item || item.deletedAt) throw new NotFoundException("item not found");
+
+    const existing = await this.itemShares.findOne({
+      where: { itemId: dto.itemId, granteeUserId: dto.granteeUserId },
+    });
+    if (existing) {
+      // Upsert: same row, refreshed wrapping + snapshot. Updated-at moves forward.
+      existing.granterUserId = granterUserId;
+      existing.permission = dto.permission ?? "view";
+      existing.wrappedIK = dto.wrappedIK;
+      existing.ciphertext = item.ciphertext;
+      existing.vaultKeyVersion = item.vaultKeyVersion;
+      existing.itemVersion = item.version;
+      existing.itemType = item.type;
+      await this.itemShares.save(existing);
+      await this.writeAudit(vaultId, granterUserId, "item_shared", existing.id);
+      return this.toWireShare(existing);
+    }
+    const row = await this.itemShares.save(
+      this.itemShares.create({
+        vaultId,
+        itemId: dto.itemId,
+        granterUserId,
+        granteeUserId: dto.granteeUserId,
+        permission: dto.permission ?? "view",
+        wrappedIK: dto.wrappedIK,
+        ciphertext: item.ciphertext,
+        vaultKeyVersion: item.vaultKeyVersion,
+        itemVersion: item.version,
+        itemType: item.type,
+        expiresAt: null,
+      }),
+    );
+    await this.writeAudit(vaultId, granterUserId, "item_shared", row.id);
+    return this.toWireShare(row);
+  }
+
+  /** Every share where the caller is the grantee. The whole point — no vault membership required. */
+  async listIncomingShares(userId: number) {
+    const rows = await this.itemShares.find({
+      where: { granteeUserId: userId },
+      order: { createdAt: "DESC" },
+    });
+    return rows.map((r) => this.toWireShare(r));
+  }
+
+  /** Every share the caller has granted (any vault they have access to). */
+  async listOutgoingShares(userId: number) {
+    const rows = await this.itemShares.find({
+      where: { granterUserId: userId },
+      order: { createdAt: "DESC" },
+    });
+    return rows.map((r) => this.toWireShare(r));
+  }
+
+  /** Revoke a share. Either the granter or the grantee can remove it. Idempotent (404 on miss). */
+  async revokeItemShare(userId: number, shareId: string) {
+    const row = await this.itemShares.findOne({ where: { id: shareId } });
+    if (!row) throw new NotFoundException("share not found");
+    if (row.granterUserId !== userId && row.granteeUserId !== userId) {
+      // Hide existence from third parties (same posture as vault membership 404s).
+      throw new NotFoundException("share not found");
+    }
+    await this.itemShares.delete({ id: shareId });
+    await this.writeAudit(row.vaultId, userId, "item_share_revoked", shareId);
+    return { ok: true };
+  }
+
+  private toWireShare(r: VaultItemShareEntity) {
+    return {
+      id: r.id,
+      vaultId: r.vaultId,
+      itemId: r.itemId,
+      granterUserId: r.granterUserId,
+      granteeUserId: r.granteeUserId,
+      permission: r.permission,
+      wrappedIK: r.wrappedIK,
+      ciphertext: r.ciphertext,
+      vaultKeyVersion: r.vaultKeyVersion,
+      itemVersion: r.itemVersion,
+      itemType: r.itemType,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    };
   }
 
   // --- helpers ---
