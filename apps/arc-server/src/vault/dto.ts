@@ -45,6 +45,22 @@ export class UnlockDto {
  * pins them, so recovery can never swap the account's cryptographic identity (anti-takeover).
  * Only the salts / authHash / wrapped-priv envelopes / self-attestation change.
  */
+/**
+ * Item-level share (ADR-007). The granter computes `wrappedIK = pqSeal(IK, recipient
+ * hybrid pub)` client-side and sends it. The server checks the granter is a viewer-or-
+ * higher member of the source vault, then snapshots the item's *current* ciphertext +
+ * versions and persists everything together. Server never sees the IK.
+ *
+ * `permission` is `view` for v1; the column exists so the wire shape doesn't break when
+ * edit-shares land.
+ */
+export class CreateItemShareDto {
+  @IsUUID() itemId!: string;
+  @IsInt() granteeUserId!: number;
+  @IsObject() wrappedIK!: EnvelopeJson;
+  @IsOptional() @IsIn(["view"]) permission?: "view";
+}
+
 export class RecoverKeysetDto {
   @IsString() saltMk!: string;
   @IsString() saltAuth!: string;

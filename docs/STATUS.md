@@ -971,8 +971,25 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   resolved (#20): `VAULT_ICONS` + `VAULT_COLORS` allowlists in `@arc/types`, nullable
   `vaults.icon` / `.color` columns, `PATCH /vaults/:id/ui`, SDK `updateVaultUi`. UI surface
   still to do (covered alongside the NHI inventory groundwork in #28).
-- [?] Item-level sharing (one item to one user, not whole vault) — Bitwarden has this;
-  not in our model yet. Big design call.
+- ~~[?] Item-level sharing (one item to one user, not whole vault) — Bitwarden has this;
+  not in our model yet. Big design call.~~ → resolved (**ADR-007**): a share is the item's
+  IK `pqSeal`-wrapped to the recipient's hybrid identity + a ciphertext snapshot of the
+  shared version. Recipients get cryptographic access to **exactly one item**, never become
+  vault members, never receive the VK. No new crypto — reuses `pqSeal` (ADR-002). v1 is
+  view-only with snapshot semantics (an edit rotates the IK; the granter re-shares to push
+  the new version — clean forward secrecy on edits, snapshot keeps working for the shared
+  version). New `vault_item_shares` table (unique on `(itemId, granteeUserId)`, so re-sharing
+  upserts) + migration `1718300000000`; server endpoints `POST
+  /vaults/:id/items/:itemId/share`, `GET /vault/shares/{incoming,outgoing}`, `DELETE
+  /vault/shares/:id` (granter *or* grantee can revoke); `requireRole("viewer")` on the
+  source vault means non-members get a 404 (member-existence hidden) and a recipient can't
+  re-share. SDK: `shareItem` (derives the IK from the local VK, looks up the recipient's
+  identity, wraps + uploads), `listIncomingShares`/`listOutgoingShares`/`decryptIncomingShare`/
+  `revokeShare`. **5 e2e** through the real server + SDK: share decrypts byte-identical
+  on the recipient + recipient has no membership; snapshot survives edits; re-share upserts
+  to the new version; granter + grantee both revoke; non-member can't share; recipient
+  can't re-share. Edit-shares (recipient writes back) and TTL'd shares are documented as
+  follow-ups in ADR-007.
 - [?] Hardware-key (FIDO2 resident credential) as a primary unlock path on the
   extension. Different from passkey-prf; would let the extension run unlocked across
   browser restarts.

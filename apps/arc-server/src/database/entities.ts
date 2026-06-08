@@ -870,6 +870,71 @@ export class VaultPendingApprovalEntity {
   resolvedAt!: Date | null;
 }
 
+export type ItemSharePermission = "view";
+
+/**
+ * Item-level share (ADR-007). One row = one user has cryptographic access to one *version*
+ * of one item, via `wrappedIK` (the item key re-wrapped with `pqSeal` to the recipient's
+ * hybrid identity). Server stays zero-knowledge: it just stores envelopes + a ciphertext
+ * snapshot. Unique on `(itemId, granteeUserId)` so re-sharing upserts.
+ *
+ * Snapshot semantics on purpose: when the granter edits the source item, `upsertItem`
+ * generates a fresh IK + ciphertext; the existing share's wrappedIK doesn't open the new
+ * ciphertext, but the **snapshot** still decrypts (you shared a specific version). To
+ * propagate updates, the granter shares again — which overwrites this row.
+ */
+@Entity("vault_item_shares")
+@Index(["itemId", "granteeUserId"], { unique: true })
+export class VaultItemShareEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  vaultId!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  itemId!: string;
+
+  @Column({ type: "int" })
+  granterUserId!: number;
+
+  @Index()
+  @Column({ type: "int" })
+  granteeUserId!: number;
+
+  @Column({ type: "text", default: "view" })
+  permission!: ItemSharePermission;
+
+  /** `pqSeal`(IK, recipient hybrid identity). Opaque envelope; server never opens it. */
+  @Column({ type: "simple-json" })
+  wrappedIK!: EnvelopeJson;
+
+  /** Ciphertext + AAD context as of share time. Recipient `aeadOpen`s with the unwrapped IK. */
+  @Column({ type: "simple-json" })
+  ciphertext!: EnvelopeJson;
+
+  @Column({ type: "int" })
+  vaultKeyVersion!: number;
+
+  @Column({ type: "int" })
+  itemVersion!: number;
+
+  @Column({ type: "text", nullable: true })
+  itemType!: string | null;
+
+  /** Reserved for future TTL'd shares; v1 always null. */
+  @Column({ type: "datetime", nullable: true })
+  expiresAt!: Date | null;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
+}
+
 export const entities = [
   UserEntity,
   VaultUserKeysEntity,
@@ -892,4 +957,5 @@ export const entities = [
   VaultAgentTaskEntity,
   VaultAgentIntentEntity,
   VaultPendingApprovalEntity,
+  VaultItemShareEntity,
 ];
