@@ -250,12 +250,19 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   (`{ verified, subject, trustAnchor, verifiedAt }`); `ARC_AGENT_ATTESTATION=required`
   refuses enrollment without one, `ARC_SPIFFE_TRUST_DOMAINS` is an optional trust-domain
   allowlist. **Honest scope:** v1 validates the SVID *identity* (`spiffe://` format +
-  trust-domain policy) and records it — cryptographic SVID validation (X.509 chain /
-  JWT-SVID signature vs the trust bundle) is the enforce-mode follow-up; the interface is
-  the real decision so sigstore / TPM / cloud-IID slot in unchanged. **10 tests** (7 unit
-  on the verifier + service across allowlist / malformed / required-mode / kind selection,
-  3 e2e: valid SPIFFE recorded verified, malformed → 400 `attestation_rejected`, none in
-  optional mode allowed). Workspace 70/70 turbo green (server 30 suites, 152 passed).
+  trust-domain policy) and records it. **Enforce mode** (`feat/attestation-enforce-mode`)
+  upgrades the SPIFFE verifier with **cryptographic X.509-SVID validation** when
+  `ARC_SPIFFE_ENFORCE=true`: chain walked to a root in the configured trust bundle
+  (`ARC_SPIFFE_TRUST_BUNDLES=<domain>=<pem-path>,…`), validity dates checked, SPIFFE URI
+  pulled from the leaf's SAN. Fail-closed in production (server refuses to boot when
+  enforce is on but no bundles are configured). Bare SPIFFE-ID strings refused in enforce
+  mode (no crypto to verify). Honest deferred scope: JWT-SVID enforce remains in record
+  mode until a follow-up adds JWKS-based signature verification. The verifier interface is
+  the real decision — sigstore / TPM / cloud-IID slot in unchanged. **15 unit tests**
+  total (5 record-mode + 5 enforce-mode against a real openssl-issued SPIFFE leaf + 5
+  service / env-config tests, with the chain-anchor / unrelated-CA / expired-leaf /
+  missing-bundle / wrong-allowlist negative paths all asserted). Workspace 70/70 turbo
+  green (server 36 suites, 191 passed).
 - [x] **Phase 5b — plugin-manifest provenance** (`feat/plugin-manifest`). Closes the
   "anyone can mount any artifact off disk" gap: an OOP / WASM plugin is mounted only when
   its **signed manifest** pins the artifact's SHA-256 *and* names a publisher arc trusts.
