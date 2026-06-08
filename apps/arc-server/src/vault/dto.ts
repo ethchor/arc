@@ -27,6 +27,8 @@ export class EnrollDto {
   @IsObject() encSigningPriv!: EnvelopeJson;
   @IsObject() encIdentityPrivRecovery!: EnvelopeJson;
   @IsObject() encIdentityPrivMlkemRecovery!: EnvelopeJson;
+  /** Signing key wrapped under the recovery KEK (ADR-006). Optional for pre-ADR-006 clients. */
+  @IsOptional() @IsObject() encSigningPrivRecovery?: EnvelopeJson;
   /** Wrapped personal-vault VK for the enrolling user (seal to their own identity key). */
   @IsObject() ownerGrant!: EnvelopeJson;
   @IsOptional() @IsObject() personalVaultEncName?: EnvelopeJson | null;
@@ -35,6 +37,30 @@ export class EnrollDto {
 
 export class UnlockDto {
   @IsString() authHash!: string;
+}
+
+/**
+ * Replace the *wrapping* layer of an existing keyset during master-password recovery
+ * (ADR-006). Every public key + the key version MUST equal the stored values — the server
+ * pins them, so recovery can never swap the account's cryptographic identity (anti-takeover).
+ * Only the salts / authHash / wrapped-priv envelopes / self-attestation change.
+ */
+export class RecoverKeysetDto {
+  @IsString() saltMk!: string;
+  @IsString() saltAuth!: string;
+  @IsObject() argonParams!: Record<string, unknown>;
+  @IsString() authHash!: string;
+  /** Pinned — must match the stored value. */
+  @IsString() identityPublicKey!: string;
+  @IsString() identityPublicKeyMlkem!: string;
+  @IsString() signingPublicKey!: string;
+  @IsString() identitySelfAttestation!: string;
+  @IsObject() encIdentityPriv!: EnvelopeJson;
+  @IsObject() encIdentityPrivMlkem!: EnvelopeJson;
+  @IsObject() encSigningPriv!: EnvelopeJson;
+  @IsObject() encIdentityPrivRecovery!: EnvelopeJson;
+  @IsObject() encIdentityPrivMlkemRecovery!: EnvelopeJson;
+  @IsObject() encSigningPrivRecovery!: EnvelopeJson;
 }
 
 export class CreateVaultDto {

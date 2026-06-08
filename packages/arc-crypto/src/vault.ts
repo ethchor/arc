@@ -60,6 +60,13 @@ export interface Keyset {
   encSigningPriv: Envelope;
   encIdentityPrivRecovery: Envelope;
   encIdentityPrivMlkemRecovery: Envelope;
+  /**
+   * Signing private key wrapped under the recovery key (ADR-006). Additive + optional for
+   * back-compat: keysets enrolled before ADR-006 omit it, and can't do a *clean* recovery
+   * (no public-key change) of the signing key. New enrollments always include it so recovery
+   * is a pure re-wrap.
+   */
+  encSigningPrivRecovery?: Envelope;
   keyVersion: number;
 }
 
@@ -133,6 +140,14 @@ export function enroll(
     hybrid.mlkem.secretKey,
     privAad("identity-priv-mlkem", keyVersion, "recovery"),
   );
+  // ADR-006: also recovery-wrap the signing key so recovery is a pure re-wrap with no
+  // public-key change (the Ed25519 pub stays the same, so every existing signature verifier
+  // and grant keeps working).
+  const encSigningPrivRecovery = aeadSeal(
+    recoveryWrap,
+    signing.priv,
+    privAad("signing-priv", keyVersion, "recovery"),
+  );
 
   const ts = new Date().toISOString();
   const attestation = signObject(signing.priv, {
@@ -159,6 +174,7 @@ export function enroll(
       encSigningPriv,
       encIdentityPrivRecovery,
       encIdentityPrivMlkemRecovery,
+      encSigningPrivRecovery,
       keyVersion,
     },
     recoveryKey: recovery.encoded,
@@ -239,6 +255,127 @@ export function recoverIdentityPriv(
     privAad("identity-priv-mlkem", keyset.keyVersion, "recovery"),
   );
   return { x25519, mlkem };
+}
+
+/** What {@link recover} produces: the replacement keyset wrapping, an unlocked session, and a NEW recovery key. */
+export interface RecoverResult {
+  /**
+   * The full keyset to upload. Every **public** key and the key version are byte-identical
+   * to the original — only the master-password and recovery *wrapping* layers (and the salts
+   * / authHash / self-attestation) are new. The server pins the pubs, so this is anti-takeover.
+   */
+  keyset: Keyset;
+  /** Unlocked in-memory session for the new master password — ready to use immediately. */
+  session: Session;
+  /** The NEW recovery key (the old one no longer matches the re-wrapped envelopes). */
+  recoveryKey: string;
+}
+
+/**
+ * Master-password recovery (ADR-006). Using the recovery key, restore the identity + signing
+ * private keys, then re-enroll them under a **new** master password and a **new** recovery
+ * key — *without changing any public key or the key version*. Because the cryptographic
+ * identity is unchanged, every existing VK grant, device grant, membership, and signature
+ * stays valid; recovery restores access without rotating the account's identity.
+ *
+ * Requires a keyset with a recovery-wrapped signing key (`encSigningPrivRecovery`, ADR-006);
+ * keysets enrolled before that can't be cleanly recovered (the signing key would have to be
+ * rotated, which this function deliberately refuses rather than silently changing a pub).
+ */
+export function recover(
+  recoveryKeyEncoded: string,
+  keyset: Keyset,
+  newMasterPassword: string,
+  opts: { profile?: ArgonProfileName } = {},
+): RecoverResult {
+  if (!keyset.encSigningPrivRecovery) {
+    throw new Error(
+      "keyset has no recovery-wrapped signing key (enrolled before ADR-006); cannot cleanly recover",
+    );
+  }
+  const keyVersion = keyset.keyVersion;
+
+  // 1. Restore all three private keys from the recovery key.
+  const oldRecoveryWrap = deriveRecoveryWrapKey(decodeRecoveryKey(recoveryKeyEncoded));
+  const identityPriv = aeadOpen(
+    oldRecoveryWrap,
+    keyset.encIdentityPrivRecovery,
+    privAad("identity-priv", keyVersion, "recovery"),
+  );
+  const identityPrivMlkem = aeadOpen(
+    oldRecoveryWrap,
+    keyset.encIdentityPrivMlkemRecovery,
+    privAad("identity-priv-mlkem", keyVersion, "recovery"),
+  );
+  const signingPriv = aeadOpen(
+    oldRecoveryWrap,
+    keyset.encSigningPrivRecovery,
+    privAad("signing-priv", keyVersion, "recovery"),
+  );
+
+  // 2. New master-password-derived wrapping layer (fresh salts).
+  const params = ARGON_PROFILES[opts.profile ?? "desktop"];
+  const saltMk = randomBytes(SALT_BYTES);
+  const saltAuth = randomBytes(SALT_BYTES);
+  const mk = deriveMasterKey(newMasterPassword, saltMk, params);
+  const { authSeed, wk } = splitMasterKey(mk);
+  const authHash = deriveAuthHash(authSeed, saltAuth, params);
+
+  const encIdentityPriv = aeadSeal(wk, identityPriv, privAad("identity-priv", keyVersion));
+  const encIdentityPrivMlkem = aeadSeal(wk, identityPrivMlkem, privAad("identity-priv-mlkem", keyVersion));
+  const encSigningPriv = aeadSeal(wk, signingPriv, privAad("signing-priv", keyVersion));
+
+  // 3. New recovery key + re-wrapped recovery envelopes (rotation — the old one is stale).
+  const recovery = generateRecoveryKey();
+  const newRecoveryWrap = deriveRecoveryWrapKey(recovery.raw);
+  const encIdentityPrivRecovery = aeadSeal(newRecoveryWrap, identityPriv, privAad("identity-priv", keyVersion, "recovery"));
+  const encIdentityPrivMlkemRecovery = aeadSeal(newRecoveryWrap, identityPrivMlkem, privAad("identity-priv-mlkem", keyVersion, "recovery"));
+  const encSigningPrivRecovery = aeadSeal(newRecoveryWrap, signingPriv, privAad("signing-priv", keyVersion, "recovery"));
+
+  // Pubs are derived from the recovered privs — identical to the originals by construction.
+  const identityPub = x25519PubFromPriv(identityPriv);
+  const identityPubMlkem = ml_kem768.getPublicKey(identityPrivMlkem);
+  const signingPub = edPubFromPriv(signingPriv);
+
+  const ts = new Date().toISOString();
+  const attestation = signObject(signingPriv, {
+    identityPub: toB64u(identityPub),
+    identityPubMlkem: toB64u(identityPubMlkem),
+    signingPub: toB64u(signingPub),
+    ts,
+  });
+
+  wipe(mk, authSeed);
+
+  return {
+    keyset: {
+      saltMk: toB64u(saltMk),
+      saltAuth: toB64u(saltAuth),
+      argonParams: params,
+      authHash: toB64u(authHash),
+      identityPublicKey: toB64u(identityPub),
+      identityPublicKeyMlkem: toB64u(identityPubMlkem),
+      signingPublicKey: toB64u(signingPub),
+      identitySelfAttestation: JSON.stringify(attestation),
+      encIdentityPriv,
+      encIdentityPrivMlkem,
+      encSigningPriv,
+      encIdentityPrivRecovery,
+      encIdentityPrivMlkemRecovery,
+      encSigningPrivRecovery,
+      keyVersion,
+    },
+    session: {
+      wk,
+      identityPriv,
+      identityPub,
+      identityPrivMlkem,
+      identityPubMlkem,
+      signingPriv,
+      signingPub,
+    },
+    recoveryKey: recovery.encoded,
+  };
 }
 
 /**

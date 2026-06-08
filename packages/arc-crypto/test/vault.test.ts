@@ -8,6 +8,7 @@ import {
   type ItemRef,
   openVaultKeyGrant,
   randomBytes,
+  recover,
   recoverIdentityPriv,
   rewrapItemKey,
   toHex,
@@ -43,7 +44,52 @@ describe("enroll + unlock", () => {
   });
 });
 
-describe("recovery", () => {
+describe("master-password recovery (ADR-006)", () => {
+  it("re-enrolls under a new password with every public key + key version unchanged", () => {
+    const e = enroll("old-master-password", { profile: "test" });
+    const r = recover(e.recoveryKey, e.keyset, "brand-new-master-password", { profile: "test" });
+
+    // Pubs + key version are byte-identical — recovery never rotates the identity.
+    expect(r.keyset.identityPublicKey).toBe(e.keyset.identityPublicKey);
+    expect(r.keyset.identityPublicKeyMlkem).toBe(e.keyset.identityPublicKeyMlkem);
+    expect(r.keyset.signingPublicKey).toBe(e.keyset.signingPublicKey);
+    expect(r.keyset.keyVersion).toBe(e.keyset.keyVersion);
+
+    // The wrapping layer is new (fresh salts) and the recovery key rotated.
+    expect(r.keyset.saltMk).not.toBe(e.keyset.saltMk);
+    expect(r.recoveryKey).not.toBe(e.recoveryKey);
+    expect(r.keyset.encSigningPrivRecovery).toBeDefined();
+
+    // The returned session holds the SAME private keys as the original enrollment.
+    expect(toHex(r.session.identityPriv)).toBe(toHex(e.session.identityPriv));
+    expect(toHex(r.session.signingPriv)).toBe(toHex(e.session.signingPriv));
+  });
+
+  it("the new keyset unlocks with the new password, not the old one", () => {
+    const e = enroll("old-pw", { profile: "test" });
+    const r = recover(e.recoveryKey, e.keyset, "new-pw", { profile: "test" });
+
+    const s = unlock("new-pw", r.keyset);
+    expect(toHex(s.identityPriv)).toBe(toHex(e.session.identityPriv));
+    expect(() => unlock("old-pw", r.keyset)).toThrow();
+  });
+
+  it("the rotated recovery key recovers again; the old one no longer matches", () => {
+    const e = enroll("pw1", { profile: "test" });
+    const r1 = recover(e.recoveryKey, e.keyset, "pw2", { profile: "test" });
+    // The new recovery key works against the new keyset…
+    const r2 = recover(r1.recoveryKey, r1.keyset, "pw3", { profile: "test" });
+    expect(toHex(r2.session.identityPriv)).toBe(toHex(e.session.identityPriv));
+    // …and the old recovery key no longer opens the re-wrapped envelopes.
+    expect(() => recover(e.recoveryKey, r1.keyset, "pw4", { profile: "test" })).toThrow();
+  });
+
+  it("refuses a keyset with no recovery-wrapped signing key", () => {
+    const e = enroll("pw", { profile: "test" });
+    const legacy = { ...e.keyset, encSigningPrivRecovery: undefined };
+    expect(() => recover(e.recoveryKey, legacy, "new", { profile: "test" })).toThrow(/ADR-006/);
+  });
+
   it("recovers both the X25519 and ML-KEM-768 identity privs from the recovery key", () => {
     const e = enroll(PW, { profile });
     const recovered = recoverIdentityPriv(e.recoveryKey, e.keyset);

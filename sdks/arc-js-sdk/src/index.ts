@@ -24,6 +24,7 @@ import {
   pqSealOpen,
   randomBytes,
   intentArgsDigest,
+  recover as cryptoRecover,
   rewrapItemKey,
   seal,
   sealOpen,
@@ -367,6 +368,7 @@ export class VaultClient {
       encSigningPriv: e.keyset.encSigningPriv,
       encIdentityPrivRecovery: e.keyset.encIdentityPrivRecovery,
       encIdentityPrivMlkemRecovery: e.keyset.encIdentityPrivMlkemRecovery,
+      encSigningPrivRecovery: e.keyset.encSigningPrivRecovery,
       ownerGrant,
     });
     this.session = {
@@ -394,6 +396,50 @@ export class VaultClient {
       signingPub: s.signingPub,
     };
     this.vkCache.clear();
+  }
+
+  /**
+   * Master-password recovery (ADR-006). Using the recovery key, re-enroll under a new master
+   * password — the cryptographic identity is unchanged, so all vault access is restored.
+   * Requires {@link devLogin} first (the recover endpoint is account-authenticated); the user
+   * does *not* need to remember the old password. Returns the **new** recovery key (the old
+   * one is now stale — show it and have the user save it). Leaves the client unlocked.
+   */
+  async recoverWithKey(
+    recoveryKey: string,
+    newMasterPassword: string,
+  ): Promise<{ recoveryKey: string }> {
+    const ks = await this.http<Keyset>("GET", "/vault/keyset");
+    if (!ks.encSigningPrivRecovery) {
+      throw new Error("this account was enrolled before recovery support; cannot recover");
+    }
+    const r = cryptoRecover(recoveryKey, ks, newMasterPassword, { profile: this.opts.profile });
+    await this.http("POST", "/vault/keyset/recover", {
+      saltMk: r.keyset.saltMk,
+      saltAuth: r.keyset.saltAuth,
+      argonParams: r.keyset.argonParams,
+      authHash: r.keyset.authHash,
+      identityPublicKey: r.keyset.identityPublicKey,
+      identityPublicKeyMlkem: r.keyset.identityPublicKeyMlkem,
+      signingPublicKey: r.keyset.signingPublicKey,
+      identitySelfAttestation: r.keyset.identitySelfAttestation,
+      encIdentityPriv: r.keyset.encIdentityPriv,
+      encIdentityPrivMlkem: r.keyset.encIdentityPrivMlkem,
+      encSigningPriv: r.keyset.encSigningPriv,
+      encIdentityPrivRecovery: r.keyset.encIdentityPrivRecovery,
+      encIdentityPrivMlkemRecovery: r.keyset.encIdentityPrivMlkemRecovery,
+      encSigningPrivRecovery: r.keyset.encSigningPrivRecovery,
+    });
+    this.session = {
+      identityPriv: r.session.identityPriv,
+      identityPub: r.session.identityPub,
+      identityPrivMlkem: r.session.identityPrivMlkem,
+      identityPubMlkem: r.session.identityPubMlkem,
+      signingPriv: r.session.signingPriv,
+      signingPub: r.session.signingPub,
+    };
+    this.vkCache.clear();
+    return { recoveryKey: r.recoveryKey };
   }
 
   /** List vaults and unwrap each VK grant into the in-memory cache. */
