@@ -73,7 +73,10 @@ A zero-knowledge vault for the humans and teams who run the infrastructure.
   per-item sharing, and cryptographic key grants.
 - **Multi-device**: enroll devices with a verifiable code; each device gets its own keypair.
 - **Passkeys**: unlock with WebAuthn (PRF) in addition to your master password.
-- **Recovery**: recovery-key escrow that never weakens the zero-knowledge guarantee.
+- **Recovery**: a dedicated recovery flow ([ADR-006](docs/arc-rfcs/ADR-006-master-password-recovery.md))
+  — lose your master password, re-enroll with your recovery key under a new one with **no
+  change to your cryptographic identity** (every grant + share stays valid), and the server
+  pins your public keys so recovery can never become account takeover.
 - **Rotation**: rotate vault keys, identity keys, and devices independently.
 
 ### 🤖 Agentic identity (Engine C) — [ADR-005](docs/arc-rfcs/ADR-005-agentic-identity-engine-c.md)
@@ -252,7 +255,7 @@ sdks/        arc-js-sdk
 plugins/     cloud/{aws,gcp,azure} · scm/{github,gitlab,bitbucket}
 integrations/ arc-openbao-adapter · arc-mcp-server      crates/ vault-crypto-rs · desktop-core
 infra/       arc-helm-charts · arc-terraform · arc-release
-docs/        protocol specs · ADRs (ADR-001..005) · manual-testing playbook · STATUS.md
+docs/        protocol specs · ADRs (ADR-001..006) · manual-testing playbook · STATUS.md
 ```
 
 The canonical "where does code belong" map and the dependency rules live in

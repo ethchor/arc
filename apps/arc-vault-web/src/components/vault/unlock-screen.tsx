@@ -29,6 +29,12 @@ interface Props {
    * even when no passkey is registered yet (server returns 404 → friendly toast).
    */
   onPasskeyUnlock?: () => void;
+  /**
+   * Optional — when present, the unlock screen shows a low-emphasis "Forgot your master
+   * password?" link that routes to the dedicated recovery screen (ADR-006). Recovery is a
+   * rare, multi-step break-glass flow, so it gets its own screen rather than living inline.
+   */
+  onForgotPassword?: () => void;
 }
 
 export function UnlockScreen({
@@ -39,6 +45,7 @@ export function UnlockScreen({
   onEnroll,
   onNewDevice,
   onPasskeyUnlock,
+  onForgotPassword,
 }: Props) {
   const [baseUrl, setBaseUrl] = React.useState("http://localhost:3001");
   const [email, setEmail] = React.useState("");
@@ -155,6 +162,16 @@ export function UnlockScreen({
                 <Button variant="ghost" className="w-full" disabled={busy} onClick={onNewDevice}>
                   Set up as a new device
                 </Button>
+              )}
+              {onForgotPassword && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={onForgotPassword}
+                  className="mt-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
+                >
+                  Forgot your master password?
+                </button>
               )}
             </CardFooter>
           </>

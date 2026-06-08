@@ -24,6 +24,7 @@ import {
   EnrollDto,
   PasskeyRegisterDto,
   PasskeyUnlockDto,
+  RecoverKeysetDto,
   PutHeadDto,
   RegisterDeviceDto,
   RotateKeyDto,
@@ -60,6 +61,16 @@ export class VaultController {
   @Post("vault/unlock")
   unlock(@CurrentUser() u: CurrentUserData, @Body() dto: UnlockDto) {
     return this.vault.unlock(u.userId, dto.authHash);
+  }
+
+  /**
+   * Master-password recovery (ADR-006): re-wrap an existing keyset under a new master
+   * password using the recovery key. The server pins every public key, so this can never
+   * swap the account's identity — only the wrapping layer changes.
+   */
+  @Post("vault/keyset/recover")
+  recoverKeyset(@CurrentUser() u: CurrentUserData, @Body() dto: RecoverKeysetDto) {
+    return this.vault.recoverKeyset(u.userId, dto);
   }
 
   // --- Passkey unlock (docs/13) — additive to master-password ---

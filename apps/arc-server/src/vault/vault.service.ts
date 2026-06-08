@@ -35,6 +35,7 @@ import type {
   CreateVaultDto,
   EnrollDto,
   PutHeadDto,
+  RecoverKeysetDto,
   RegisterDeviceDto,
   RotateKeyDto,
   UpdateVaultUiDto,
@@ -132,6 +133,7 @@ export class VaultService {
         encSigningPriv: dto.encSigningPriv,
         encIdentityPrivRecovery: dto.encIdentityPrivRecovery,
         encIdentityPrivMlkemRecovery: dto.encIdentityPrivMlkemRecovery,
+        encSigningPrivRecovery: dto.encSigningPrivRecovery ?? null,
         keyVersion: 1,
       }),
     );
@@ -184,8 +186,51 @@ export class VaultService {
       encSigningPriv: k.encSigningPriv,
       encIdentityPrivRecovery: k.encIdentityPrivRecovery,
       encIdentityPrivMlkemRecovery: k.encIdentityPrivMlkemRecovery,
+      encSigningPrivRecovery: k.encSigningPrivRecovery,
       keyVersion: k.keyVersion,
     };
+  }
+
+  /**
+   * Master-password recovery (ADR-006): replace the *wrapping* layer of an existing keyset.
+   * The three public keys are **pinned** — any mismatch is rejected, which is the
+   * anti-takeover guarantee (a session-holder without the recovery key can never swap in
+   * their own identity). The identity stays the same, so every grant + signature keeps
+   * working; only the password-derived + recovery wrapping, salts, authHash, and
+   * self-attestation change.
+   */
+  async recoverKeyset(userId: number, dto: RecoverKeysetDto) {
+    const k = await this.userKeys.findOne({ where: { userId } });
+    if (!k) throw new NotFoundException("not enrolled");
+
+    if (
+      dto.identityPublicKey !== k.identityPublicKey ||
+      dto.identityPublicKeyMlkem !== k.identityPublicKeyMlkem ||
+      dto.signingPublicKey !== k.signingPublicKey
+    ) {
+      // Pinned identity: recovery re-wraps the *same* keys, it never rotates the identity.
+      throw new BadRequestException({ error: "identity_pubkey_mismatch" });
+    }
+
+    const serverSalt = toB64u(randomBytes(16));
+    k.saltMk = dto.saltMk;
+    k.saltAuth = dto.saltAuth;
+    k.argonParams = dto.argonParams;
+    k.authHashStored = serverHashAuth(dto.authHash, serverSalt);
+    k.serverSalt = serverSalt;
+    k.identitySelfAttestation = dto.identitySelfAttestation;
+    k.encIdentityPriv = dto.encIdentityPriv;
+    k.encIdentityPrivMlkem = dto.encIdentityPrivMlkem;
+    k.encSigningPriv = dto.encSigningPriv;
+    k.encIdentityPrivRecovery = dto.encIdentityPrivRecovery;
+    k.encIdentityPrivMlkemRecovery = dto.encIdentityPrivMlkemRecovery;
+    k.encSigningPrivRecovery = dto.encSigningPrivRecovery;
+    await this.userKeys.save(k);
+
+    // Clear any unlock-attempt lockout — the password just legitimately changed.
+    this.attempts.delete(userId);
+    await this.writeAudit(null, userId, "keyset_recovered", null);
+    return { ok: true };
   }
 
   async unlock(userId: number, authHash: string) {

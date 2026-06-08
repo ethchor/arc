@@ -949,8 +949,18 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
 
 ### Open product questions
 
-- [?] Web: should the master-password recovery flow live in the unlock screen or as a
-  separate route? Today it's tucked behind a button in `RecoveryKeyCard`.
+- ~~[?] Web: should the master-password recovery flow live in the unlock screen or as a
+  separate route?~~ → resolved (ADR-006): a **dedicated `RecoverScreen`** reached from a
+  low-emphasis "Forgot your master password?" link on the unlock screen. Recovery is a rare,
+  high-stakes, multi-step break-glass flow, so it gets its own screen rather than cluttering
+  the per-session unlock hot path. Built the flow end-to-end (it didn't fully exist before):
+  `@arc/crypto` `recover()` (re-wraps the recovered identity + signing keys under a new
+  password + new recovery key, **no public-key change**), additive `encSigningPrivRecovery`
+  so the signing key is recoverable too, `POST /vault/keyset/recover` that **pins every
+  public key** (anti-takeover — a session-holder without the recovery key can't swap the
+  identity), SDK `recoverWithKey`, migration `1718200000000`. **10 tests** (4 crypto
+  round-trip / rotation / refusal, 3 e2e restore-access + key-rotation + 400-on-pubkey-mismatch,
+  + the existing recoverIdentityPriv coverage). ADR-006 Accepted.
 - ~~[?] TOTP: support `otpauth://` URI import (most clients export this format)?~~ → yes,
   shipped in this batch (TotpDialog auto-detects on paste).
 - ~~[?] Secure notes: do they need rich text or is plaintext-with-newlines fine for v1?~~ →

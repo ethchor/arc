@@ -34,6 +34,7 @@ import { TotpCard } from "@/components/vault/totp-card";
 import { TotpDialog, type TotpInput } from "@/components/vault/totp-dialog";
 import { NewFolderDialog } from "@/components/vault/new-folder-dialog";
 import { PoliciesView } from "@/components/vault/policies-view";
+import { RecoverScreen } from "@/components/vault/recover-screen";
 import { RecoveryKeyCard } from "@/components/vault/recovery-key-card";
 import { SettingsDialog } from "@/components/vault/settings-dialog";
 import { ShareDialog } from "@/components/vault/share-dialog";
@@ -68,7 +69,7 @@ interface SecretData {
   key: string;
   value: string;
 }
-type Phase = "login" | "account" | "device-pending" | "unlocked";
+type Phase = "login" | "account" | "device-pending" | "recover" | "unlocked";
 
 // PulledItem.data is JsonValue | null. The strict union doesn't structurally overlap with
 // our concrete item shapes, so we cast through `unknown` after discriminating on `type`.
@@ -189,6 +190,17 @@ export function VaultApp() {
       setRecoveryKey(result.recoveryKey);
       await loadVaults();
       setPhase("unlocked");
+    });
+
+  // ADR-006: recover with the recovery key + a new password. On success the client is
+  // unlocked with the same identity; we surface the *new* recovery key for the user to save.
+  const recoverWithKey = (recoveryKeyInput: string, newPassword: string) =>
+    guard(async () => {
+      const result = await getClient().recoverWithKey(recoveryKeyInput, newPassword);
+      setRecoveryKey(result.recoveryKey);
+      await loadVaults();
+      setPhase("unlocked");
+      toast.success("Vault recovered — your new recovery key is shown below");
     });
 
   const startNewDevice = () =>
@@ -403,6 +415,15 @@ export function VaultApp() {
     );
   }
 
+  if (phase === "recover") {
+    return (
+      <div className="min-h-screen">
+        <SiteHeader />
+        <RecoverScreen busy={busy} onRecover={recoverWithKey} onBack={() => setPhase("account")} />
+      </div>
+    );
+  }
+
   if (phase !== "unlocked") {
     return (
       <div className="min-h-screen">
@@ -415,6 +436,7 @@ export function VaultApp() {
           onEnroll={enroll}
           onNewDevice={startNewDevice}
           onPasskeyUnlock={unlockWithPasskey}
+          onForgotPassword={phase === "account" ? () => setPhase("recover") : undefined}
         />
       </div>
     );

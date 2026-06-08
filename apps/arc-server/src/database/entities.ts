@@ -89,6 +89,13 @@ export class VaultUserKeysEntity {
   @Column({ type: "simple-json" })
   encIdentityPrivMlkemRecovery!: EnvelopeJson;
 
+  /**
+   * Signing (Ed25519) private key wrapped under the recovery-derived KEK (ADR-006). Nullable
+   * for back-compat: keysets enrolled before ADR-006 lack it and can't do a clean recovery.
+   */
+  @Column({ type: "simple-json", nullable: true })
+  encSigningPrivRecovery!: EnvelopeJson | null;
+
   @Column({ type: "int", default: 1 })
   keyVersion!: number;
 
