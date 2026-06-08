@@ -25,6 +25,7 @@ import {
   CreateVaultDto,
   EnrollDto,
   PasskeyRegisterDto,
+  PasskeyDiscoverUnlockDto,
   PasskeyUnlockDto,
   RecoverKeysetDto,
   PutHeadDto,
@@ -371,5 +372,28 @@ export class VaultController {
       ...(limit !== undefined ? { limit: Number(limit) } : {}),
       ...(before !== undefined ? { before } : {}),
     });
+  }
+}
+
+/**
+ * Discoverable (username-less) passkey unlock (ADR-008). **Unauthenticated by design** —
+ * the user has no session yet; the WebAuthn assertion is the proof of account control.
+ * Separate controller so the class-level `JwtAuthGuard` on `VaultController` doesn't apply.
+ * Routes still live under the `/vault/passkey/*` prefix so they share the same surface.
+ */
+@Controller()
+export class PasskeyDiscoverController {
+  constructor(private readonly passkey: PasskeyService) {}
+
+  @Post("vault/passkey/discover-challenge")
+  challenge() {
+    return this.passkey.beginDiscoverableUnlock();
+  }
+
+  @Post("vault/passkey/discover-unlock")
+  unlock(@Body() dto: PasskeyDiscoverUnlockDto) {
+    return this.passkey.finishDiscoverableUnlock(
+      dto.assertion as unknown as AuthenticationResponseJSON,
+    );
   }
 }

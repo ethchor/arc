@@ -191,3 +191,12 @@ export class PasskeyUnlockDto {
   /** WebAuthn assertion response JSON, exactly as `navigator.credentials.get` returns it. */
   @IsObject() assertion!: Record<string, unknown>;
 }
+
+/**
+ * Username-less / discoverable unlock (ADR-008). Body carries only the WebAuthn assertion;
+ * the server resolves the user from `assertion.response.userHandle` (set at registration as
+ * `encode(String(userId))`). No userId on the wire — that's the whole point.
+ */
+export class PasskeyDiscoverUnlockDto {
+  @IsObject() assertion!: Record<string, unknown>;
+}

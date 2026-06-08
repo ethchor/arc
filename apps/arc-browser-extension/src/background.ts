@@ -8,7 +8,7 @@
 // activity (touches the timer). MV3 service workers can also die between events; we tolerate
 // that — the popup re-derives unlock on first message, and `arc:status` reports
 // `unlocked: false` until a fresh `arc:unlock` succeeds.
-import { VaultClient } from "@arc/sdk";
+import { VaultClient, browserPasskeyAuthenticator } from "@arc/sdk";
 import { originMatches } from "./origin";
 import type {
   BackgroundMessage,
@@ -86,6 +86,45 @@ async function unlock(
   }
 }
 
+/**
+ * Username-less passkey unlock (ADR-008). One method on the SDK, two WebAuthn gestures
+ * under the hood (browsers may coalesce them) — sign-in via discoverable credential, then
+ * PRF unwrap. Zero typing. WebAuthn requires a user-activation gesture, which the popup's
+ * click provides; the prompt itself appears in the page-level WebAuthn UI.
+ */
+async function passkeyUnlock(baseUrl: string): Promise<UnlockResponse> {
+  try {
+    const next = new VaultClient({ baseUrl });
+    await next.signInAndUnlockWithPasskey(browserPasskeyAuthenticator());
+    const vaults = await next.listVaults();
+    const fetched: LoginEntry[] = [];
+    for (const v of vaults) {
+      const { items } = await next.pull(v.id, 0);
+      for (const item of items) {
+        if (item.deleted) continue;
+        const d = item.data as
+          | { type?: string; title?: string; fields?: { url?: string; username?: string; password?: string } }
+          | null;
+        if (d?.type === "login" && d.fields?.url) {
+          fetched.push({
+            id: item.id,
+            title: d.title ?? d.fields.url,
+            url: d.fields.url,
+            username: d.fields.username ?? "",
+            password: d.fields.password ?? "",
+          });
+        }
+      }
+    }
+    client = next;
+    logins = fetched;
+    touch();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 function status(): StatusResponse {
   if (!isUnlocked()) return { unlocked: false, lockInSeconds: null };
   const elapsed = Math.floor((Date.now() - lastActivityMs) / 1000);
@@ -96,6 +135,10 @@ function status(): StatusResponse {
 chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendResponse) => {
   if (message.type === "arc:unlock") {
     void unlock(message.baseUrl, message.email, message.masterPassword).then(sendResponse);
+    return true;
+  }
+  if (message.type === "arc:passkeyUnlock") {
+    void passkeyUnlock(message.baseUrl).then(sendResponse);
     return true;
   }
   if (message.type === "arc:status") {

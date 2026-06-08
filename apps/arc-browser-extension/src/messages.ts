@@ -4,6 +4,17 @@ export interface UnlockRequest {
   email: string;
   masterPassword: string;
 }
+/**
+ * Username-less passkey unlock (ADR-008). The user doesn't type an email — the popup
+ * triggers a WebAuthn prompt that picks the resident credential, and the background
+ * worker resolves the account on the server, signs in, and unwraps via PRF in one step.
+ * On modern browsers this is one biometric gesture; in the worst case it's two with
+ * **zero typing**, vs. email + master-password today.
+ */
+export interface PasskeyUnlockRequest {
+  type: "arc:passkeyUnlock";
+  baseUrl: string;
+}
 export interface UnlockResponse {
   ok: boolean;
   error?: string;
@@ -67,6 +78,7 @@ export interface SetAutolockRequest {
 
 export type BackgroundMessage =
   | UnlockRequest
+  | PasskeyUnlockRequest
   | FillRequest
   | ListRequest
   | GetRequest

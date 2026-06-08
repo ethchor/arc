@@ -1317,6 +1317,60 @@ export class VaultClient {
     this.vkCache.clear();
   }
 
+  /**
+   * Username-less / discoverable **sign-in** via passkey (ADR-008). The user doesn't type
+   * an email — the authenticator picks one of its resident credentials and the server
+   * resolves the account from `userHandle`. After this returns, the client is
+   * **signed in** (accessToken set) but not yet unlocked.
+   *
+   * The natural follow-on is {@link unlockWithPasskey} which performs the PRF unwrap with
+   * the now-known per-user salt — two biometric gestures in total on first cold launch
+   * (modern browsers may coalesce them into one prompt). On a previously signed-in
+   * session, `unlockWithPasskey` alone is one tap. The atomic helper
+   * {@link signInAndUnlockWithPasskey} sequences both steps if you don't need them apart.
+   */
+  async signInWithDiscoverablePasskey(
+    authenticator: PasskeyAuthenticator,
+  ): Promise<{ userId: number; email: string }> {
+    const opts = await this.http<PasskeyUnlockOptions>(
+      "POST",
+      "/vault/passkey/discover-challenge",
+    );
+    const assertion = await authenticator.get({
+      ...opts,
+      // PRF eval at this step is intentionally throw-away — we don't have the per-user
+      // salt yet, so we pass an empty input. The authenticator will compute *some* PRF
+      // output; we discard it. The follow-up `unlockWithPasskey` does the real PRF eval
+      // with the correct salt.
+      prfFirst: new Uint8Array(0),
+    });
+    const result = await this.http<{
+      accessToken: string;
+      userId: number;
+      email: string;
+      credentialId: string;
+    }>("POST", "/vault/passkey/discover-unlock", {
+      assertion: assertion.assertion as unknown as Record<string, unknown>,
+    });
+    this.token = result.accessToken;
+    this.userId = result.userId;
+    return { userId: result.userId, email: result.email };
+  }
+
+  /**
+   * Sign in *and* unlock with one method call. Runs the discoverable sign-in then the
+   * PRF-based unlock back-to-back. On platforms where the browser coalesces consecutive
+   * WebAuthn prompts this is one biometric gesture; in the worst case it's two — both
+   * fingerprint/face taps and **zero typing**.
+   */
+  async signInAndUnlockWithPasskey(
+    authenticator: PasskeyAuthenticator,
+  ): Promise<{ userId: number; email: string }> {
+    const who = await this.signInWithDiscoverablePasskey(authenticator);
+    await this.unlockWithPasskey(authenticator);
+    return who;
+  }
+
   /** List passkey credentials registered for the current account. */
   listPasskeys(): Promise<PasskeySummary[]> {
     return this.http<PasskeySummary[]>("GET", "/vault/passkeys");

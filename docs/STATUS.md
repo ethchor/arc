@@ -990,9 +990,27 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   to the new version; granter + grantee both revoke; non-member can't share; recipient
   can't re-share. Edit-shares (recipient writes back) and TTL'd shares are documented as
   follow-ups in ADR-007.
-- [?] Hardware-key (FIDO2 resident credential) as a primary unlock path on the
+- ~~[?] Hardware-key (FIDO2 resident credential) as a primary unlock path on the
   extension. Different from passkey-prf; would let the extension run unlocked across
-  browser restarts.
+  browser restarts.~~ → resolved (**ADR-008**) — accepted residency, rejected "survives
+  browser restarts." The proposal mixed (a) discoverable credentials, a real UX win at zero
+  cost, with (b) caching a long-lived KEK in extension storage so the extension comes back
+  pre-unlocked. The KEK-in-storage path walks back the zero-knowledge posture (filesystem
+  read of the profile dir = vault), so we don't ship it. What we *did* ship:
+  registration now uses `residentKey: "required"` (every new passkey is discoverable),
+  plus two unauthenticated endpoints (`POST /vault/passkey/discover-{challenge,unlock}`)
+  that resolve the user from the assertion's `userHandle` and mint a session token — no
+  email on the wire. SDK: `signInWithDiscoverablePasskey` + `signInAndUnlockWithPasskey`
+  (sign in via discoverable creds, then PRF unwrap; on supported browsers the two prompts
+  coalesce). Extension popup is **passkey-first** — primary button is *Unlock with passkey*,
+  master-password collapsed behind *Use master password instead*. Net UX: **two biometric
+  taps + zero typing** on first cold launch (vs. email + password + click); future "survives
+  restarts" work belongs in a separately-running desktop helper (Tauri wrap), not the
+  extension service worker — flagged in ADR-008. **6 e2e** through the real Nest app +
+  ES256 FakeAuthenticator: discoverable sign-in returns the right user; full sign-in +
+  PRF-unlock reads a pre-existing item byte-identical; anti-replay (unknown challenge),
+  missing `userHandle`, unknown `userHandle`, and the `residentKey: required` option flag
+  all asserted. Workspace 70/70 turbo green; server 36 suites, 183 passed.
 
 ----
 
