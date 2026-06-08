@@ -30,7 +30,7 @@ function buildHarness(): { plugins: PluginsService } {
   const registry = new MountRegistry();
   const leases = new LeaseManager();
   const enginesByMount = new Map<string, SecretsEngine>();
-  const config: EnginesConfig = { client: null, registry, enginesByMount, leases };
+  const config: EnginesConfig = { client: null, registry, enginesByMount, leases, manifestCapsByMount: new Map() };
   return { plugins: new PluginsService(config, new PluginManifestService()) };
 }
 

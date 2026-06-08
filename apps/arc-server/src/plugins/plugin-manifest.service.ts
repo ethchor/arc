@@ -20,9 +20,16 @@ import type {
  * Trust roots are configured by env: `ARC_PLUGIN_TRUST_ANCHORS` is a comma-separated list
  * of `publisher:<id>=<b64url-Ed25519-pub>` pairs. A manifest is accepted only when its
  * `publisher` resolves to one of these pubs *and* the Ed25519 signature verifies *and* the
- * pinned `sha256` matches the actual artifact bytes. Honest framing: this is *who built it*
- * + *what it is* binding — it does **not** sandbox the running plugin (ADR-004 does that)
- * or enforce capabilities (a follow-up).
+ * pinned `sha256` matches the actual artifact bytes.
+ *
+ * **Capability gate (ADR-005 Phase 5b runtime extension).** A manifest's `capabilities`
+ * list — when present — must consist solely of names from the canonical arc-grants verb
+ * vocabulary (`create | read | update | delete | list | sudo`); an unknown verb fails
+ * verification. The resolved set is then surfaced on {@link ManifestVerifyResult} so the
+ * plugin host can stamp it onto the mount; the engine dispatcher refuses every request
+ * for an undeclared capability at runtime. This is what turns the manifest from "who
+ * built it + what it is" into "what it's *allowed* to do" — sandbox / sigstore-level
+ * intent is still ADR-004's job.
  */
 export interface ManifestVerifyResult {
   ok: boolean;
@@ -38,8 +45,23 @@ export interface ManifestVerifyResult {
     | "kind_mismatch"
     | "artifact_hash_mismatch"
     | "manifest_unsupported_version"
-    | "artifact_unreadable";
+    | "artifact_unreadable"
+    | "capability_unknown";
 }
+
+/**
+ * Canonical capability vocabulary, mirroring `@arc/grants`'s `Capability` and Vault's verb
+ * set. A manifest that declares anything outside this set is rejected at verify-time so
+ * operator typos surface immediately rather than turning into permissive-by-accident gates.
+ */
+export const KNOWN_PLUGIN_CAPABILITIES: ReadonlySet<string> = new Set([
+  "create",
+  "read",
+  "update",
+  "delete",
+  "list",
+  "sudo",
+]);
 
 @Injectable()
 export class PluginManifestService {
@@ -90,6 +112,12 @@ export class PluginManifestService {
     const actual = pluginArtifactDigest(bytes);
     if (actual.toLowerCase() !== claims.sha256.toLowerCase()) {
       return reject("artifact_hash_mismatch");
+    }
+
+    if (claims.capabilities !== undefined) {
+      for (const cap of claims.capabilities) {
+        if (!KNOWN_PLUGIN_CAPABILITIES.has(cap)) return reject("capability_unknown");
+      }
     }
 
     const out: ManifestVerifyResult = {

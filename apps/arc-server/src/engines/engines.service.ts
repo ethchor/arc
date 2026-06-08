@@ -38,6 +38,15 @@ export interface EnginesConfig {
    * this so `sys/leases/renew`/`revoke` can look them up by arc id regardless of engine.
    */
   leases: LeaseManager;
+  /**
+   * Per-mount capability declarations from a verified plugin manifest (ADR-005 Phase 5b
+   * runtime gate). The map is populated by {@link PluginsService} at mount time when
+   * `manifest.claims.capabilities` is present and verified, and consulted by
+   * {@link EnginesService.requirePluginCapability} on every dispatch. Absence of a mount
+   * key — or a `null` value — means "no manifest cap list pinned" → no enforcement, same
+   * posture as a built-in OpenBao engine.
+   */
+  manifestCapsByMount: Map<string, ReadonlySet<string> | null>;
 }
 
 /**
@@ -96,15 +105,17 @@ export class EnginesService {
     requestPath: string,
     query: Record<string, string | string[] | undefined>,
   ): Promise<Record<string, unknown>> {
-    const { engine, relativePath } = this.resolve(requestPath);
+    const { engine, relativePath, mountPath } = this.resolve(requestPath);
     if (engine.type === "kv-v2") {
       const kv = engine as KvEngine;
       const listMode = query.list === "true" || query.list === "1";
       if (listMode && relativePath.startsWith("metadata/")) {
+        this.requirePluginCapability(mountPath, "list");
         const keys = await kv.list(relativePath.slice("metadata/".length));
         return { data: { keys } };
       }
       if (relativePath.startsWith("data/")) {
+        this.requirePluginCapability(mountPath, "read");
         const versionRaw = pickFirst(query.version);
         const version = versionRaw === undefined ? undefined : Number(versionRaw);
         const read = await kv.get(relativePath.slice("data/".length), version);
@@ -127,18 +138,22 @@ export class EnginesService {
       const pki = engine as PkiEngine;
       const listMode = query.list === "true" || query.list === "1";
       if (listMode && relativePath === "certs") {
+        this.requirePluginCapability(mountPath, "list");
         const keys = await pki.listCertificates();
         return { data: { keys } };
       }
       if (relativePath === "ca/pem" || relativePath === "ca") {
+        this.requirePluginCapability(mountPath, "read");
         const cert = await pki.readCaCertificate();
         return { data: { certificate: cert } };
       }
       if (relativePath === "ca_chain") {
+        this.requirePluginCapability(mountPath, "read");
         const chain = await pki.readCaChain();
         return { data: { ca_chain: chain } };
       }
       if (relativePath.startsWith("cert/")) {
+        this.requirePluginCapability(mountPath, "read");
         const serial = relativePath.slice("cert/".length);
         const cert = await pki.readCertificate(serial);
         const data: Record<string, unknown> = { certificate: cert.certificate };
@@ -151,6 +166,9 @@ export class EnginesService {
     // through `<mount>/creds/<role>`. Routing is by capability (DynamicSecretsEngine
     // shape), not by `type` string, so plugins don't need to claim "database".
     if (relativePath.startsWith("creds/") && isDynamicSecretsEngine(engine)) {
+      // Issuing a dynamic credential is a `read` of `<mount>/creds/<role>` in Vault's
+      // policy vocabulary — declaring `read` is what unlocks the dynamic-secrets path.
+      this.requirePluginCapability(mountPath, "read");
       const role = relativePath.slice("creds/".length);
       let issued;
       try {
@@ -192,6 +210,7 @@ export class EnginesService {
         errors: [`engine ${engine.type} at ${lease.mount} does not support leasing`],
       });
     }
+    this.requirePluginCapability(lease.mount, "update");
     try {
       const renewed = await engine.renew(leaseId, incrementSeconds);
       this.metrics?.leases.labels(engine.type, "renew").inc();
@@ -223,6 +242,7 @@ export class EnginesService {
         errors: [`engine ${engine.type} at ${lease.mount} does not support leasing`],
       });
     }
+    this.requirePluginCapability(lease.mount, "delete");
     try {
       await engine.revoke(leaseId);
       this.metrics?.leases.labels(engine.type, "revoke").inc();
@@ -261,9 +281,13 @@ export class EnginesService {
     requestPath: string,
     body: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const { engine, relativePath } = this.resolve(requestPath);
+    const { engine, relativePath, mountPath } = this.resolve(requestPath);
 
     if (engine.type === "kv-v2" && relativePath.startsWith("data/")) {
+      // KV-v2 PUT covers both create and update in Vault's policy; the gate accepts
+      // either declared verb so a manifest doesn't have to predict whether the key
+      // already exists.
+      this.requirePluginCapabilityOneOf(mountPath, ["create", "update"]);
       const kv = engine as KvEngine;
       const data = (body.data as Record<string, unknown> | undefined) ?? {};
       const options = body.options as { cas?: number } | undefined;
@@ -279,9 +303,11 @@ export class EnginesService {
         const rest = relativePath.slice("keys/".length);
         const rotateMatch = /^(.+)\/rotate$/.exec(rest);
         if (rotateMatch) {
+          this.requirePluginCapability(mountPath, "update");
           const { latestVersion } = await transit.rotateKey(rotateMatch[1]!);
           return { data: { latest_version: latestVersion } };
         }
+        this.requirePluginCapability(mountPath, "create");
         await transit.createKey(rest, {
           algorithm: typeof body.type === "string" ? (body.type as string) : undefined,
           exportable:
@@ -290,6 +316,7 @@ export class EnginesService {
         return { data: { created: true } };
       }
       if (relativePath.startsWith("encrypt/")) {
+        this.requirePluginCapability(mountPath, "update");
         const keyName = relativePath.slice("encrypt/".length);
         const plaintextB64 = body.plaintext;
         if (typeof plaintextB64 !== "string") {
@@ -302,6 +329,7 @@ export class EnginesService {
         return { data: { ciphertext: ct.ciphertext, key_version: ct.keyVersion } };
       }
       if (relativePath.startsWith("decrypt/")) {
+        this.requirePluginCapability(mountPath, "update");
         const keyName = relativePath.slice("decrypt/".length);
         const ciphertext = body.ciphertext;
         if (typeof ciphertext !== "string") {
@@ -319,6 +347,7 @@ export class EnginesService {
     if (engine.type === "pki") {
       const pki = engine as PkiEngine;
       if (relativePath.startsWith("issue/")) {
+        this.requirePluginCapability(mountPath, "update");
         const role = relativePath.slice("issue/".length);
         const issued = await pki.issueCertificate(role, parsePkiIssueBody(body));
         return {
@@ -334,6 +363,7 @@ export class EnginesService {
         };
       }
       if (relativePath.startsWith("sign/")) {
+        this.requirePluginCapability(mountPath, "update");
         const role = relativePath.slice("sign/".length);
         const signed = await pki.signCsr(role, parsePkiSignBody(body));
         return {
@@ -347,6 +377,7 @@ export class EnginesService {
         };
       }
       if (relativePath === "revoke") {
+        this.requirePluginCapability(mountPath, "update");
         const serial = body.serial_number;
         if (typeof serial !== "string") {
           throw new NotFoundException({ errors: ["pki/revoke requires `serial_number`"] });
@@ -364,8 +395,9 @@ export class EnginesService {
 
   /** KV soft-delete on `<mount>/data/<key>`. */
   async delete(requestPath: string): Promise<void> {
-    const { engine, relativePath } = this.resolve(requestPath);
+    const { engine, relativePath, mountPath } = this.resolve(requestPath);
     if (engine.type === "kv-v2" && relativePath.startsWith("data/")) {
+      this.requirePluginCapability(mountPath, "delete");
       await (engine as KvEngine).deleteLatest(relativePath.slice("data/".length));
       return;
     }
@@ -386,7 +418,7 @@ export class EnginesService {
     throw err;
   }
 
-  private resolve(requestPath: string): { engine: SecretsEngine; relativePath: string } {
+  private resolve(requestPath: string): { engine: SecretsEngine; relativePath: string; mountPath: string } {
     // No requireClient() — a plugin-mounted path is reachable without an OpenBao backend.
     // If the path doesn't resolve, 404 is the right error (not 503), regardless of whether
     // a backend is configured.
@@ -400,7 +432,55 @@ export class EnginesService {
         errors: [`engine not registered for mount ${resolved.mount.path}`],
       });
     }
-    return { engine, relativePath: resolved.relativePath };
+    return { engine, relativePath: resolved.relativePath, mountPath: resolved.mount.path };
+  }
+
+  /**
+   * Plugin runtime capability gate (ADR-005 Phase 5b). When a plugin's verified manifest
+   * declared a `capabilities` list, every dispatch against that mount is checked against
+   * the set; `sudo` short-circuits to allow. Mounts with no manifest-pinned set (built-in
+   * engines, plugins that omitted `capabilities`) bypass the gate — same behavior as before
+   * the gate landed.
+   *
+   * The throw uses {@link BadRequestException} with `reason: "plugin_capability_not_declared"`
+   * so operators can grep audit logs for plugins they need to update; the response includes
+   * the requested capability + the declared set so the fix is "add this verb to the manifest".
+   */
+  private requirePluginCapability(mountPath: string, capability: string): void {
+    const declared = this.config.manifestCapsByMount.get(mountPath);
+    if (!declared) return;
+    if (declared.has("sudo") || declared.has(capability)) return;
+    throw new BadRequestException({
+      errors: [
+        `plugin at ${mountPath} did not declare capability "${capability}" in its manifest`,
+      ],
+      reason: "plugin_capability_not_declared",
+      capability,
+      mount: mountPath,
+      declared: [...declared].sort(),
+    });
+  }
+
+  /**
+   * `requirePluginCapability` variant for operations that the manifest can satisfy by
+   * declaring **any** of a small set of verbs (e.g. KV PUT covers create-or-update).
+   * `sudo` short-circuits; any listed verb in `declared` allows; otherwise refuse with the
+   * full requested set in the error so the operator knows which verbs would unblock.
+   */
+  private requirePluginCapabilityOneOf(mountPath: string, anyOf: readonly string[]): void {
+    const declared = this.config.manifestCapsByMount.get(mountPath);
+    if (!declared) return;
+    if (declared.has("sudo")) return;
+    if (anyOf.some((c) => declared.has(c))) return;
+    throw new BadRequestException({
+      errors: [
+        `plugin at ${mountPath} did not declare any of [${anyOf.join(", ")}] in its manifest`,
+      ],
+      reason: "plugin_capability_not_declared",
+      capability: anyOf.join("|"),
+      mount: mountPath,
+      declared: [...declared].sort(),
+    });
   }
 
   private requireClient(): OpenBaoClient {
