@@ -76,6 +76,34 @@ A zero-knowledge vault for the humans and teams who run the infrastructure.
 - **Recovery**: recovery-key escrow that never weakens the zero-knowledge guarantee.
 - **Rotation**: rotate vault keys, identity keys, and devices independently.
 
+### 🤖 Agentic identity (Engine C) — [ADR-005](docs/arc-rfcs/ADR-005-agentic-identity-engine-c.md)
+A first-class principal type for AI agents with a *cryptographic* human→agent→action chain.
+
+- **Verifiable agent identity** — every agent has its own Ed25519 signing + ML-KEM hybrid
+  identity keypair, attaches to `@arc/grants` policies via an `agent:<id>` subject handle, and
+  presents an optional **SPIFFE / sigstore / TPM attestation** behind a pluggable verifier.
+- **Signed delegation that can only narrow** — a human signs a `DelegationGrant` (scopes,
+  task id, expiry, call budget); the effective decision is the *intersection* of
+  *delegated ∩ delegator-policy ∩ agent-policy*, so a delegation can never escalate authority
+  the delegator lacks or accumulate beyond the agent's own ceiling.
+- **Signed intents + per-task hash chain** — every action is an agent-signed intent whose
+  `argsDigest` binds the body; intents fold into a `chainNext` per-task hash chain — a
+  tamper-evident, replay/gap-detectable cryptographic record of what the agent did.
+- **Push-consent (CIBA) for elevated ops** — elevated actions block until the owning human
+  proves control with a **WebAuthn assertion** on a registered passkey; arc's CIBA, on its
+  own passkey stack, no third-party IdP.
+- **Task budgets + cascading revoke** — wall-clock / max-calls / max-secrets-unsealed per
+  task; closing a task revokes every delegation **and** every Engine-A lease tagged with its
+  id in one shot.
+- **Self-authenticating agents** — challenge-response over the agent's signing key issues a
+  short-lived JWT carrying the owner as `sub` plus the RFC 8693 `act: { sub: "agent:<id>" }`
+  claim, so the on-behalf-of relationship is legible to standard OAuth tooling.
+- **Signed plugin manifests** — plugin binaries (`.wasm` or OOP executables) only mount when
+  their manifest pins the SHA-256 *and* names a publisher in the trust-anchor allowlist —
+  tampered bytes or unknown signers refuse to spawn before any child is forked.
+- **NHI inventory in the web console** — surfaces every agent: status, attestation,
+  autonomy, last-seen, and quick controls for *toggle autonomy / suspend ↔ resume / retire*.
+
 ### 🧭 One identity, policy, and audit plane
 - **Policy engine** (`@arc/grants`): path + capability ACLs, groups/roles, default-deny posture,
   with a cached, persisted policy store.
@@ -94,8 +122,9 @@ a CI matrix that builds, tests, and validates every surface on every change.
 
 ## Architecture
 
-Two engines, one control plane. `arc-server` (NestJS) unifies authentication, authorization,
-audit, and the plugin host; it routes every request through the same identity and policy model.
+Three engines, one control plane. `arc-server` (NestJS) unifies authentication, authorization,
+audit, and the plugin host; it routes every request — human or agent — through the same identity
+and policy model.
 
 ```mermaid
 flowchart TB
@@ -106,15 +135,16 @@ flowchart TB
         EXT["Browser<br/>extension"]
         CLI["CLI"]
         SDK["SDK / REST API"]
+        MCP["MCP server<br/>agent surface"]
     end
 
     subgraph SRV["arc-server — one control plane (NestJS)"]
         direction LR
-        ID["Identity &amp; auth<br/>JWT · passkeys · devices"]
+        ID["Identity &amp; auth<br/>JWT · passkeys · devices · agents"]
         POL["Policy engine<br/>@arc/grants ACL"]
         AUD["Audit<br/>metadata-only"]
         OBS["Observability<br/>OTel · /metrics"]
-        HOST["Plugin host"]
+        HOST["Plugin host<br/>signed manifests"]
     end
 
     subgraph EA["Engine A — infrastructure secrets"]
@@ -138,12 +168,22 @@ flowchart TB
         CRS["vault-crypto-rs<br/>Rust"]
     end
 
+    subgraph EC["Engine C — agentic identity (ADR-005)"]
+        direction LR
+        AGENT["AgentIdentity<br/>own keys + attestation"]
+        DEL["Signed delegation<br/>narrow-only intersection"]
+        INT["Signed intents<br/>+ per-task hash chain"]
+        APP["Push-consent (CIBA)<br/>passkey approval"]
+    end
+
     BK[("Secrets backend<br/>swappable per mount")]
     DB[("PostgreSQL<br/>ciphertext + metadata")]
 
     CL ==>|"one identity · one API"| SRV
     SRV --> EA
     SRV --> EB
+    SRV --> EC
+    EC -.->|"task close cascades"| LS
     HOST --> PL
     REG --> KV
     REG --> TR
@@ -210,9 +250,9 @@ packages/    arc-types · arc-crypto · arc-grants · arc-leasing · arc-secrets
 apps/        arc-server · arc-vault-web · arc-vault-desktop · arc-browser-extension · arc-cli
 sdks/        arc-js-sdk
 plugins/     cloud/{aws,gcp,azure} · scm/{github,gitlab,bitbucket}
-integrations/ arc-openbao-adapter        crates/ vault-crypto-rs · desktop-core
+integrations/ arc-openbao-adapter · arc-mcp-server      crates/ vault-crypto-rs · desktop-core
 infra/       arc-helm-charts · arc-terraform · arc-release
-docs/        protocol specs · ADRs · manual-testing playbook · STATUS.md
+docs/        protocol specs · ADRs (ADR-001..005) · manual-testing playbook · STATUS.md
 ```
 
 The canonical "where does code belong" map and the dependency rules live in
@@ -360,11 +400,18 @@ pnpm hooks:install   # (re)install the pre-push hook; runs automatically on pnpm
 
 ## Roadmap & north star
 
-**Near-term** (tracked live in [`docs/STATUS.md`](docs/STATUS.md)):
-an **MCP server** (`integrations/arc-mcp-server`) that exposes arc over the
-[Model Context Protocol](https://modelcontextprotocol.io) · the Kubernetes operator for secret
-injection · the client-side agent · multi-device key rotation with auto-revoke · out-of-process
-(WASM/gRPC) plugin sandbox.
+**Shipped recently** (tracked live in [`docs/STATUS.md`](docs/STATUS.md)):
+the full **Engine-C agentic identity layer** ([ADR-005](docs/arc-rfcs/ADR-005-agentic-identity-engine-c.md))
+— first-class agent principals, signed narrow-only delegations, signed-intent task chains
+with cascading revoke, push-consent CIBA via passkeys, SPIFFE attestation, agent self-auth
+with the RFC 8693 `act` claim, signed plugin manifests, and the NHI inventory in the web
+console · the **MCP server** (`integrations/arc-mcp-server`) that exposes arc over the
+[Model Context Protocol](https://modelcontextprotocol.io) · multi-device key rotation with
+auto-revoke · out-of-process (WASM/gRPC) plugin sandbox.
+
+**Near-term:** the Kubernetes operator for secret injection · the client-side agent for
+auto-auth and templating · enforce-mode SVID cryptographic validation in the attestation
+verifier · the runtime capability gate on plugins' declared `capabilities`.
 
 **The engine north star.** Engine A's contracts are deliberately backend-agnostic and route per
 mount, which makes the reference OpenBao backend an *implementation detail, not a dependency*. The
@@ -373,16 +420,18 @@ intelligent, self-contained core we own end-to-end, migrated mount-by-mount with
 rewrite. We build the product first and earn the right to replace the foundation underneath it,
 deliberately, when the leverage is there.
 
-**The agentic north star.** The next wave of consumers won't only be humans and CI jobs — it'll be
+**The agentic north star.** The next wave of consumers isn't only humans and CI jobs — it's
 autonomous and intelligent systems that need to hold, request, and rotate credentials continuously.
-arc is being built so those systems are first-class: scoped, auditable, revocable capabilities and
-machine identities, never raw key material. The concrete vehicle is an **MCP (Model Context
-Protocol) server**: any MCP-capable agent authenticates with a machine identity (via the OIDC /
-Kubernetes auth methods), receives a policy-bound token, and then calls arc operations — fetch a
-secret, mint a dynamic credential, encrypt via transit — as MCP *tools*, each authorized by
-`@arc/grants` and recorded in the audit log, and **never** handed the E2E master key. Because MCP is
-an open standard, the same server works with any agent runtime. A secrets platform robust enough
-for a person should be robust enough for an agent — and ours is designed for both.
+arc treats them as first-class principals **today**: every agent has a verifiable identity, every
+delegation is signed and can only narrow, every action is an agent-signed intent folded into a
+cryptographic per-task chain, elevation needs a passkey out-of-band, tasks close in one shot, and
+every plugin's binary must trace back to a trusted publisher. The concrete agent surface is the
+**MCP (Model Context Protocol) server** (`integrations/arc-mcp-server`): any MCP-capable agent
+authenticates via the Engine-C credential path, receives a short-lived token carrying the RFC 8693
+`act` claim, and calls arc operations — fetch a secret, mint a dynamic credential, encrypt via
+transit — as MCP *tools*, each authorized by `@arc/grants` and recorded in the audit log, and
+**never** handed the E2E master key. The point isn't that agents *can* use arc — it's that the
+human→agent→action chain is a verifiable cryptographic artifact, not a stack of bearer tokens.
 
 ---
 
