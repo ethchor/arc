@@ -7,6 +7,9 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "arc-plugin-aws": "./dist/bin.cjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

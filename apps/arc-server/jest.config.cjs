@@ -26,6 +26,9 @@ module.exports = {
     "^@arc/plugin-bitbucket$": "<rootDir>/../../plugins/scm/arc-plugin-bitbucket/dist/index.cjs",
     "^@arc/sdk$": "<rootDir>/../../sdks/arc-js-sdk/src/index.ts",
     "^@arc/cli$": "<rootDir>/../../apps/arc-cli/src/index.ts",
+    // @arc/plugin-sign is a build-time tool, not a runtime dep — point at source for the
+    // signed-release e2e spec rather than gating tests on its dist.
+    "^@arc/plugin-sign$": "<rootDir>/../../tools/arc-plugin-sign/src/index.ts",
     // @arc/types now ships runtime values (VAULT_ICONS / VAULT_COLORS / type guards) in
     // addition to type declarations, so the server `require()`s it for real (the
     // production image needs the dual ESM/CJS build the package now emits). Tests point

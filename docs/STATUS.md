@@ -288,6 +288,29 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   allows, undeclared verb 400's with the structured reason, `sudo` short-circuits, unmount
   clears the pin, empty `[]` is the strict zero-trust posture). Workspace stays 70/70 turbo
   green (server 37 suites, 195 passed).
+- [x] **Signed plugin release toolchain** (`feat/signed-plugin-release-toolchain`). Closes
+  the gap between "the gate exists" and "operators can ship a signed plugin." New
+  `tools/arc-plugin-sign` workspace package (CLI + lib) — three subcommands:
+  - `arc-plugin-sign keygen` — generates an Ed25519 publisher keypair, writes the priv to a
+    mode-0600 file (so it isn't world-readable on shared CI runners), emits the pub on
+    stdout for `ARC_PLUGIN_TRUST_ANCHORS` pinning;
+  - `arc-plugin-sign sign --artifact … --priv {file|env:VAR} --capabilities <csv>` — hashes
+    the artifact bytes, validates the verb set against the arc-grants vocabulary upfront
+    (so typos fail at build time, not in production), emits a `SignedPluginManifest` JSON
+    file. `env:VAR` keeps the priv off disk in CI secrets;
+  - `arc-plugin-sign verify` — re-hash + signature + capability check, mirrors arc-server's
+    `PluginManifestService.verify` reason strings byte-for-byte so a local failure tells
+    operators exactly what would have failed in production. Exits 0/1/2.
+  Adds an OOP entry to `arc-plugin-aws` (`src/bin.ts` → `dist/bin.cjs` self-contained,
+  AWS-SDK external) that `RemoteSecretsPlugin.spawn` can invoke directly via the bin's
+  shebang — making the bin file itself the artifact the manifest pins. Workspace globs
+  grew to include `tools/*`. **22 new tests**: 9 lib spec (keygen freshness, round-trip
+  sign/verify, capability typo refused, default issuedAt, tamper detection, signer
+  mismatch, vocabulary), 10 CLI spec (keygen file modes, sign + verify CLI round-trip,
+  env:VAR priv path, missing env handles cleanly, verify exits 2 on tamper, invalid
+  --kind, unknown subcommand), 3 arc-server signed-release e2e (publisher signs → operator
+  pins → server mounts → gate dispatches; refusal on artifact tamper; refusal on
+  unanchored publisher). Workspace stays 73/73 turbo green (server 38 suites, 198 passed).
 - [x] **Agent self-authentication + RFC 8693 `act` claim** (`feat/agent-credential-path`).
   Completes the Phase-3 credential path: an agent proves control of its Ed25519 signing key
   via challenge-response (`POST /vault/agents/:id/auth/challenge` → sign the nonce →
