@@ -164,12 +164,13 @@ Anything that ships *between* the phases gets folded into the closest one.
 
 ## In progress (this branch)
 
-- (nothing — Phase 3 priority queue (PKI adapter, DB dynamic creds, plugin host, per-mount
-  ACL) all shipped, plus persistent grants store + admin API + policy cache + AWS / GCP /
-  GitHub plugins + passkey server&SDK. Manual-testing playbook now lives at
-  [`docs/manual-testing/`](manual-testing/README.md) and is referenced from the root
-  `README.md`. Next pick from Pending — Passkey web UI, group attachments, Azure / GitLab /
-  Bitbucket plugins, Tauri desktop wire-up.)
+- (nothing — the full Engine-C arc (ADR-005, 8 PRs: #22–#28) has landed: agent principal +
+  signed delegation + scope intersection (#22), signed-intent task chain + budget +
+  cascade-revoke (#23), push-consent CIBA via passkeys (#24), SPIFFE attestation (#25),
+  agent self-auth + RFC 8693 `act` claim (#26), signed plugin manifests (#27), NHI
+  inventory view in the web console (#28). Engine A and Engine B were already done before
+  that. Next pick from the open product questions or new strategic work — no concrete
+  pending tasks remain in the implementation queue.)
 
 ----
 
@@ -177,7 +178,7 @@ Anything that ships *between* the phases gets folded into the closest one.
 
 Order is rough priority. Each [ ] is one focused commit's worth of work unless flagged.
 
-### Engine-C — agentic identity (ADR-005, proposed)
+### Engine-C — agentic identity (ADR-005, all phases shipped)
 
 Distilled from the agentic-AI security thesis (HashiCorp "continuous trust" / "shape of
 trust"): make agents first-class, attributable, revocable principals with a *cryptographic*
@@ -952,8 +953,14 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   separate route? Today it's tucked behind a button in `RecoveryKeyCard`.
 - ~~[?] TOTP: support `otpauth://` URI import (most clients export this format)?~~ → yes,
   shipped in this batch (TotpDialog auto-detects on paste).
-- [?] Secure notes: do they need rich text or is plaintext-with-newlines fine for v1?
-- [?] Per-vault icons / colours — Bitwarden parity feature; currently no UI surface.
+- ~~[?] Secure notes: do they need rich text or is plaintext-with-newlines fine for v1?~~ →
+  resolved (#20): `NoteItem.format?: "plaintext" | "markdown"` opt-in render hint, missing
+  ≡ plaintext for back-compat. Server stays zero-knowledge — `format` rides inside the
+  encrypted payload, never a server-visible column.
+- ~~[?] Per-vault icons / colours — Bitwarden parity feature; currently no UI surface.~~ →
+  resolved (#20): `VAULT_ICONS` + `VAULT_COLORS` allowlists in `@arc/types`, nullable
+  `vaults.icon` / `.color` columns, `PATCH /vaults/:id/ui`, SDK `updateVaultUi`. UI surface
+  still to do (covered alongside the NHI inventory groundwork in #28).
 - [?] Item-level sharing (one item to one user, not whole vault) — Bitwarden has this;
   not in our model yet. Big design call.
 - [?] Hardware-key (FIDO2 resident credential) as a primary unlock path on the
