@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import { InjectRepository } from "@nestjs/typeorm";
 import { randomBytes } from "node:crypto";
 import { Repository } from "typeorm";
@@ -72,12 +73,21 @@ export class PasskeyService {
   private readonly registrations = new Map<number, PendingChallenge>();
   private readonly unlocks = new Map<number, PendingChallenge>();
 
+  /**
+   * Discoverable-unlock challenges (ADR-008): username-less, so we don't know which user
+   * will sign yet. Keyed by the challenge value itself; anti-replay is "we issued this
+   * challenge within TTL." Bounded by `CHALLENGE_TTL_MS`; opportunistically GC'd on
+   * `verifyDiscoverableAssertion` so the map can't grow unboundedly under load.
+   */
+  private readonly discoverChallenges = new Map<string, { expiresAt: number }>();
+
   constructor(
     @InjectRepository(VaultUserPasskeyEntity)
     private readonly passkeys: Repository<VaultUserPasskeyEntity>,
     @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
     @InjectRepository(VaultUserKeysEntity)
     private readonly userKeys: Repository<VaultUserKeysEntity>,
+    private readonly jwt: JwtService,
   ) {}
 
   private rpId(): string {
@@ -112,7 +122,11 @@ export class PasskeyService {
       userName: user.email,
       attestationType: "none",
       authenticatorSelection: {
-        residentKey: "preferred",
+        // ADR-008: required (not "preferred") so every new passkey is *discoverable* —
+        // the authenticator stores the user handle, enabling username-less unlock on
+        // every surface (web, extension). No cryptographic effect; PRF unwrap still
+        // requires a fresh user-activation gesture on every unlock.
+        residentKey: "required",
         userVerification: "required",
       },
       excludeCredentials: existing.map((p) => ({
@@ -361,6 +375,123 @@ export class PasskeyService {
       throw new UnauthorizedException("passkey counter regression (possible clone)");
     }
     return { credentialId: assertion.id };
+  }
+
+  // --- ADR-008: discoverable (username-less) unlock ---------------------------------
+
+  /**
+   * Issue an unbound challenge for a username-less unlock. The authenticator picks a
+   * resident credential and returns the user handle alongside the assertion. We don't know
+   * which user is signing yet — `allowCredentials` is empty by design — so we key the
+   * challenge by its own value and confirm at finish time that we issued it within TTL.
+   */
+  async beginDiscoverableUnlock(): Promise<PublicKeyCredentialRequestOptionsJSON> {
+    const options = await generateAuthenticationOptions({
+      rpID: this.rpId(),
+      userVerification: "required",
+      allowCredentials: [], // discoverable — let the authenticator pick
+    });
+    // Opportunistic GC: the map only grows at the rate of /discover-challenge calls, but
+    // we evict expired entries on the way in so a steady load can't accumulate them.
+    const now = Date.now();
+    for (const [k, v] of this.discoverChallenges) if (v.expiresAt <= now) this.discoverChallenges.delete(k);
+    this.discoverChallenges.set(options.challenge, { expiresAt: now + CHALLENGE_TTL_MS });
+    return options;
+  }
+
+  /**
+   * Finish a username-less **sign-in**. The assertion's `userHandle` (set at registration
+   * as `encode(String(userId))`) tells us who is signing; the credential id tells us which
+   * passkey. We verify the assertion against the originally-issued challenge, bump the
+   * anti-clone counter, and mint a session token.
+   *
+   * **By design, this does not return the PRF-wrapped envelopes** (and therefore does not
+   * unlock the vault yet). PRF eval needs the per-user salt to be known *before* the
+   * authenticator gesture, which would force a second round trip with the now-resolved
+   * userId — and a second user-activation gesture defeats the UX win. Instead, this returns
+   * `{ accessToken, userId, email }`. The caller becomes signed in; an immediate
+   * `unlockWithPasskey()` then performs the PRF unwrap with the now-known salt. On modern
+   * platforms the two gestures are coalesced by the browser; in the worst case it's two
+   * taps + zero typing on first cold launch (vs. email+password+click today). ADR-008.
+   */
+  async finishDiscoverableUnlock(assertion: AuthenticationResponseJSON): Promise<{
+    accessToken: string;
+    userId: number;
+    email: string;
+    credentialId: string;
+  }> {
+    // Pull the challenge from the asserted clientDataJSON — the assertion is the binding.
+    const clientDataJSON = Buffer.from(assertion.response.clientDataJSON, "base64url").toString("utf8");
+    let parsed: { challenge?: string };
+    try {
+      parsed = JSON.parse(clientDataJSON) as { challenge?: string };
+    } catch {
+      throw new UnauthorizedException("malformed clientDataJSON");
+    }
+    const challenge = parsed.challenge;
+    if (!challenge) throw new UnauthorizedException("missing challenge");
+    const pending = this.discoverChallenges.get(challenge);
+    if (!pending || pending.expiresAt < Date.now()) {
+      this.discoverChallenges.delete(challenge);
+      throw new UnauthorizedException("no pending discoverable unlock");
+    }
+    this.discoverChallenges.delete(challenge);
+
+    // The user handle was registered as `encode(String(userId))` — that's how the server
+    // resolves *who* just signed. Refuse if it's missing or unparseable.
+    const userHandleB64 = assertion.response.userHandle;
+    if (!userHandleB64) throw new UnauthorizedException("assertion missing userHandle");
+    const userIdStr = Buffer.from(userHandleB64, "base64url").toString("utf8");
+    const userId = Number(userIdStr);
+    if (!Number.isFinite(userId) || !Number.isInteger(userId) || userId <= 0) {
+      throw new UnauthorizedException("malformed userHandle");
+    }
+
+    const stored = await this.passkeys.findOne({ where: { userId, credentialId: assertion.id } });
+    if (!stored) throw new UnauthorizedException("passkey not registered");
+
+    let verification;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response: assertion,
+        expectedChallenge: challenge,
+        expectedOrigin: this.origin(),
+        expectedRPID: this.rpId(),
+        credential: {
+          id: stored.credentialId,
+          publicKey: Buffer.from(stored.publicKey, "base64url"),
+          counter: Number(stored.counter),
+          transports: (stored.transports ?? undefined) as AuthenticatorTransportLike[] | undefined,
+        },
+        requireUserVerification: true,
+      });
+    } catch (err) {
+      this.logger.warn(`discoverable unlock verify failed: ${(err as Error).message}`);
+      throw new UnauthorizedException("discoverable unlock verification failed");
+    }
+    if (!verification.verified) throw new UnauthorizedException("assertion not verified");
+
+    const newCounter = String(verification.authenticationInfo.newCounter);
+    if (Number(newCounter) > Number(stored.counter)) {
+      stored.counter = newCounter;
+      await this.passkeys.save(stored);
+    } else if (Number(newCounter) < Number(stored.counter)) {
+      this.logger.warn(
+        `passkey counter regression for user=${userId} cred=${assertion.id}: ${stored.counter} → ${newCounter}`,
+      );
+      throw new UnauthorizedException("passkey counter regression (possible clone)");
+    }
+
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException("user not found");
+
+    const accessToken = await this.jwt.signAsync({ sub: user.id, email: user.email });
+    return {
+      accessToken,
+      userId: user.id,
+      email: user.email,
+      credentialId: assertion.id,
+    };
   }
 }
 

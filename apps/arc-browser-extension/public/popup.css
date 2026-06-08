@@ -59,6 +59,22 @@ button.primary {
   font-weight: 600;
 }
 
+/* Low-emphasis text button for "Use master password instead" (ADR-008). */
+button.link {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--muted, #888);
+  font-size: 12px;
+  padding: 6px 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+button.link:hover {
+  color: var(--fg, #ddd);
+}
+
 .toolbar {
   display: flex;
   gap: 8px;

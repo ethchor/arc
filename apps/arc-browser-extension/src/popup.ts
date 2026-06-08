@@ -108,6 +108,28 @@ byId<HTMLButtonElement>("unlock").addEventListener("click", async () => {
   }
 });
 
+// Passkey-first unlock (ADR-008). The primary path: no email field, no password — one tap.
+byId<HTMLButtonElement>("passkey-unlock").addEventListener("click", async () => {
+  setStatus("Waiting for passkey…");
+  const resp = await send<UnlockResponse>({
+    type: "arc:passkeyUnlock",
+    baseUrl: byId<HTMLInputElement>("baseUrl").value,
+  });
+  if (resp.ok) {
+    setStatus("");
+    await showVault();
+  } else {
+    setStatus(`Error: ${resp.error ?? "unknown"}`);
+  }
+});
+
+// Reveal the master-password fallback form on demand.
+byId<HTMLButtonElement>("show-pw").addEventListener("click", () => {
+  byId("pw-form").hidden = false;
+  byId("show-pw").hidden = true;
+  byId<HTMLInputElement>("email").focus();
+});
+
 byId<HTMLInputElement>("search").addEventListener("input", (e) => render((e.target as HTMLInputElement).value));
 
 byId<HTMLButtonElement>("fillpage").addEventListener("click", async () => {

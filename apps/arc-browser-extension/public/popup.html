@@ -9,11 +9,21 @@
   <body>
     <header class="hdr">arc-vault</header>
     <main>
+      <!--
+        ADR-008: passkey-first unlock. The primary action is a username-less passkey
+        prompt (one biometric gesture, zero typing). The master-password form is
+        collapsed behind a toggle for users without a passkey or whose authenticator
+        is unavailable.
+      -->
       <section id="unlock-view">
         <input id="baseUrl" value="http://localhost:3001" placeholder="API base URL" />
-        <input id="email" placeholder="account email" />
-        <input id="pw" type="password" placeholder="master password" />
-        <button id="unlock" class="primary">Unlock</button>
+        <button id="passkey-unlock" class="primary">Unlock with passkey</button>
+        <button id="show-pw" class="link">Use master password instead</button>
+        <div id="pw-form" hidden>
+          <input id="email" placeholder="account email" />
+          <input id="pw" type="password" placeholder="master password" />
+          <button id="unlock" class="primary">Unlock</button>
+        </div>
       </section>
       <section id="vault-view" hidden>
         <div class="toolbar">

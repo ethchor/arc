@@ -15,14 +15,16 @@ import {
   VaultUserKeysEntity,
   VaultUserPasskeyEntity,
 } from "../database/entities";
+import { AuthModule } from "../auth/auth.module";
 import { BlobModule } from "../blob/blob.module";
 import { DevicesAutoRevokeService } from "./devices-auto-revoke.service";
 import { PasskeyService } from "./passkey.service";
-import { VaultController } from "./vault.controller";
+import { PasskeyDiscoverController, VaultController } from "./vault.controller";
 import { VaultService } from "./vault.service";
 
 @Module({
   imports: [
+    AuthModule,
     BlobModule,
     TypeOrmModule.forFeature([
       UserEntity,
@@ -40,7 +42,7 @@ import { VaultService } from "./vault.service";
       VaultItemShareEntity,
     ]),
   ],
-  controllers: [VaultController],
+  controllers: [VaultController, PasskeyDiscoverController],
   providers: [VaultService, PasskeyService, DevicesAutoRevokeService],
   exports: [DevicesAutoRevokeService, PasskeyService],
 })
