@@ -318,6 +318,31 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   --kind, unknown subcommand), 3 arc-server signed-release e2e (publisher signs → operator
   pins → server mounts → gate dispatches; refusal on artifact tamper; refusal on
   unanchored publisher). Workspace stays 73/73 turbo green (server 38 suites, 198 passed).
+- [x] **cosign keyless + sigstore transparency log on the plugin release flow**
+  (`feat/cosign-keyless-plugin-release`). Layers public-internet, no-pre-shared-secret
+  verification on top of the existing Ed25519 manifest signing. Two layers, complementary:
+  - **Manifest signing (Ed25519)** — what `PluginManifestService` checks at runtime;
+    binds the artifact to a publisher identity operators chose to trust.
+  - **cosign keyless** — `.github/workflows/release-plugin-aws.yml` now installs cosign
+    via `sigstore/cosign-installer@v3` after the manifest signing step and runs
+    `cosign sign-blob --yes --bundle <out>` against each release artifact (`bin.cjs`,
+    `manifest.json`, `SHA256SUMS`). The signature + Fulcio-issued cert chain (bound to
+    the workflow's OIDC identity) + Rekor transparency-log entry are packed into a
+    self-contained `.bundle` per artifact, attached to the GitHub release. Workflow
+    gets `id-token: write` permission for the OIDC token.
+  - **Operator verification** — anyone with `cosign` installed runs
+    `cosign verify-blob --bundle <bundle> --certificate-identity-regexp '^https://
+    github.com/ethchor/arc/.github/workflows/release-plugin-aws.yml@.*'
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com <artifact>`
+    against each bundle. No pre-shared secret; Fulcio + Rekor are public infrastructure.
+    Confirms: the bytes match the signed digest, the cosign cert was issued by Fulcio
+    for *this exact workflow file at this exact commit*, and the signature is in Rekor
+    (so retroactive re-signing is detectable). Cosign step is gated on
+    `ARC_PUBLISHER_PRIV` being set (skipped on test-key runs since there's no release
+    artifact to sign). `arc-plugin-sign` does not invoke cosign — operators install +
+    run it separately. Release notes + `tools/arc-plugin-sign/README.md` document the
+    verify-blob command. Workflow + docs only, no code changes ⇒ no test count delta.
+    Workspace stays 74/74 turbo green.
 - [x] **Plugin release pipeline + operator install + boot-time auto-mount**
   (`feat/plugin-release-pipeline`). Turns the signed-release toolchain from "operators
   *can* ship and consume signed plugins" into "the publish side is automated and the

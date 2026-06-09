@@ -132,5 +132,42 @@ jobs:
             plugins/.../<name>/dist/manifest.json
 ```
 
-Out of scope for this tool: cosign keyless / transparency-log binding (sigstore is its own
-follow-up; the current Ed25519 model is what the server enforces today).
+## Complementary layer — cosign keyless (sigstore)
+
+The Ed25519 manifest signing above is **arc-server's** trust input — it's what
+`PluginManifestService` checks at runtime. The release workflow
+(`.github/workflows/release-plugin-aws.yml`) adds a **second layer** on top:
+`cosign sign-blob` against each release artifact, with the cosign cert issued by
+Fulcio bound to the GitHub Actions OIDC identity for this workflow file, and the
+signature recorded in the Rekor public transparency log.
+
+Operators (or anyone on the internet) verify a release without any pre-shared secret:
+
+```sh
+# Install cosign once: brew install cosign / apt-get install cosign / etc.
+for f in bin.cjs manifest.json SHA256SUMS; do
+  cosign verify-blob \
+    --bundle "$f.bundle" \
+    --certificate-identity-regexp '^https://github.com/ethchor/arc/.github/workflows/release-plugin-aws.yml@.*' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    "$f"
+done
+```
+
+What this proves on top of the manifest signature:
+
+- **Provenance** — the artifact was built by *this exact workflow file* at *this exact
+  commit*, not just "by someone who controls the publisher's Ed25519 priv."
+- **Transparency** — the signature is in Rekor. Years from now, anyone can audit that the
+  release wasn't quietly re-signed by a key compromise.
+- **No long-lived keys** — the cosign cert is short-lived (~10 minutes), issued at
+  release time, and the binding is to the OIDC identity rather than a secret operators
+  have to rotate.
+
+The two layers stack: manifest signing protects against artifact substitution by anyone
+who doesn't have the publisher key; cosign protects against silent retroactive
+re-signing (or against the publisher key being compromised — the cosign log shows the
+original signing event).
+
+`arc-plugin-sign` itself does **not** invoke cosign — operators install cosign
+separately. The verification is documented here so the release notes can point at it.
