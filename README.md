@@ -12,7 +12,7 @@ unified under one identity, one policy model, one audit trail, one UI.**
 [![Post-quantum](https://img.shields.io/badge/grants-post--quantum%20hybrid-1f6feb)](#why-arc)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](#quick-start)
-[![License](https://img.shields.io/badge/license-TBD-lightgrey)](#license)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue)](LICENSE)
 
 </div>
 
@@ -446,7 +446,16 @@ human→agent→action chain is a verifiable cryptographic artifact, not a stack
 
 ## License
 
-To be finalized. arc's own code is yours to license as you choose; consult an attorney before
-publishing. The `integrations/arc-openbao-adapter` package speaks only to the OpenBao HTTP API and
-contains no copied or translated third-party engine source — that boundary is enforced inside the
-package and documented in [`docs/CLAUDE.md`](docs/CLAUDE.md).
+arc is licensed under the **[Apache License 2.0](LICENSE)**. See [`NOTICE`](NOTICE) for
+third-party attribution (bundled noble crypto, NestJS, TypeORM, OpenTelemetry, etc.).
+
+Contributors sign the [Contributor License Agreement](CLA.md) — it grants the maintainers
+a perpetual license to your contribution and explicitly allows future relicensing of the
+project (e.g. to a source-available license like FSL or BSL 1.1 if/when the project needs
+to defend against unrestricted hyperscaler resale of arc as a managed service). You retain
+copyright in your own work; you're granting a license, not assigning ownership. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the practical workflow.
+
+The `integrations/arc-openbao-adapter` package speaks only to the OpenBao HTTP API and
+contains no copied or translated third-party engine source — that boundary is enforced
+inside the package and documented in [`docs/CLAUDE.md`](docs/CLAUDE.md).

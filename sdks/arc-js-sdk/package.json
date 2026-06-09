@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Official TypeScript SDK for arc — the zero-knowledge vault crypto core + the sync/secrets API, for consumer and machine-identity modes.",
   "type": "module",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "Apache-2.0",
   "homepage": "https://github.com/ethchor/arc/tree/develop/sdks/arc-js-sdk#readme",
   "repository": {
     "type": "git",
