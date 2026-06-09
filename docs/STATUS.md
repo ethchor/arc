@@ -318,6 +318,27 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   --kind, unknown subcommand), 3 arc-server signed-release e2e (publisher signs → operator
   pins → server mounts → gate dispatches; refusal on artifact tamper; refusal on
   unanchored publisher). Workspace stays 73/73 turbo green (server 38 suites, 198 passed).
+- [x] **Per-mount policy templates + plugin-mount grants e2e**
+  (`feat/per-mount-grants`). The ACL surface on `/v1/*` already routes plugin mount
+  paths through `CapabilityGuard` (path-prefix matching on the stripped V1 path); this
+  PR closes the operator-UX gap. Two surfaces:
+  - `EnginesService.listMounts()` now includes `declaredCapabilities` for plugin mounts
+    (read from `manifestCapsByMount`). Surfaced on `GET /v1/sys/mounts` so admins see
+    exactly which verbs each plugin declared in its signed manifest — no guessing from
+    plugin source.
+  - New `GET /v1/sys/policy-templates` endpoint generates a starter arc-grants policy
+    per plugin mount whose manifest declared capabilities. Shape matches the
+    `/v1/sys/policy` upsert DTO so an admin can pipe
+    `curl /v1/sys/policy-templates | jq '.data[]' | xargs -I {} curl -d {} /v1/sys/policy`
+    to onboard every plugin's policy in one shot. Built-in mounts (no manifest) and
+    plugins with empty cap sets are skipped — nothing to template.
+  **10 new tests** (4 unit on `policyTemplates()` + `listMounts()` exposure, 6 e2e in
+  `grants-plugin-mount.e2e-spec.ts` proving the full operator flow): under
+  `ARC_DEFAULT_POLICY=deny` a subject with no policy → 403 on plugin path; the template
+  reflects the plugin's declared caps byte-for-byte; attaching the template unlocks the
+  plugin's read path; a read-only policy refuses lease revoke through the grants layer
+  (before the manifest gate even runs); a policy on `secret/` doesn't open access to
+  `foo/`. Workspace 74/74 turbo green (server 41 suites, 235 passed).
 - [x] **Plugin release pipeline + operator install + boot-time auto-mount**
   (`feat/plugin-release-pipeline`). Turns the signed-release toolchain from "operators
   *can* ship and consume signed plugins" into "the publish side is automated and the

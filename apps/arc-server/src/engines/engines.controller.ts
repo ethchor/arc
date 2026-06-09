@@ -65,6 +65,17 @@ export class EnginesController {
   }
 
   /**
+   * Suggested arc-grants policy documents for each plugin mount that declared
+   * capabilities in its manifest (ADR-005 Phase 5b runtime gate). Admins POST the returned
+   * documents to `/v1/sys/policy` to grant a subject exactly the surface its plugin uses
+   * — no need to hand-derive the verb set from the plugin's source.
+   */
+  @Get("sys/policy-templates")
+  policyTemplates() {
+    return { data: this.engines.policyTemplates() };
+  }
+
+  /**
    * Vault's lease-renewal endpoint. Body: `{ lease_id, increment? }`. The increment is
    * seconds; arc accepts a bare integer (no Vault TTL string forms here — clients of this
    * endpoint already know they're talking to the renew API).
