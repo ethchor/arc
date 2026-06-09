@@ -12,8 +12,39 @@ import { type INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { scope } from "@arc/grants";
+import type {
+  IssueRequest,
+  IssuedSecret,
+  LeaseInfo,
+  SecretsPlugin,
+} from "@arc/plugin-sdk";
 import { AppModule } from "../src/app.module";
 import { GrantsService } from "../src/grants/grants.service";
+import { PluginsService } from "../src/plugins/plugins.service";
+
+class FakeFooPlugin implements SecretsPlugin {
+  readonly meta = {
+    name: "fake-foo",
+    version: "0.0.1",
+    kind: "secrets" as const,
+    description: "fixture for the plugin-mount section of the grants e2e",
+  };
+  private counter = 0;
+  async configure(): Promise<void> {}
+  async issue(req: IssueRequest): Promise<IssuedSecret> {
+    this.counter++;
+    return {
+      data: { token: `tok-${req.role}-${this.counter}` },
+      leaseId: `fake-foo/${req.role}/${this.counter}`,
+      ttlSeconds: 60,
+      renewable: true,
+    };
+  }
+  async renew(leaseId: string): Promise<LeaseInfo> {
+    return { leaseId, ttlSeconds: 60, renewable: true };
+  }
+  async revoke(): Promise<void> {}
+}
 
 async function login(server: unknown, email: string): Promise<{ token: string; userId: number }> {
   const res = await request(server as Parameters<typeof request>[0])
@@ -36,6 +67,7 @@ describe("grants e2e — ARC_DEFAULT_POLICY=deny enforces per-mount ACL", () => 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let server: any;
   let grants: GrantsService;
+  let plugins: PluginsService;
   let token: string;
   let userId: number;
 
@@ -49,6 +81,12 @@ describe("grants e2e — ARC_DEFAULT_POLICY=deny enforces per-mount ACL", () => 
       await app.init();
       server = app.getHttpServer();
       grants = app.get(GrantsService);
+      plugins = app.get(PluginsService);
+      // Mount a fake plugin with a declared cap set of [read, delete]. The plugin-mount
+      // section below exercises both the manifest gate (these declared caps surface on
+      // /v1/sys/policy-templates) and the per-mount ACL (subjects without `plugin:foo`
+      // policy can't reach `/v1/foo/*`).
+      await plugins.mountSecretsPlugin(new FakeFooPlugin(), "foo/", {}, ["read", "delete"]);
       const session = await login(server, "grants-e2e@example.com");
       token = session.token;
       userId = session.userId;
@@ -59,6 +97,7 @@ describe("grants e2e — ARC_DEFAULT_POLICY=deny enforces per-mount ACL", () => 
   });
 
   afterAll(async () => {
+    await plugins.unmount("fake-foo").catch(() => undefined);
     await app.close();
   });
 
@@ -116,6 +155,80 @@ describe("grants e2e — ARC_DEFAULT_POLICY=deny enforces per-mount ACL", () => 
 
   it("still 401s when the bearer token is missing (auth runs before ACL)", async () => {
     await request(server).get("/v1/sys/mounts").expect(401);
+  });
+
+  // --- plugin-mount section: the same Nest app, the same gate, applied to a plugin
+  //     mount with manifest-declared capabilities. Reuses this describe's app instance
+  //     instead of spinning up a second one (the previous standalone spec OOM'd CI on
+  //     the runner's memory budget once the suite count grew).
+
+  it("plugin mount: a subject with no policy is denied /v1/foo/creds/web under default-deny", async () => {
+    const session = await login(server, "grants-plugin-empty@example.com");
+    await request(server).get("/v1/foo/creds/web").set(auth(session.token)).expect(403);
+  });
+
+  it("plugin mount: /v1/sys/mounts surfaces the plugin's declared capabilities to admins", async () => {
+    // The grants subject (`userId`) attached the `reader` policy above which grants
+    // `read` on `sys/`, so /v1/sys/mounts is reachable for the admin in this test.
+    const r = await request(server).get("/v1/sys/mounts").set(auth(token)).expect(200);
+    const fooMount = (r.body.data as Array<{ path: string; declaredCapabilities?: string[] }>).find(
+      (m) => m.path === "foo/",
+    );
+    expect(fooMount).toBeDefined();
+    expect(fooMount?.declaredCapabilities).toEqual(["delete", "read"]);
+  });
+
+  it("plugin mount: /v1/sys/policy-templates returns a starter policy matching the plugin's caps", async () => {
+    const r = await request(server).get("/v1/sys/policy-templates").set(auth(token)).expect(200);
+    const t = (r.body.data as Array<{
+      name: string;
+      scopes: Array<{ pathPrefix: string; capabilities: string[] }>;
+    }>).find((t) => t.scopes[0]?.pathPrefix === "foo/");
+    expect(t).toBeDefined();
+    expect(t?.name).toBe("plugin:foo");
+    expect(t?.scopes[0]?.capabilities).toEqual(["delete", "read"]);
+  });
+
+  it("plugin mount: attaching the template policy unlocks the plugin's read path", async () => {
+    const session = await login(server, "grants-plugin-reader@example.com");
+    await grants.upsertPolicy({
+      name: "plugin:foo",
+      scopes: [scope("foo/", ["read", "delete"])],
+    });
+    await grants.attach(String(session.userId), "plugin:foo");
+
+    const r = await request(server).get("/v1/foo/creds/web").set(auth(session.token)).expect(200);
+    expect(r.body.data).toMatchObject({ token: expect.stringMatching(/^tok-web-\d+$/) });
+  });
+
+  it("plugin mount: a `read`-only policy refuses lease revoke (DELETE through grants layer)", async () => {
+    const session = await login(server, "grants-plugin-readonly@example.com");
+    await grants.upsertPolicy({
+      name: "foo-read-only",
+      scopes: [scope("foo/", ["read"])],
+    });
+    await grants.attach(String(session.userId), "foo-read-only");
+
+    // Issue a lease the user CAN issue (read cap).
+    const issued = await request(server).get("/v1/foo/creds/web").set(auth(session.token)).expect(200);
+    const leaseId = issued.body.lease_id as string;
+
+    // Revoke (DELETE on the lease path) needs `delete` — refused by the grants layer
+    // *before* the manifest gate even runs.
+    await request(server)
+      .put(`/v1/sys/leases/revoke/${leaseId}`)
+      .set(auth(session.token))
+      .expect(403);
+  });
+
+  it("plugin mount: a policy on a different mount can't reach the plugin's path", async () => {
+    const session = await login(server, "grants-plugin-wrong-mount@example.com");
+    await grants.upsertPolicy({
+      name: "secret-reader",
+      scopes: [scope("secret/", ["read"])],
+    });
+    await grants.attach(String(session.userId), "secret-reader");
+    await request(server).get("/v1/foo/creds/web").set(auth(session.token)).expect(403);
   });
 });
 
