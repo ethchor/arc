@@ -1,6 +1,6 @@
-import { AttestationService, SpiffeAttestationVerifier } from "./attestation";
+import { AttestationService, SpiffeAttestationVerifier, type Jwk, type JwkSet } from "./attestation";
 import type { AgentAttestation } from "@arc/types";
-import { X509Certificate } from "node:crypto";
+import { X509Certificate, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
@@ -178,12 +178,201 @@ describe("SpiffeAttestationVerifier (enforce mode)", () => {
   });
 });
 
+// --- JWT-SVID fixture (Node-native — no openssl) -----------------------------------
+
+interface JwtFixture {
+  trustDomain: string;
+  spiffeId: string;
+  jwks: JwkSet;
+  /** Sign a JWT with the fixture's Ed25519 key. */
+  signEdDsa: (payload: Record<string, unknown>, header?: Record<string, unknown>) => string;
+  /** Sign with a *different* key — for "invalid signature" tests. */
+  signWithStrangerKey: (payload: Record<string, unknown>, header?: Record<string, unknown>) => string;
+}
+
+function b64u(b: Buffer | Uint8Array): string {
+  return Buffer.from(b).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function buildJwtFixture(): JwtFixture {
+  const trustDomain = "example.org";
+  const spiffeId = `spiffe://${trustDomain}/ns/test/sa/bot`;
+
+  // Ed25519 keypair for the trust domain. Export the pub as a JWK for the bundle.
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const publicJwk = publicKey.export({ format: "jwk" }) as Record<string, unknown>;
+  const jwk: Jwk = { ...publicJwk, kty: publicJwk["kty"] as string, kid: "test-kid-1" };
+  const jwks: JwkSet = { keys: [jwk] };
+
+  // A different key (same alg) so we can sign with the wrong identity for signature tests.
+  const stranger = generateKeyPairSync("ed25519");
+
+  const signWith = (key: KeyObject) =>
+    (payload: Record<string, unknown>, header: Record<string, unknown> = {}): string => {
+      const fullHeader = { alg: "EdDSA", typ: "JWT", kid: "test-kid-1", ...header };
+      const h = b64u(Buffer.from(JSON.stringify(fullHeader)));
+      const p = b64u(Buffer.from(JSON.stringify(payload)));
+      const signingInput = `${h}.${p}`;
+      const signature = sign(null, Buffer.from(signingInput, "utf8"), key);
+      return `${signingInput}.${b64u(signature)}`;
+    };
+
+  return {
+    trustDomain,
+    spiffeId,
+    jwks,
+    signEdDsa: signWith(privateKey),
+    signWithStrangerKey: signWith(stranger.privateKey),
+  };
+}
+
+const FUTURE = (sec: number) => Math.floor(Date.now() / 1000) + sec;
+const PAST = (sec: number) => Math.floor(Date.now() / 1000) - sec;
+
+describe("SpiffeAttestationVerifier (JWT-SVID enforce mode)", () => {
+  const fx = buildJwtFixture();
+
+  const enforceVerifier = (over: Partial<{
+    audience: string;
+    domains: string[];
+    jwks: ReadonlyMap<string, JwkSet>;
+  }> = {}) =>
+    new SpiffeAttestationVerifier({
+      allowedTrustDomains: new Set(over.domains ?? [fx.trustDomain]),
+      enforce: true,
+      trustBundles: new Map(),
+      jwksBundles: over.jwks ?? new Map([[fx.trustDomain, fx.jwks]]),
+      ...(over.audience !== undefined ? { requiredAudience: over.audience } : {}),
+    });
+
+  it("accepts a valid Ed25519 JWT-SVID whose kid resolves in the JWKS", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    const r = enforceVerifier({ audience: "arc-server" }).verify({ kind: "spiffe", doc: jwt });
+    expect(r).toMatchObject({ ok: true, subject: fx.spiffeId, trustAnchor: fx.trustDomain });
+  });
+
+  it("rejects a JWT whose signature was made with a different key (jwt_signature_invalid)", () => {
+    const jwt = fx.signWithStrangerKey({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    expect(enforceVerifier({ audience: "arc-server" }).verify({ kind: "spiffe", doc: jwt }).reason).toBe(
+      "jwt_signature_invalid",
+    );
+  });
+
+  it("rejects an unknown kid (no_jwk_matching_kid)", () => {
+    const jwt = fx.signEdDsa(
+      { sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) },
+      { kid: "not-the-real-kid" },
+    );
+    expect(enforceVerifier({ audience: "arc-server" }).verify({ kind: "spiffe", doc: jwt }).reason).toBe(
+      "no_jwk_matching_kid",
+    );
+  });
+
+  it("rejects an alg outside the SPIRE-supported set (unsupported_jwt_alg)", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) }, { alg: "HS256" });
+    expect(enforceVerifier({ audience: "arc-server" }).verify({ kind: "spiffe", doc: jwt }).reason).toBe(
+      "unsupported_jwt_alg",
+    );
+  });
+
+  it("rejects an expired JWT (jwt_expired)", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: PAST(60) });
+    expect(enforceVerifier({ audience: "arc-server" }).verify({ kind: "spiffe", doc: jwt }).reason).toBe(
+      "jwt_expired",
+    );
+  });
+
+  it("rejects a JWT whose nbf is in the future (jwt_not_yet_valid)", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(3600), nbf: FUTURE(600) });
+    expect(enforceVerifier({ audience: "arc-server" }).verify({ kind: "spiffe", doc: jwt }).reason).toBe(
+      "jwt_not_yet_valid",
+    );
+  });
+
+  it("rejects a JWT with no aud claim (SPIFFE spec requires audience)", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, exp: FUTURE(60) });
+    expect(enforceVerifier({ audience: "arc-server" }).verify({ kind: "spiffe", doc: jwt }).reason).toBe(
+      "jwt_missing_audience",
+    );
+  });
+
+  it("rejects a JWT whose aud doesn't include the configured required audience", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: ["other-service"], exp: FUTURE(60) });
+    expect(enforceVerifier({ audience: "arc-server" }).verify({ kind: "spiffe", doc: jwt }).reason).toBe(
+      "jwt_audience_mismatch",
+    );
+  });
+
+  it("accepts when requiredAudience is unset and aud has any non-empty value", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "anyone", exp: FUTURE(60) });
+    const r = enforceVerifier().verify({ kind: "spiffe", doc: jwt });
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects when sub isn't a valid SPIFFE id (jwt_subject_not_spiffe)", () => {
+    const jwt = fx.signEdDsa({ sub: "user-1234", aud: "arc-server", exp: FUTURE(60) });
+    expect(enforceVerifier({ audience: "arc-server" }).verify({ kind: "spiffe", doc: jwt }).reason).toBe(
+      "jwt_subject_not_spiffe",
+    );
+  });
+
+  it("rejects when no JWKS is configured for the SPIFFE trust domain (no_jwks_for_domain)", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    const v = enforceVerifier({
+      audience: "arc-server",
+      jwks: new Map([["different.example", fx.jwks]]),
+    });
+    expect(v.verify({ kind: "spiffe", doc: jwt }).reason).toBe("no_jwks_for_domain");
+  });
+
+  it("rejects a JWT whose SPIFFE trust domain is outside the allowlist (untrusted_domain)", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    const v = enforceVerifier({ audience: "arc-server", domains: ["other.test"] });
+    expect(v.verify({ kind: "spiffe", doc: jwt }).reason).toBe("untrusted_domain");
+  });
+
+  it("rejects a malformed JWT (not three dotted segments) — malformed_jwt", () => {
+    const v = enforceVerifier({ audience: "arc-server" });
+    // The doc looks like an SVID document (not a bare SPIFFE id) but isn't valid PEM or JWT.
+    // Falls through to enforce_requires_svid_doc because the JWT regex rejects two-segment input.
+    expect(v.verify({ kind: "spiffe", doc: "not.actually-a-jwt" }).reason).toBe(
+      "enforce_requires_svid_doc",
+    );
+  });
+});
+
+describe("SpiffeAttestationVerifier (JWT-SVID record mode)", () => {
+  const fx = buildJwtFixture();
+  it("extracts the SPIFFE id from a JWT-SVID without signature verification", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    const v = new SpiffeAttestationVerifier({
+      allowedTrustDomains: new Set(),
+      enforce: false,
+      trustBundles: new Map(),
+    });
+    const r = v.verify({ kind: "spiffe", doc: jwt });
+    expect(r).toMatchObject({ ok: true, subject: fx.spiffeId, trustAnchor: fx.trustDomain });
+  });
+
+  it("still applies the trust-domain allowlist on the JWT's sub claim in record mode", () => {
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    const v = new SpiffeAttestationVerifier({
+      allowedTrustDomains: new Set(["only-this.example"]),
+      enforce: false,
+      trustBundles: new Map(),
+    });
+    expect(v.verify({ kind: "spiffe", doc: jwt }).reason).toBe("untrusted_domain");
+  });
+});
+
 describe("AttestationService", () => {
   const saved = {
     req: process.env.ARC_AGENT_ATTESTATION,
     dom: process.env.ARC_SPIFFE_TRUST_DOMAINS,
     enf: process.env.ARC_SPIFFE_ENFORCE,
     bun: process.env.ARC_SPIFFE_TRUST_BUNDLES,
+    jwks: process.env.ARC_SPIFFE_JWKS_BUNDLES,
+    aud: process.env.ARC_SPIFFE_REQUIRED_AUDIENCE,
     env: process.env.NODE_ENV,
   };
   afterEach(() => {
@@ -191,6 +380,8 @@ describe("AttestationService", () => {
     if (saved.dom === undefined) delete process.env.ARC_SPIFFE_TRUST_DOMAINS; else process.env.ARC_SPIFFE_TRUST_DOMAINS = saved.dom;
     if (saved.enf === undefined) delete process.env.ARC_SPIFFE_ENFORCE; else process.env.ARC_SPIFFE_ENFORCE = saved.enf;
     if (saved.bun === undefined) delete process.env.ARC_SPIFFE_TRUST_BUNDLES; else process.env.ARC_SPIFFE_TRUST_BUNDLES = saved.bun;
+    if (saved.jwks === undefined) delete process.env.ARC_SPIFFE_JWKS_BUNDLES; else process.env.ARC_SPIFFE_JWKS_BUNDLES = saved.jwks;
+    if (saved.aud === undefined) delete process.env.ARC_SPIFFE_REQUIRED_AUDIENCE; else process.env.ARC_SPIFFE_REQUIRED_AUDIENCE = saved.aud;
     if (saved.env === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = saved.env;
   });
 
@@ -228,10 +419,44 @@ describe("AttestationService", () => {
     expect(s.verify(spiffe("spiffe://example.org/x")).reason).toBe("enforce_requires_svid_doc");
   });
 
-  it("enforce=true with empty bundles refuses to boot in production (fail-closed)", () => {
+  it("enforce=true with no X.509 + no JWKS bundles refuses to boot in production (fail-closed)", () => {
     process.env.ARC_SPIFFE_ENFORCE = "true";
     delete process.env.ARC_SPIFFE_TRUST_BUNDLES;
+    delete process.env.ARC_SPIFFE_JWKS_BUNDLES;
     process.env.NODE_ENV = "production";
-    expect(() => new AttestationService()).toThrow(/ARC_SPIFFE_ENFORCE=true but/);
+    expect(() => new AttestationService()).toThrow(/ARC_SPIFFE_ENFORCE=true but both/);
+  });
+
+  it("enforce=true with only JWKS bundles configured (no X.509) boots fine — JWT-SVID surface is enough", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "arc-jwks-env-"));
+    const fx = buildJwtFixture();
+    const jwksFile = path.join(dir, "jwks.json");
+    writeFileSync(jwksFile, JSON.stringify(fx.jwks));
+
+    process.env.ARC_SPIFFE_ENFORCE = "true";
+    process.env.ARC_SPIFFE_JWKS_BUNDLES = `${fx.trustDomain}=${jwksFile}`;
+    process.env.ARC_SPIFFE_REQUIRED_AUDIENCE = "arc-server";
+    process.env.NODE_ENV = "production";
+    const s = new AttestationService();
+    expect(s.enforce).toBe(true);
+
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    const r = s.verify({ kind: "spiffe", doc: jwt });
+    expect(r).toMatchObject({ ok: true, subject: fx.spiffeId, trustAnchor: fx.trustDomain });
+  });
+
+  it("reads ARC_SPIFFE_REQUIRED_AUDIENCE and enforces it on JWT-SVIDs", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "arc-jwks-aud-"));
+    const fx = buildJwtFixture();
+    const jwksFile = path.join(dir, "jwks.json");
+    writeFileSync(jwksFile, JSON.stringify(fx.jwks));
+
+    process.env.ARC_SPIFFE_ENFORCE = "true";
+    process.env.ARC_SPIFFE_JWKS_BUNDLES = `${fx.trustDomain}=${jwksFile}`;
+    process.env.ARC_SPIFFE_REQUIRED_AUDIENCE = "arc-server";
+    const s = new AttestationService();
+
+    const wrong = fx.signEdDsa({ sub: fx.spiffeId, aud: "different-service", exp: FUTURE(60) });
+    expect(s.verify({ kind: "spiffe", doc: wrong }).reason).toBe("jwt_audience_mismatch");
   });
 });
