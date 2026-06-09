@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { X509Certificate, createPublicKey, type KeyObject } from "node:crypto";
+import { X509Certificate, createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { AgentAttestation } from "@arc/types";
 
@@ -10,25 +10,32 @@ import type { AgentAttestation } from "@arc/types";
  * operator direction), with sigstore / TPM / cloud-IID slotting in behind the same
  * interface later.
  *
+ * **Three doc shapes under the `spiffe` kind:**
+ *   - **bare SPIFFE ID** (record mode only): `spiffe://<trust-domain>/<path>`.
+ *   - **X.509-SVID** (record OR enforce): PEM-encoded chain. In record mode the URI is
+ *     extracted from the SAN without verification; in enforce mode the chain is walked to
+ *     a root in the configured trust bundle for the leaf's trust domain, validity dates
+ *     are checked, and the SPIFFE URI SAN becomes the recorded subject.
+ *   - **JWT-SVID** (record OR enforce): a compact JWS (`header.payload.signature`). In
+ *     enforce mode the JWT is parsed, the signature is verified against the JWK in the
+ *     configured JWKS bundle for the trust domain (selected by `kid`), `exp`/`nbf` are
+ *     checked, and SPIFFE's `aud` requirement is enforced (matched against
+ *     `ARC_SPIFFE_REQUIRED_AUDIENCE` when configured).
+ *
  * **Two modes:**
- *   - **record** (default, `ARC_SPIFFE_ENFORCE` unset / "false"): the SPIFFE verifier
- *     validates the SPIFFE ID's *identity* — its `spiffe://` format and the trust-domain
- *     allowlist — and records it. No cryptographic validation of the SVID document.
- *   - **enforce** (`ARC_SPIFFE_ENFORCE=true`): the `doc` MUST be a PEM-encoded X.509-SVID
- *     chain. The verifier parses every cert, walks the chain to a root in the configured
- *     trust bundle for the leaf's trust domain, checks the validity window, and pulls the
- *     SPIFFE URI from the leaf's SAN — *that* is the recorded subject. A bare SPIFFE ID
- *     string is refused in this mode.
+ *   - **record** (default, `ARC_SPIFFE_ENFORCE` unset / "false"): identity is validated but
+ *     no cryptography is checked. The SPIFFE ID is recorded as a fact.
+ *   - **enforce** (`ARC_SPIFFE_ENFORCE=true`): cryptographic validation against the
+ *     configured trust + JWKS bundles is mandatory. A bare SPIFFE ID string is refused.
  *
- * Trust bundles are configured by `ARC_SPIFFE_TRUST_BUNDLES`:
- *   `<trust-domain>=<path-to-pem>,<trust-domain>=<path-to-pem>`
- * Each PEM file may contain one or more `BEGIN CERTIFICATE` blocks (the trust roots for
- * that domain). Bundles are loaded once at boot; rotation is a restart for now (the
- * verifier interface leaves room for a JWKS-style hot-reload follow-up).
+ * Trust roots are configured by env:
+ *   `ARC_SPIFFE_TRUST_BUNDLES = <trust-domain>=<path-to-pem>,…` (X.509 CA bundles)
+ *   `ARC_SPIFFE_JWKS_BUNDLES  = <trust-domain>=<path-to-jwks-json>,…` (JWT-SVID JWK Sets)
+ *   `ARC_SPIFFE_REQUIRED_AUDIENCE` (optional; when set, JWT-SVIDs must list this exact
+ *    audience — usually the arc-server's own identifier)
  *
- * JWT-SVID enforce-mode is **deliberately deferred**. Enforce v1 covers the more common
- * SPIRE deployment shape (X.509-SVID via Workload API). When JWT-SVID enforce lands it
- * will use the trust bundle's keys via the same pluggable interface.
+ * Bundles are loaded once at boot; rotation is a restart for now (hot-reload is its own
+ * follow-up).
  */
 export interface AttestationResult {
   ok: boolean;
@@ -49,14 +56,35 @@ export interface AttestationVerifier {
 const SPIFFE_ID = /^spiffe:\/\/([a-z0-9._-]+)(\/[A-Za-z0-9._\-/]*)?$/;
 /** `-----BEGIN CERTIFICATE-----` marker — both LF and CRLF tolerated. */
 const PEM_CERT_RE = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
+/** Compact JWS: three base64url segments separated by dots. */
+const JWT_COMPACT_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+
+/**
+ * A JWK as it appears inside a JWKS bundle. We keep the shape loose (`Record<string,
+ * unknown>`) so any of EC / OKP / RSA jwks pass through to Node's `createPublicKey({ key,
+ * format: "jwk" })` without us needing an exhaustive per-kty schema.
+ */
+export type Jwk = Record<string, unknown> & { kty: string; kid?: string };
+
+export interface JwkSet {
+  keys: readonly Jwk[];
+}
 
 export interface SpiffeVerifierOptions {
   /** Closed allowlist of trust domains. Empty = any well-formed domain (record mode only). */
   allowedTrustDomains: ReadonlySet<string>;
-  /** When true, the `doc` MUST be a PEM-encoded X.509-SVID chain and is cryptographically validated. */
+  /** When true, both X.509-SVID and JWT-SVID docs are cryptographically validated. */
   enforce: boolean;
-  /** Per-trust-domain CA bundle. Keys are trust-domain names; values are arrays of CA X509Certificates. */
+  /** Per-trust-domain CA bundle (X.509-SVID). Empty Map = no X.509 enforce surface. */
   trustBundles: ReadonlyMap<string, readonly X509Certificate[]>;
+  /** Per-trust-domain JWK Set (JWT-SVID). Empty Map = no JWT-SVID enforce surface. */
+  jwksBundles?: ReadonlyMap<string, JwkSet>;
+  /**
+   * Required audience for JWT-SVIDs. SPIFFE's `aud` claim is mandatory in the spec; this is
+   * the extra check that the audience matches *this* arc-server (usually a stable identifier
+   * like `https://arc.example.com` or just `arc-server`). Unset = "any non-empty aud".
+   */
+  requiredAudience?: string;
   /** Injectable clock for deterministic tests. Defaults to `() => new Date()`. */
   now?: () => Date;
 }
@@ -80,22 +108,35 @@ export class SpiffeAttestationVerifier implements AttestationVerifier {
     if (attestation.kind !== "spiffe") return reject("unsupported_kind");
     const doc = attestation.doc.trim();
     const isPem = /-----BEGIN CERTIFICATE-----/.test(doc);
+    const isJwt = !isPem && JWT_COMPACT_RE.test(doc);
 
     if (this.opts.enforce) {
       // Enforce mode: bare SPIFFE-ID strings are no longer acceptable — they don't bind any
       // crypto, and we just told the operator we'd cryptographically validate.
-      if (!isPem) return reject("enforce_requires_svid_doc");
-      return this.verifyX509Svid(doc);
+      if (isPem) return this.verifyX509Svid(doc);
+      if (isJwt) return this.verifyJwtSvid(doc);
+      return reject("enforce_requires_svid_doc");
     }
 
-    // Record mode (default). Either a bare SPIFFE ID or a PEM SVID; from PEM we extract
-    // the URI from the leaf's SAN without verifying the chain.
+    // Record mode (default). Bare SPIFFE ID, X.509-SVID, or JWT-SVID — from SVID docs we
+    // extract the URI without verifying the signature/chain.
     if (isPem) {
       const leaf = parsePemChain(doc)[0];
       if (!leaf) return reject("malformed_pem");
       const uri = extractSpiffeUri(leaf);
       if (!uri) return reject("svid_missing_spiffe_uri");
       return this.validateIdString(uri);
+    }
+    if (isJwt) {
+      let payload: Record<string, unknown>;
+      try {
+        payload = parseJwt(doc).payload;
+      } catch {
+        return reject("malformed_jwt");
+      }
+      const sub = payload["sub"];
+      if (typeof sub !== "string") return reject("jwt_subject_not_spiffe");
+      return this.validateIdString(sub);
     }
     return this.validateIdString(doc);
   }
@@ -158,7 +199,99 @@ export class SpiffeAttestationVerifier implements AttestationVerifier {
     // Reached end of the provided chain without anchoring to the bundle.
     return reject("chain_does_not_anchor_to_bundle");
   }
+
+  /**
+   * Enforce a JWT-SVID. Parse → look up the JWK by `kid` in the trust domain's JWKS →
+   * verify the signature → enforce `exp` / `nbf` / `aud` per the SPIFFE JWT-SVID spec.
+   *
+   * Algorithm support is intentionally narrow — the four SPIRE actually uses (ES256, ES384,
+   * RS256, EdDSA). Anything else fails closed with `unsupported_jwt_alg` rather than a
+   * silently-accepted weaker algorithm.
+   */
+  private verifyJwtSvid(jwt: string): AttestationResult {
+    let parsed: ParsedJwt;
+    try {
+      parsed = parseJwt(jwt);
+    } catch {
+      return reject("malformed_jwt");
+    }
+    const { header, payload, signingInput, signature } = parsed;
+
+    const alg = typeof header["alg"] === "string" ? (header["alg"] as string) : null;
+    if (!alg || !JWT_SVID_ALGS[alg as keyof typeof JWT_SVID_ALGS]) {
+      return reject("unsupported_jwt_alg");
+    }
+    const kid = typeof header["kid"] === "string" ? (header["kid"] as string) : null;
+
+    // Subject must be a SPIFFE id. Trust domain comes from the parse — same shape as the
+    // X.509 path uses, so allowlist + bundle lookup are identical.
+    const sub = payload["sub"];
+    if (typeof sub !== "string") return reject("jwt_subject_not_spiffe");
+    const m = SPIFFE_ID.exec(sub);
+    if (!m) return reject("jwt_subject_not_spiffe");
+    const trustDomain = m[1]!;
+    if (this.opts.allowedTrustDomains.size > 0 && !this.opts.allowedTrustDomains.has(trustDomain)) {
+      return reject("untrusted_domain");
+    }
+    const jwks = this.opts.jwksBundles?.get(trustDomain);
+    if (!jwks || jwks.keys.length === 0) return reject("no_jwks_for_domain");
+
+    const jwk = pickJwk(jwks, kid);
+    if (!jwk) return reject("no_jwk_matching_kid");
+
+    let key: ReturnType<typeof createPublicKey>;
+    try {
+      key = createPublicKey({ key: jwk as Record<string, unknown>, format: "jwk" });
+    } catch {
+      return reject("malformed_jwk");
+    }
+
+    const spec = JWT_SVID_ALGS[alg as keyof typeof JWT_SVID_ALGS];
+    let signatureOk = false;
+    try {
+      const data = Buffer.from(signingInput, "utf8");
+      if (spec.dsaEncoding) {
+        signatureOk = cryptoVerify(spec.digest, data, { key, dsaEncoding: spec.dsaEncoding }, signature);
+      } else {
+        // EdDSA / Ed25519 — digest arg is null per Node's API.
+        signatureOk = cryptoVerify(spec.digest, data, key, signature);
+      }
+    } catch {
+      return reject("jwt_signature_invalid");
+    }
+    if (!signatureOk) return reject("jwt_signature_invalid");
+
+    // SPIFFE requires aud. We check it independently of the signature step so the operator
+    // sees the *real* reason instead of a generic crypto rejection.
+    const nowSec = Math.floor(this.now().getTime() / 1000);
+    if (typeof payload["exp"] !== "number" || payload["exp"] < nowSec) return reject("jwt_expired");
+    if (typeof payload["nbf"] === "number" && payload["nbf"] > nowSec) return reject("jwt_not_yet_valid");
+
+    const aud = payload["aud"];
+    const audList: string[] = Array.isArray(aud)
+      ? aud.filter((a): a is string => typeof a === "string")
+      : typeof aud === "string" ? [aud] : [];
+    if (audList.length === 0) return reject("jwt_missing_audience");
+    if (this.opts.requiredAudience && !audList.includes(this.opts.requiredAudience)) {
+      return reject("jwt_audience_mismatch");
+    }
+
+    return { ok: true, subject: sub, trustAnchor: trustDomain };
+  }
 }
+
+/**
+ * SPIRE-supported JWT-SVID algorithms. We keep this list explicit rather than passing
+ * whatever `alg` the JWT header claims into `crypto.verify` — both because Node's
+ * `verify("HS256", …)` would silently succeed against a public key in some shapes
+ * (HMAC-keyed) and because the SPIRE spec enumerates exactly these four.
+ */
+const JWT_SVID_ALGS = {
+  ES256: { digest: "sha256", dsaEncoding: "ieee-p1363" as const },
+  ES384: { digest: "sha384", dsaEncoding: "ieee-p1363" as const },
+  RS256: { digest: "sha256", dsaEncoding: undefined },
+  EdDSA: { digest: null as unknown as string, dsaEncoding: undefined },
+} satisfies Record<string, { digest: string | null; dsaEncoding?: "ieee-p1363" }>;
 
 function reject(reason: string): AttestationResult {
   return { ok: false, subject: null, trustAnchor: null, reason };
@@ -239,10 +372,90 @@ export function loadTrustBundlesFromEnv(raw: string): Map<string, X509Certificat
   return out;
 }
 
-// `createPublicKey` re-export anchors the dependency on `node:crypto` for downstream
-// verifiers (the JWT-SVID enforce path will need it). Kept tiny + side-effect-free.
-void createPublicKey;
-void (null as unknown as KeyObject);
+// --- JWT-SVID helpers ---------------------------------------------------------------
+
+interface ParsedJwt {
+  header: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  /** The literal `<header-b64u>.<payload-b64u>` string crypto.verify signs over. */
+  signingInput: string;
+  signature: Buffer;
+}
+
+function parseJwt(s: string): ParsedJwt {
+  const parts = s.split(".");
+  if (parts.length !== 3) throw new Error("malformed_jwt");
+  const [h, p, sig] = parts;
+  if (!h || !p || !sig) throw new Error("malformed_jwt");
+  const header = JSON.parse(b64uToBuffer(h).toString("utf8")) as Record<string, unknown>;
+  const payload = JSON.parse(b64uToBuffer(p).toString("utf8")) as Record<string, unknown>;
+  if (header === null || typeof header !== "object") throw new Error("malformed_jwt");
+  if (payload === null || typeof payload !== "object") throw new Error("malformed_jwt");
+  return {
+    header,
+    payload,
+    signingInput: `${h}.${p}`,
+    signature: b64uToBuffer(sig),
+  };
+}
+
+function b64uToBuffer(s: string): Buffer {
+  // base64url → base64 + padding so Buffer can decode it.
+  const padded = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4);
+  return Buffer.from(padded, "base64");
+}
+
+/**
+ * Pick a JWK from the bundle by `kid`. If the JWT has no `kid` header (rare but legal),
+ * accept the only key when the bundle has exactly one — otherwise refuse, since silently
+ * picking a key when the bundle has many is what enables substitution attacks.
+ */
+function pickJwk(jwks: JwkSet, kid: string | null): Jwk | null {
+  if (kid === null) return jwks.keys.length === 1 ? jwks.keys[0]! : null;
+  return jwks.keys.find((k) => k.kid === kid) ?? null;
+}
+
+/**
+ * Parse `ARC_SPIFFE_JWKS_BUNDLES` — `<domain>=<path-to-jwks.json>,…`. Each path points at a
+ * JSON file shaped `{"keys":[<jwk>,…]}` (the standard JWK Set form SPIRE bundles use).
+ * Malformed entries are skipped with a warning, mirroring `loadTrustBundlesFromEnv`.
+ */
+export function loadJwksBundlesFromEnv(raw: string): Map<string, JwkSet> {
+  const out = new Map<string, JwkSet>();
+  const log = new Logger("SpiffeAttestationVerifier");
+  for (const entry of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const eq = entry.indexOf("=");
+    if (eq <= 0) {
+      log.warn(`ignored malformed JWKS bundle "${entry}" (expected "<domain>=<path>")`);
+      continue;
+    }
+    const domain = entry.slice(0, eq).trim();
+    const path = entry.slice(eq + 1).trim();
+    try {
+      const raw = readFileSync(path, "utf8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        !Array.isArray((parsed as { keys?: unknown }).keys)
+      ) {
+        log.warn(`JWKS bundle for "${domain}" at ${path} doesn't have a "keys" array; skipped`);
+        continue;
+      }
+      const keys = (parsed as { keys: unknown[] }).keys.filter(
+        (k): k is Jwk => !!k && typeof k === "object" && typeof (k as { kty?: unknown }).kty === "string",
+      );
+      if (keys.length === 0) {
+        log.warn(`JWKS bundle for "${domain}" at ${path} contains no valid JWKs`);
+        continue;
+      }
+      out.set(domain, { keys });
+    } catch (err) {
+      log.warn(`failed to load JWKS bundle for "${domain}" at ${path}: ${(err as Error).message}`);
+    }
+  }
+  return out;
+}
 
 /**
  * Selects a verifier by attestation kind and applies the enrollment-time policy. Config:
@@ -250,7 +463,10 @@ void (null as unknown as KeyObject);
  *    can't enroll without a verifiable attestation.
  *  - `ARC_SPIFFE_TRUST_DOMAINS` = comma-separated allowlist (empty = any well-formed domain).
  *  - `ARC_SPIFFE_ENFORCE` = `true` to require cryptographic SVID validation (enforce-mode).
- *  - `ARC_SPIFFE_TRUST_BUNDLES` = `<domain>=<pem-path>,…` for enforce-mode chain validation.
+ *  - `ARC_SPIFFE_TRUST_BUNDLES` = `<domain>=<pem-path>,…` for enforce-mode X.509 chain validation.
+ *  - `ARC_SPIFFE_JWKS_BUNDLES` = `<domain>=<jwks-path>,…` for enforce-mode JWT-SVID validation.
+ *  - `ARC_SPIFFE_REQUIRED_AUDIENCE` = expected `aud` value in JWT-SVIDs (optional).
+ *    Unset = any non-empty `aud` accepted.
  */
 @Injectable()
 export class AttestationService {
@@ -269,12 +485,16 @@ export class AttestationService {
         .filter((s) => s.length > 0),
     );
     const bundles = this.enforce ? loadTrustBundlesFromEnv(process.env.ARC_SPIFFE_TRUST_BUNDLES ?? "") : new Map();
-    if (this.enforce && bundles.size === 0) {
-      // Operator asked for enforce but configured no bundles. Refuse to start in production
-      // (fail-closed); in dev/test this is a loud warning so test envs aren't blocked.
+    const jwks = this.enforce ? loadJwksBundlesFromEnv(process.env.ARC_SPIFFE_JWKS_BUNDLES ?? "") : new Map();
+    const requiredAudience = process.env.ARC_SPIFFE_REQUIRED_AUDIENCE?.trim() || undefined;
+    if (this.enforce && bundles.size === 0 && jwks.size === 0) {
+      // Operator asked for enforce but configured neither X.509 trust bundles nor JWKS
+      // bundles. Refuse to start in production (fail-closed); in dev/test this is a loud
+      // warning so test envs aren't blocked.
       const msg =
-        "ARC_SPIFFE_ENFORCE=true but ARC_SPIFFE_TRUST_BUNDLES is empty or all paths failed to load. " +
-        "Configure at least one trust bundle, or unset ARC_SPIFFE_ENFORCE.";
+        "ARC_SPIFFE_ENFORCE=true but both ARC_SPIFFE_TRUST_BUNDLES and ARC_SPIFFE_JWKS_BUNDLES " +
+        "are empty (or all paths failed to load). Configure at least one bundle, or unset " +
+        "ARC_SPIFFE_ENFORCE.";
       if (process.env.NODE_ENV === "production") {
         throw new Error(msg);
       }
@@ -284,9 +504,14 @@ export class AttestationService {
       allowedTrustDomains: domains,
       enforce: this.enforce,
       trustBundles: bundles,
+      jwksBundles: jwks,
+      ...(requiredAudience ? { requiredAudience } : {}),
     }));
     this.logger.log(
-      `AttestationService (required=${this.required}, enforce=${this.enforce}, spiffe trust domains=${domains.size > 0 ? [...domains].join(",") : "any"}, bundles=${bundles.size})`,
+      `AttestationService (required=${this.required}, enforce=${this.enforce}, ` +
+        `spiffe trust domains=${domains.size > 0 ? [...domains].join(",") : "any"}, ` +
+        `x509 bundles=${bundles.size}, jwks bundles=${jwks.size}` +
+        (requiredAudience ? `, required aud=${requiredAudience})` : ")"),
     );
   }
 

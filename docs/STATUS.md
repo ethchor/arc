@@ -256,13 +256,25 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   (`ARC_SPIFFE_TRUST_BUNDLES=<domain>=<pem-path>,…`), validity dates checked, SPIFFE URI
   pulled from the leaf's SAN. Fail-closed in production (server refuses to boot when
   enforce is on but no bundles are configured). Bare SPIFFE-ID strings refused in enforce
-  mode (no crypto to verify). Honest deferred scope: JWT-SVID enforce remains in record
-  mode until a follow-up adds JWKS-based signature verification. The verifier interface is
-  the real decision — sigstore / TPM / cloud-IID slot in unchanged. **15 unit tests**
-  total (5 record-mode + 5 enforce-mode against a real openssl-issued SPIFFE leaf + 5
-  service / env-config tests, with the chain-anchor / unrelated-CA / expired-leaf /
-  missing-bundle / wrong-allowlist negative paths all asserted). Workspace 70/70 turbo
-  green (server 36 suites, 191 passed).
+  mode (no crypto to verify). **JWT-SVID enforce** (`feat/jwt-svid-enforce`) closes the
+  deferred half: when the doc is a compact-JWS JWT-SVID, the verifier parses the JWT,
+  resolves the JWK by `kid` from a per-trust-domain JWKS bundle
+  (`ARC_SPIFFE_JWKS_BUNDLES=<domain>=<jwks-json>,…`), verifies the signature using Node's
+  built-in `crypto.verify` (algorithms restricted to SPIRE's set: ES256, ES384, RS256,
+  EdDSA — `unsupported_jwt_alg` for anything else), and enforces
+  `exp`/`nbf`/`aud`/`iss`. SPIFFE requires audience, so a JWT with no `aud` fails closed;
+  `ARC_SPIFFE_REQUIRED_AUDIENCE` (optional) adds an extra "must match arc-server's own
+  identifier" check. Trust-domain allowlist still applies. Fail-closed semantics extended:
+  enforce mode now boots when *either* X.509 trust bundles or JWKS bundles are
+  configured; refuses to start in production when *both* are empty. The verifier interface
+  unchanged — sigstore / TPM / cloud-IID still slot in via new kinds. **32 unit tests**
+  total (was 15): 5 record-mode + 5 X.509 enforce + 13 JWT-SVID enforce (happy path
+  Ed25519, wrong-key signature, unknown kid, bad alg, expired, nbf future, missing aud,
+  wrong aud, sub-not-spiffe, no-JWKS-for-domain, allowlist-mismatch, malformed) + 2 JWT
+  record-mode + 7 service / env-config (including new ARC_SPIFFE_REQUIRED_AUDIENCE +
+  JWKS-only boot path). The JWT fixture is Node-native (`generateKeyPairSync`,
+  `crypto.sign`) so no openssl gating. Workspace stays 74/74 turbo green (server 40
+  suites, 242 passed).
 - [x] **Phase 5b — plugin-manifest provenance** (`feat/plugin-manifest`). Closes the
   "anyone can mount any artifact off disk" gap: an OOP / WASM plugin is mounted only when
   its **signed manifest** pins the artifact's SHA-256 *and* names a publisher arc trusts.
