@@ -1,0 +1,51 @@
+arc
+Copyright 2026 The arc Authors
+
+This product includes software developed by the arc project authors.
+
+This software is licensed under the Apache License, Version 2.0; see
+the LICENSE file for the full text.
+
+Third-party software bundled or otherwise distributed alongside arc:
+
+  - OpenBao — Mozilla Public License 2.0
+    https://github.com/openbao/openbao
+    Driven through its Vault-compatible HTTP API by
+    `integrations/arc-openbao-adapter`; not vendored into this source tree.
+
+  - @noble/curves, @noble/hashes, @noble/ciphers, @noble/post-quantum —
+    MIT License
+    https://github.com/paulmillr/noble-curves
+    Bundled into `@arc/crypto` as the audited primitives layer.
+
+  - SimpleWebAuthn (`@simplewebauthn/server`, `@simplewebauthn/browser`) —
+    MIT License
+    https://github.com/MasterKale/SimpleWebAuthn
+    Bundled into `apps/arc-server` and `sdks/arc-js-sdk` for WebAuthn /
+    passkey verification.
+
+  - NestJS — MIT License
+    https://github.com/nestjs/nest
+    Runtime framework for `apps/arc-server`.
+
+  - TypeORM — MIT License
+    https://github.com/typeorm/typeorm
+    Persistence layer for `apps/arc-server`.
+
+  - OpenTelemetry SDKs — Apache License 2.0
+    https://github.com/open-telemetry/opentelemetry-js
+    Tracing + metrics instrumentation for `apps/arc-server`.
+
+  - Pino — MIT License
+    https://github.com/pinojs/pino
+    Structured logging for `apps/arc-server`.
+
+  - React + Tailwind CSS — MIT License
+    Web/desktop/extension UIs.
+
+  - sigstore tooling (cosign, syft) — Apache License 2.0
+    Used by `.github/workflows/release.yml` for keyless image signing +
+    SBOM generation; not vendored.
+
+This NOTICE file may be redistributed verbatim. See each upstream project
+for full license text and additional attributions.
