@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { totpCode } from "@arc/crypto";
 import type { JsonValue, TotpAlgorithm, TotpItem } from "@arc/types";
 import { VaultClient } from "@arc/sdk";
+import { runPluginCli } from "./plugin-commands";
 
 export interface CliIO {
   argv: string[];
@@ -40,6 +41,7 @@ const USAGE =
   "  totp-add <vaultId> <key> <secret> [issuer] [account]   add a TOTP item\n" +
   "  totp <vaultId> <key>                   print the current TOTP code for a key\n" +
   "  whoami                                 show current login\n" +
+  "  plugin <install|verify> …              operator-side signed plugin install + verify\n" +
   "\nsession: set ARC_MASTER_PASSWORD (consumer) or ARC_IDENTITY_KEY (service account).";
 
 export async function runCli(io: CliIO): Promise<number> {
@@ -193,6 +195,15 @@ export async function runCli(io: CliIO): Promise<number> {
       case "whoami": {
         io.out(`baseUrl=${cfg.baseUrl} userId=${cfg.userId ?? "(not logged in)"}`);
         return 0;
+      }
+      case "plugin": {
+        // Plugin install/verify is operator-side; no vault session needed (the publisher
+        // pub key is the only trust input, not the operator's identity).
+        return await runPluginCli(args, {
+          out: io.out,
+          err: io.err,
+          env: io.env,
+        });
       }
       default: {
         io.err(USAGE);

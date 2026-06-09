@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   KNOWN_PLUGIN_CAPABILITIES,
+  derivePublisherPub,
   generatePublisherKey,
   signArtifact,
   verifyArtifact,
@@ -157,6 +158,22 @@ describe("signArtifact + verifyArtifact round-trip", () => {
     expect(
       (await verifyArtifact({ manifest: m, artifactPath: file, publisherPubB64u: k.pubB64u })).reason,
     ).toBe("capability_unknown");
+  });
+});
+
+describe("derivePublisherPub", () => {
+  it("re-derives the matching pub b64u from a priv (round-trip with generatePublisherKey)", () => {
+    const k = generatePublisherKey();
+    expect(derivePublisherPub(k.privB64u)).toBe(k.pubB64u);
+  });
+
+  it("throws cleanly on a non-b64u priv", () => {
+    expect(() => derivePublisherPub("not%b64url")).toThrow(/private key is not valid base64url/);
+  });
+
+  it("throws cleanly on a priv of the wrong length", () => {
+    // 16 random bytes encoded — wrong length for Ed25519's 32-byte seed.
+    expect(() => derivePublisherPub("AAECAwQFBgcICQoLDA0ODw")).toThrow(/32 bytes/);
   });
 });
 

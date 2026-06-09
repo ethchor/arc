@@ -35,6 +35,10 @@ arc-plugin-sign keygen --out-priv ./publisher.key
 #   ARC_PLUGIN_TRUST_ANCHORS=publisher:arc-core=<pub-b64u>
 #
 # That's the single trust input the gate consults.
+
+# In a release workflow where only the priv is in secrets, re-derive the matching pub:
+arc-plugin-sign pubkey --priv env:ARC_PUBLISHER_PRIV
+# → prints the same <pub-b64u> as `keygen` did originally
 ```
 
 ## Per-release — sign a manifest
