@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  type OnApplicationBootstrap,
+} from "@nestjs/common";
 import {
   buildWasmtimeSpec,
   PluginError,
@@ -13,6 +19,11 @@ import {
 import type { PluginArtifactKind, SignedPluginManifest } from "@arc/types";
 import { ENGINES_CONFIG, type EnginesConfig } from "../engines/engines.service";
 import { PluginManifestService } from "./plugin-manifest.service";
+import {
+  buildRemoteProcessSpec,
+  parsePluginMountsEnv,
+  resolveMountFiles,
+} from "./plugin-mounts";
 import { PluginSecretsEngine } from "./plugin-secrets-engine";
 
 /**
@@ -37,7 +48,7 @@ export interface MountedPlugin {
  * plugin changes.
  */
 @Injectable()
-export class PluginsService {
+export class PluginsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(PluginsService.name);
   private readonly host = new PluginHost();
   private readonly mountByName = new Map<string, string>();
@@ -48,6 +59,41 @@ export class PluginsService {
     @Inject(ENGINES_CONFIG) private readonly config: EnginesConfig,
     private readonly manifests: PluginManifestService,
   ) {}
+
+  /**
+   * Nest lifecycle hook: after all providers are wired, read `ARC_PLUGIN_MOUNTS` and
+   * auto-mount each entry through the standard manifest-gated path. One bad entry doesn't
+   * sink the rest — each is mounted independently and failures land in the boot log with
+   * the gate's structured reason (so an operator sees "untrusted_publisher at index 2"
+   * rather than a server that silently refuses to start).
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    const raw = process.env.ARC_PLUGIN_MOUNTS;
+    if (!raw) return;
+    const { specs, errors } = parsePluginMountsEnv(raw);
+    for (const e of errors) {
+      this.logger.warn(`ARC_PLUGIN_MOUNTS[${e.index}] malformed (${e.reason}); skipped: ${e.entry}`);
+    }
+    for (const spec of specs) {
+      try {
+        const { manifest, config } = await resolveMountFiles(spec);
+        const remoteSpec = buildRemoteProcessSpec(spec);
+        const mounted = await this.mountRemoteSecretsPlugin(remoteSpec, spec.mountPath, config, manifest);
+        this.logger.log(
+          `auto-mounted ${mounted.meta.name}@${mounted.meta.version} at ${mounted.mount} (from ARC_PLUGIN_MOUNTS)`,
+        );
+      } catch (err) {
+        // BadRequestException's response carries the structured reason (manifest gate
+        // refusals, spawn failures, etc.). Log it verbatim so the operator can grep.
+        const e = err as { response?: { reason?: string; errors?: string[] }; message?: string };
+        const reason = e.response?.reason ?? "unknown";
+        const msg = e.response?.errors?.join("; ") ?? e.message ?? String(err);
+        this.logger.error(
+          `ARC_PLUGIN_MOUNTS: failed to mount ${spec.mountPath} from ${spec.artifactPath}: ${reason} (${msg})`,
+        );
+      }
+    }
+  }
 
   /**
    * Verify a plugin manifest against the artifact at `artifactPath` before spawning. Refuses

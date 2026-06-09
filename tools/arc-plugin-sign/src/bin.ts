@@ -26,6 +26,7 @@ import { dirname } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import type { SignedPluginManifest } from "@arc/types";
 import {
+  derivePublisherPub,
   generatePublisherKey,
   signArtifact,
   verifyArtifact,
@@ -36,6 +37,7 @@ const USAGE = `usage: arc-plugin-sign <command> [options]
 
 commands:
   keygen      generate an Ed25519 publisher keypair
+  pubkey      derive the b64u pub key from an existing priv (for CI release flows)
   sign        sign a manifest pinning an artifact + its declared capabilities
   verify      verify a manifest against an artifact + the published pub key
 
@@ -55,6 +57,8 @@ export async function runCli(io: CliIO): Promise<number> {
     switch (cmd) {
       case "keygen":
         return await runKeygen(rest, io);
+      case "pubkey":
+        return await runPubkey(rest, io);
       case "sign":
         return await runSign(rest, io);
       case "verify":
@@ -106,6 +110,30 @@ async function runKeygen(rest: readonly string[], io: CliIO): Promise<number> {
   } else {
     io.out(key.pubB64u);
   }
+  return 0;
+}
+
+async function runPubkey(rest: readonly string[], io: CliIO): Promise<number> {
+  const { values } = parseArgsSafe(rest, {
+    options: {
+      priv: { type: "string" },
+      help: { type: "boolean", short: "h" },
+    },
+    strict: true,
+  });
+  if (values.help) {
+    io.out(
+      "usage: arc-plugin-sign pubkey --priv <file|env:VAR>\n" +
+        "\n" +
+        "Re-derives the b64u pub key from an existing priv. Useful in release CI when the\n" +
+        "priv lives in a repo secret and the workflow needs the matching pub to verify the\n" +
+        "manifest it just signed.\n",
+    );
+    return 0;
+  }
+  const privRef = requireFlag(values, "priv");
+  const priv = await readPrivKey(privRef, io.env);
+  io.out(derivePublisherPub(priv));
   return 0;
 }
 

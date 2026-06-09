@@ -20,16 +20,19 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts src/bin.ts --format esm --dts --clean",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@arc/crypto": "workspace:*",
+    "@arc/plugin-sign": "workspace:*",
     "@arc/sdk": "workspace:*",
     "@arc/types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "tsup": "^8.3.5",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   }
 }

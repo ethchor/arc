@@ -1,5 +1,6 @@
 export {
   KNOWN_PLUGIN_CAPABILITIES,
+  derivePublisherPub,
   generatePublisherKey,
   signArtifact,
   verifyArtifact,

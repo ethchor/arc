@@ -311,6 +311,52 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   --kind, unknown subcommand), 3 arc-server signed-release e2e (publisher signs → operator
   pins → server mounts → gate dispatches; refusal on artifact tamper; refusal on
   unanchored publisher). Workspace stays 73/73 turbo green (server 38 suites, 198 passed).
+- [x] **Plugin release pipeline + operator install + boot-time auto-mount**
+  (`feat/plugin-release-pipeline`). Turns the signed-release toolchain from "operators
+  *can* ship and consume signed plugins" into "the publish side is automated and the
+  consume side is one CLI command." Three surfaces:
+
+  - **`.github/workflows/release-plugin-aws.yml`** — tag-driven (`plugin-aws-v*`) +
+    `workflow_dispatch`. Builds the OOP `arc-plugin-aws` bin, signs the manifest with
+    `secrets.ARC_PUBLISHER_PRIV` (declared capabilities: `read,delete` — STS creds are
+    non-renewable so `update` is intentionally absent), self-verifies via the same CLI,
+    bundles a `release-arc-plugin-aws-<v>.tar.gz` (bin + manifest + SHA256SUMS) plus the
+    loose files, and publishes a GitHub Release via `softprops/action-gh-release@v2`.
+    Fail-safe: when the secret is unset the workflow still runs end-to-end with a
+    workflow-local key (publish step skipped) so CI on a PR exercises the path before
+    real keys are rotated.
+  - **`arc-vault plugin install|verify`** — new operator-side `arc-cli` subcommands.
+    `install --release <url-prefix> --pub <b64u-or-file> --out-dir <dir>` downloads
+    `bin.cjs` + `manifest.json` from a release URL prefix (HTTP fetch via stdlib;
+    injectable for tests), writes them under `<out-dir>/<name>/`, verifies via
+    `@arc/plugin-sign` against the publisher pub, `chmod +x`'s the bin, and prints the
+    exact `ARC_PLUGIN_MOUNTS=…` + `ARC_PLUGIN_TRUST_ANCHORS=…` snippets the operator
+    copy-pastes into arc-server's env. `--from-dir` lets operators install from an
+    air-gapped tarball they fetched out-of-band. `--pub` accepts a raw b64u key, a file,
+    or a file containing the `publisher:<id>=<b64u>` anchor shape. Refusal exits 2 with
+    the structured reason, leaves files on disk for inspection. `verify` is the offline
+    half — no download, just `--artifact + --manifest + --pub`.
+  - **`ARC_PLUGIN_MOUNTS` boot-time auto-mount** — new `apps/arc-server/src/plugins/
+    plugin-mounts.ts` + `OnApplicationBootstrap` hook on `PluginsService`. Env shape:
+    `<mount-path>=<bin>[?manifest=<json>][&config=<json>],…`. Each entry mounts
+    independently through the existing manifest gate; a malformed line is skipped with a
+    structured warning, a refused entry surfaces the gate's reason in the boot log
+    (`artifact_hash_mismatch`, `untrusted_publisher`, etc.), and the rest still mount.
+    No new admin HTTP endpoint — runtime mount/unmount remain programmatic-from-config
+    (the env is the operator contract).
+
+  Adds a `pubkey` subcommand to `arc-plugin-sign` (derive the b64u pub from an existing
+  priv) so the release workflow can self-verify without a second secret round-trip.
+
+  **41 new tests**: 5 lib spec (`pubkey` round-trip + b64u length checks + new
+  derivation), 2 CLI spec (`pubkey` --priv file + env:VAR), 14 `arc-cli` plugin
+  command spec (install from-dir + via HTTP + tamper refusal + signer mismatch + name +
+  mount-path overrides + pub-as-file + pub-as-anchor-shape + 404 handling + verify
+  happy/refused, usage), 15 plugin-mounts unit (env parser + file resolver + spec
+  builder edge cases), 5 auto-mount e2e (signed plugin auto-mounts; bad entry isolated;
+  tamper refused; no-manifest gate-bypass; config thread-through). Workspace stays
+  74/74 turbo green (server 40 suites, 217 passed). New `arc-cli:test` task surfaces
+  in turbo for the first time.
 - [x] **Agent self-authentication + RFC 8693 `act` claim** (`feat/agent-credential-path`).
   Completes the Phase-3 credential path: an agent proves control of its Ed25519 signing key
   via challenge-response (`POST /vault/agents/:id/auth/challenge` → sign the nonce →

@@ -10,6 +10,7 @@
  */
 import { readFile } from "node:fs/promises";
 import {
+  edPubFromPriv,
   fromB64u,
   generateSigningKeyPair,
   pluginArtifactDigest,
@@ -52,6 +53,16 @@ export interface GeneratedKey {
 export function generatePublisherKey(): GeneratedKey {
   const { priv, pub } = generateSigningKeyPair();
   return { privB64u: toB64u(priv), pubB64u: toB64u(pub) };
+}
+
+/**
+ * Re-derive the b64url Ed25519 pub key from a b64url priv. Useful when an existing key is
+ * in CI secrets and a release workflow needs to publish its matching pub for operators
+ * to pin — saves the operator from storing both halves.
+ */
+export function derivePublisherPub(privB64u: string): string {
+  const priv = decodeB64uKey(privB64u, "private");
+  return toB64u(edPubFromPriv(priv));
 }
 
 export interface SignArtifactInput {

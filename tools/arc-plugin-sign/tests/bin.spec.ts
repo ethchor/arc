@@ -209,6 +209,23 @@ describe("arc-plugin-sign CLI", () => {
     expect(r.err.join("\n")).toMatch(/--kind must be "wasm" or "process"/);
   });
 
+  it("pubkey re-derives the matching pub from a priv file (round-trip with keygen)", async () => {
+    const priv = join(tmp, "k.key");
+    const pub = (await run(["keygen", "--out-priv", priv])).out[0]!;
+    const derived = await run(["pubkey", "--priv", priv]);
+    expect(derived.code).toBe(0);
+    expect(derived.out).toEqual([pub]);
+  });
+
+  it("pubkey accepts an env:VAR priv source (matches sign's CI-secret path)", async () => {
+    const seed = await run(["keygen", "--out-priv", join(tmp, "k.key")]);
+    const expectedPub = seed.out[0]!;
+    const privFromDisk = readFileSync(join(tmp, "k.key"), "utf8").trim();
+    const r = await run(["pubkey", "--priv", "env:THE_PRIV"], { THE_PRIV: privFromDisk });
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual([expectedPub]);
+  });
+
   it("unknown subcommand returns 1 with usage on stderr", async () => {
     const r = await run(["frobnicate"]);
     expect(r.code).toBe(1);
