@@ -42,9 +42,11 @@ export function buildEnginesConfig(): EnginesConfig {
   // works no matter which engine minted the credential.
   const leases = new LeaseManager();
 
+  const manifestCapsByMount = new Map<string, ReadonlySet<string> | null>();
+
   if (!addr) {
     logger.log("Engine-A disabled (BAO_ADDR unset); /v1/* will return 503");
-    return { client: null, registry, enginesByMount, leases };
+    return { client: null, registry, enginesByMount, leases, manifestCapsByMount };
   }
 
   const client = new OpenBaoClient({ addr, token, namespace });
@@ -68,7 +70,7 @@ export function buildEnginesConfig(): EnginesConfig {
   logger.log(
     `Engine-A enabled (addr=${addr}, mounts=${[...enginesByMount.keys()].join(", ")})`,
   );
-  return { client, registry, enginesByMount, leases };
+  return { client, registry, enginesByMount, leases, manifestCapsByMount };
 }
 
 @Module({

@@ -65,7 +65,7 @@ function buildHarness(): {
   const leases = new LeaseManager();
   const enginesByMount = new Map<string, SecretsEngine>();
   // No OpenBao client — proves plugin mounts work in plugin-only deployments.
-  const config: EnginesConfig = { client: null, registry, enginesByMount, leases };
+  const config: EnginesConfig = { client: null, registry, enginesByMount, leases, manifestCapsByMount: new Map() };
   const enginesService = new EnginesService(config);
   const plugins = new PluginsService(config, new PluginManifestService());
   return { enginesService, plugins, config };

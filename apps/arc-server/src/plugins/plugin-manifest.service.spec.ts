@@ -123,6 +123,59 @@ describe("PluginManifestService", () => {
       "artifact_unreadable",
     );
   });
+
+  it("surfaces declared capabilities on a valid manifest (for the runtime gate)", async () => {
+    const k = generateSigningKeyPair();
+    const bytes = Buffer.from("with-caps");
+    const file = await writeTempArtifact(bytes);
+    process.env.ARC_PLUGIN_TRUST_ANCHORS = `publisher:arc-core=${toB64u(k.pub)}`;
+    const s = new PluginManifestService();
+    const claims = freshClaims(pluginArtifactDigest(bytes), { capabilities: ["read", "update"] });
+    const manifest: SignedPluginManifest = { claims, signature: signPluginManifest(k.priv, claims) };
+    const r = await s.verify(manifest, file, "wasm");
+    expect(r.ok).toBe(true);
+    expect(r.capabilities).toEqual(["read", "update"]);
+  });
+
+  it("rejects a manifest declaring an unknown capability (typo surfaces immediately, not at runtime)", async () => {
+    const k = generateSigningKeyPair();
+    const bytes = Buffer.from("bad-cap");
+    const file = await writeTempArtifact(bytes);
+    process.env.ARC_PLUGIN_TRUST_ANCHORS = `publisher:arc-core=${toB64u(k.pub)}`;
+    const s = new PluginManifestService();
+    const claims = freshClaims(pluginArtifactDigest(bytes), {
+      // "write" isn't in the arc-grants vocabulary; intent was "update".
+      capabilities: ["read", "write"],
+    });
+    const manifest: SignedPluginManifest = { claims, signature: signPluginManifest(k.priv, claims) };
+    expect((await s.verify(manifest, file, "wasm")).reason).toBe("capability_unknown");
+  });
+
+  it("accepts a manifest with no `capabilities` field — gate is bypassed at runtime, matching pre-gate posture", async () => {
+    const k = generateSigningKeyPair();
+    const bytes = Buffer.from("no-caps");
+    const file = await writeTempArtifact(bytes);
+    process.env.ARC_PLUGIN_TRUST_ANCHORS = `publisher:arc-core=${toB64u(k.pub)}`;
+    const s = new PluginManifestService();
+    const claims = freshClaims(pluginArtifactDigest(bytes)); // no capabilities key
+    const manifest: SignedPluginManifest = { claims, signature: signPluginManifest(k.priv, claims) };
+    const r = await s.verify(manifest, file, "wasm");
+    expect(r.ok).toBe(true);
+    expect(r.capabilities).toBeUndefined();
+  });
+
+  it("accepts `sudo` (it's a legitimate verb, even though it short-circuits the runtime gate)", async () => {
+    const k = generateSigningKeyPair();
+    const bytes = Buffer.from("sudo");
+    const file = await writeTempArtifact(bytes);
+    process.env.ARC_PLUGIN_TRUST_ANCHORS = `publisher:arc-core=${toB64u(k.pub)}`;
+    const s = new PluginManifestService();
+    const claims = freshClaims(pluginArtifactDigest(bytes), { capabilities: ["sudo"] });
+    const manifest: SignedPluginManifest = { claims, signature: signPluginManifest(k.priv, claims) };
+    const r = await s.verify(manifest, file, "wasm");
+    expect(r.ok).toBe(true);
+    expect(r.capabilities).toEqual(["sudo"]);
+  });
 });
 
 describe("parseTrustAnchors", () => {

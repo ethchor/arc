@@ -54,12 +54,17 @@ export class PluginsService {
    * to spawn on signature mismatch, hash mismatch, or untrusted publisher — and on a missing
    * manifest when `ARC_PLUGIN_MANIFEST=required`. The reason is surfaced verbatim so the
    * operator sees *why* (matters for trust-anchor misconfigs in production).
+   *
+   * Returns the verified manifest's declared capabilities (when present) so the caller can
+   * pin them onto the mount for the runtime gate; `undefined` means "no manifest" or
+   * "manifest didn't pin capabilities" — both map to "no enforcement" downstream, matching
+   * the pre-gate posture.
    */
   private async verifyManifestOrThrow(
     manifest: SignedPluginManifest | undefined,
     artifactPath: string,
     kind: PluginArtifactKind,
-  ): Promise<void> {
+  ): Promise<readonly string[] | undefined> {
     const result = await this.manifests.verify(manifest, artifactPath, kind);
     if (!result.ok) {
       throw new BadRequestException({
@@ -69,9 +74,11 @@ export class PluginsService {
     }
     if (result.publisher) {
       this.logger.log(
-        `plugin manifest verified: publisher=${result.publisher} version=${result.version} sha256-ok`,
+        `plugin manifest verified: publisher=${result.publisher} version=${result.version} ` +
+          `sha256-ok caps=${result.capabilities ? `[${result.capabilities.join(",")}]` : "(any)"}`,
       );
     }
+    return result.capabilities;
   }
 
   /** Register a plugin without mounting it. Useful when configure() must run first. */
@@ -94,6 +101,13 @@ export class PluginsService {
     plugin: SecretsPlugin,
     mountPath: string,
     config: unknown = {},
+    /**
+     * Capabilities the plugin's verified manifest declared. `undefined` (or omitted) means
+     * "no manifest" / "manifest didn't pin caps" → no runtime enforcement, identical to
+     * the pre-gate behaviour. When present, every request against the mount is checked
+     * against this set by {@link EnginesService.requirePluginCapability}.
+     */
+    capabilities?: readonly string[],
   ): Promise<MountedPlugin> {
     if (this.host.has(plugin.meta.name)) {
       throw new BadRequestException({
@@ -117,6 +131,13 @@ export class PluginsService {
       });
       this.config.enginesByMount.set(engine.mount, engine);
       this.mountByName.set(plugin.meta.name, engine.mount);
+      // Pin the manifest's declared capability set (if any) onto the mount path. The
+      // engine dispatcher reads this map on every request — null/absent ⇒ no gate, which
+      // is the same path built-in engines take.
+      this.config.manifestCapsByMount.set(
+        engine.mount,
+        capabilities ? new Set(capabilities) : null,
+      );
       this.logger.log(`mounted plugin ${plugin.meta.name} at ${engine.mount}`);
       return { meta: plugin.meta, mount: engine.mount };
     } catch (err) {
@@ -150,12 +171,17 @@ export class PluginsService {
      */
     manifest?: SignedPluginManifest,
   ): Promise<MountedPlugin> {
-    await this.verifyManifestOrThrow(manifest, spec.command, "process");
-    return this.spawnAndMount(spec, mountPath, config);
+    const capabilities = await this.verifyManifestOrThrow(manifest, spec.command, "process");
+    return this.spawnAndMount(spec, mountPath, config, capabilities);
   }
 
   /** Spawn + mount; assumes any manifest check has already been done by the caller. */
-  private async spawnAndMount(spec: RemoteProcessSpec, mountPath: string, config: unknown): Promise<MountedPlugin> {
+  private async spawnAndMount(
+    spec: RemoteProcessSpec,
+    mountPath: string,
+    config: unknown,
+    capabilities: readonly string[] | undefined,
+  ): Promise<MountedPlugin> {
     let remote: RemoteSecretsPlugin;
     try {
       remote = await RemoteSecretsPlugin.spawn(spec);
@@ -165,7 +191,7 @@ export class PluginsService {
       });
     }
     try {
-      const mounted = await this.mountSecretsPlugin(remote, mountPath, config);
+      const mounted = await this.mountSecretsPlugin(remote, mountPath, config, capabilities);
       this.remoteByName.set(mounted.meta.name, remote);
       this.logger.log(`mounted remote plugin ${mounted.meta.name} (pid via child)`);
       return mounted;
@@ -192,8 +218,8 @@ export class PluginsService {
     // Verify against the *.wasm* (kind: "wasm"), not the wasmtime CLI — that's what the
     // manifest pins. The wasmtime binary itself is an operator-supplied runtime, not a
     // plugin artifact, so it doesn't go through manifest verification.
-    await this.verifyManifestOrThrow(manifest, spec.wasmPath, "wasm");
-    return this.spawnAndMount(buildWasmtimeSpec(spec), mountPath, config);
+    const capabilities = await this.verifyManifestOrThrow(manifest, spec.wasmPath, "wasm");
+    return this.spawnAndMount(buildWasmtimeSpec(spec), mountPath, config, capabilities);
   }
 
   /** List every plugin currently in the host. Each item shows its mount path if mounted. */
@@ -212,6 +238,7 @@ export class PluginsService {
     this.config.leases.revokePrefix(mount);
     this.config.registry.unmount(mount);
     this.config.enginesByMount.delete(mount);
+    this.config.manifestCapsByMount.delete(mount);
     this.mountByName.delete(name);
     this.host.unregister(name);
     // Close the remote child if this was a remote plugin. Closing is best-effort — if the

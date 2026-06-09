@@ -273,14 +273,28 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   `ARC_PLUGIN_TRUST_ANCHORS` (comma-separated `publisher=<b64url-pub>` allowlist) and gates
   `PluginsService.mountRemoteSecretsPlugin` / `mountWasmSecretsPlugin` — the verifier
   short-circuits the mount path *before spawn*, so a tampered binary or unknown signer never
-  forks a child. Honest scope: this is *who built it* + *what it is* binding, not a
-  capability gate (the WASI deny-by-default sandbox from ADR-004 still bounds *what it does*
-  at runtime). **14 new tests**: 5 crypto (sign/verify round-trip + every-field tamper +
-  wrong-key + SHA-256 KAT + bytes differ), 8 unit on the service (optional vs required, hash
-  match/mismatch, untrusted publisher, tampered signature, kind mismatch, unreadable
-  artifact, `parseTrustAnchors` malformed/non-b64url skipped), 3 integration through
-  `PluginsService` (untrusted publisher / hash mismatch / kind mismatch all 400'd *before*
-  spawn). Workspace stays 70/70 turbo green (server 33 suites, 169 passed).
+  forks a child. **14 tests** (manifest sign/verify round-trip + tamper, service unit, +
+  integration through `PluginsService`).
+- [x] **Phase 5b runtime capability gate** (`feat/plugin-capability-gate`). Extends Phase 5b
+  beyond *who built it* + *what it is* into *what it's allowed to do*: a manifest's
+  `capabilities` field — when present — is validated against the canonical arc-grants
+  vocabulary at verify time (`create|read|update|delete|list|sudo`; unknown verb →
+  `capability_unknown` refusal so operator typos surface immediately), and the resolved set
+  is **pinned onto the mount** in `EnginesConfig.manifestCapsByMount`. The engine dispatcher
+  (`EnginesService.get/post/delete/renewLease/revokeLease`) consults the pin on every
+  request: a verb not in the declared set (and not implied by `sudo`) returns 400 with
+  `reason: "plugin_capability_not_declared"` + the requested verb + the declared set, so
+  operators can grep audit logs and know exactly which manifest line would unblock. Verb
+  mapping mirrors Vault's policy semantics — `creds/<role>` ⇒ `read`, lease renew ⇒
+  `update`, lease revoke ⇒ `delete`, KV put ⇒ `create`-or-`update`, transit/PKI write ⇒
+  `update`, etc. Honest scope: built-in OpenBao mounts and plugins that omit `capabilities`
+  bypass the gate (identical to the pre-gate path); the gate only activates for plugins
+  that explicitly declared a cap set. **12 new tests**: 4 service-level on the verifier
+  (declared caps surfaced, unknown verb rejected, `capabilities` absent ⇒ undefined,
+  `sudo` accepted), 8 integration through the dispatcher (no-pin bypass, declared-verb
+  allows, undeclared verb 400's with the structured reason, `sudo` short-circuits, unmount
+  clears the pin, empty `[]` is the strict zero-trust posture). Workspace stays 70/70 turbo
+  green (server 37 suites, 195 passed).
 - [x] **Agent self-authentication + RFC 8693 `act` claim** (`feat/agent-credential-path`).
   Completes the Phase-3 credential path: an agent proves control of its Ed25519 signing key
   via challenge-response (`POST /vault/agents/:id/auth/challenge` → sign the nonce →

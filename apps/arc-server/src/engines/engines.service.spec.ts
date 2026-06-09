@@ -68,6 +68,7 @@ function makeService(): { service: EnginesService; leases: LeaseManager; engine:
     registry,
     enginesByMount,
     leases,
+    manifestCapsByMount: new Map(),
   };
   return { service: new EnginesService(config), leases, engine };
 }

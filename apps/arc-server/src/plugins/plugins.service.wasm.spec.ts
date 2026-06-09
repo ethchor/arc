@@ -15,7 +15,7 @@ function buildHarness(): PluginsService {
   const registry = new MountRegistry();
   const leases = new LeaseManager();
   const enginesByMount = new Map<string, SecretsEngine>();
-  return new PluginsService({ client: null, registry, enginesByMount, leases } satisfies EnginesConfig, new PluginManifestService());
+  return new PluginsService({ client: null, registry, enginesByMount, leases, manifestCapsByMount: new Map() } satisfies EnginesConfig, new PluginManifestService());
 }
 
 describe("PluginsService.mountWasmSecretsPlugin", () => {
