@@ -164,13 +164,23 @@ Anything that ships *between* the phases gets folded into the closest one.
 
 ## In progress (this branch)
 
-- (nothing — the full Engine-C arc (ADR-005, 8 PRs: #22–#28) has landed: agent principal +
-  signed delegation + scope intersection (#22), signed-intent task chain + budget +
-  cascade-revoke (#23), push-consent CIBA via passkeys (#24), SPIFFE attestation (#25),
-  agent self-auth + RFC 8693 `act` claim (#26), signed plugin manifests (#27), NHI
-  inventory view in the web console (#28). Engine A and Engine B were already done before
-  that. Next pick from the open product questions or new strategic work — no concrete
-  pending tasks remain in the implementation queue.)
+- (nothing in flight — this branch is the docs/status sweep that closes out the backlog.
+  Everything previously queued has landed: the Engine-C arc (ADR-005, PRs #22–#28), the
+  plugin release/install/admin toolchain (#36–#41, #43, #49), the ADR-007 sharing
+  extension (TTL + edit-back, #52), the CI stability arc (#42, #44, #45, #47, #48, #51),
+  ADR-010 (#53, design doc), and the CLA gate (#54). What remains is not
+  implementation-queue work:
+  - **First real plugin release** — *operator/user action, deliberately not doable from a
+    session*: populate the `ARC_PUBLISHER_PRIV` repo secret (generate the keypair
+    locally with `arc-plugin-sign keygen`; the priv must never transit a session),
+    `git mv` the parked workflow back per `.github/workflows-disabled/README.md`, tag
+    `plugin-aws-v0.1.0`.
+  - **ADR-010 implementation** — desktop-helper IPC + `arc-vault-nm` shim + extension
+    transport + pairing UI, sequenced in the ADR's construction section; future client
+    branch.
+  - **Next focus by product direction: the application UI** — a `design/` pass over
+    `arc-vault-web` (+ extension popup), now that the platform underneath is green and
+    feature-complete through Phase 4.)
 
 ----
 
@@ -445,6 +455,39 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   surface the server-augmented `verified` / `subject` / `verifiedAt` fields the verifier
   records. Zero-knowledge property preserved — only public agent state is fetched. Web build
   is green (`pnpm --filter @arc/vault-web build` + workspace typecheck 70/70).
+- [x] **Admin plugin API (ADR-009) + SPIFFE bundle SIGHUP hot-reload + CLI cosign-bundle
+  verify + `plugin uninstall`** (`architecture/admin-plugin-api`, PR #49). Four surfaces:
+  - **`POST/DELETE /v1/sys/plugins/mounts`** — live mount/unmount of signed OOP plugins
+    without bouncing the server. Both verbs require **`sudo` on `sys/plugins/`**
+    (deliberate: mounting can expose a manifest-declared `sudo` on the child path, so
+    `create` would be a CWE-269 escalation primitive — ADR-009 §2). Mount resolves
+    manifest+config from disk, runs the exact boot-path gate (400 with the gate's
+    structured reason on refusal; 409 on mount-path collision), and returns
+    `declaredCapabilities` + a copy-paste **`envSnippet`** because admin mounts are
+    *deliberately* runtime-only — `ARC_PLUGIN_MOUNTS` stays the single source of truth
+    across restarts. DELETE takes the URL-encoded mount path (`aws%2F`), 204/404.
+    Nest route-ordering gotcha solved structurally: `PluginsAdminModule` has no
+    transitive `EnginesModule` import and registers *before* it, so the admin routes
+    beat the `/v1/*` engine wildcard; `PluginsModule` went `@Global()`.
+  - **SPIFFE trust-bundle hot-reload** — `attestation.ts` re-reads
+    `ARC_SPIFFE_TRUST_BUNDLES` on **SIGHUP** (standard operator rotation signal);
+    reload refuses to *disarm* enforcement (empty/unparseable bundle set on reload keeps
+    the previous verifier instead of silently accepting everything); listener detached
+    in `onModuleDestroy` so test workers don't leak handlers.
+  - **`arc-vault plugin install --cosign-bundle <path|url|auto>`** — optional second
+    trust layer on operator installs: after the Ed25519 manifest verify accepts, spawns
+    `cosign verify-blob` against the release's Rekor bundle (`--cosign-identity` regex
+    required, issuer defaults to GitHub OIDC); refusal exits 2 with cosign's stderr
+    surfaced; `cosign` missing from PATH is a clear actionable error, not a silent skip.
+  - **`arc-vault plugin uninstall`** — removes `<out-dir>/<name>/`, refuses directories
+    that don't look like an arc install (missing bin/manifest) unless `--yes`, prints
+    the `ARC_PLUGIN_MOUNTS` entry to remove **and** the admin-API DELETE curl (mount
+    path pre-encoded) for live-mounted servers.
+  **+22 tests** (9 admin e2e in `plugin-admin.e2e-spec.ts` incl. sudo-gate +
+  gate-refusal 400 + collision 409 — server 41 suites / 261 passed; 4 SIGHUP unit in
+  `attestation.spec.ts` via `process.emit` — 36 total; 9 CLI cosign/uninstall specs
+  incl. the cosign-not-on-PATH branch — arc-cli 23 total). ADR-009 Accepted.
+  Workspace 74/74 turbo green.
 
 ### Phase 1 finish
 
@@ -1095,6 +1138,56 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   lives in the TS SDK). 5 `httptest`-backed tests (login caches+forwards the bearer, KV
   version query, dynamic-cred ttl+shape, 401-retry-once-then-succeed, 403→APIError-no-retry).
   A new `go` CI job (`actions/setup-go@v5`, go 1.23) runs build + vet + test on every PR.
+- [x] **CI stability arc** — six PRs that turned a week of red `node` jobs green by finding
+  three *independent* root causes (PRs #42, #44, #45, #47, #48, #51):
+  - **Phantom instant-failure runs on every push** (#44, #45): an unquoted `colon: space`
+    in a step name made `release-plugin-aws.yml` unparseable — GitHub creates a failed
+    run for an unparseable workflow on EVERY push, *ignoring its trigger filters*
+    (that was the inbox-spam). Workflow is parked in `.github/workflows-disabled/` with
+    the YAML fixed; its `README.md` documents the root cause, a `python3 yaml.safe_load`
+    lint one-liner, and the re-enable recipe (`git mv` back + populate
+    `ARC_PUBLISHER_PRIV` + tag `plugin-aws-v0.1.0`) for the first real plugin release.
+  - **arc-server exit 137 (OOM), four incidents across three jest configs** (#48 → #51):
+    `workerIdleMemoryLimit` checks the worker's V8 `heapUsed` between files — which
+    peaked ~400MB, always under the 512MB threshold, so the recycle **never fired** in
+    any config; meanwhile true RSS grew invisibly (every Nest e2e boot leaves sql.js
+    wasm linear memory + external Buffers that `heapUsed` doesn't count) until the
+    OOP-plugin child spawn became the final straw. Fix: **250MB threshold** (one the
+    heap actually crosses — restarts observable via `--logHeapUsage`) + the suite
+    **split into two jest processes** (`'/src/'` then `'/test/'`, anchored so `test`
+    can't match `atte*st*ation.spec.ts`) so the e2e half starts with zero accumulated
+    wasm memory. Split is lossless: 17+24 suites / 152+113(+6 skipped) = the full 41/265.
+    Also: `pnpm exec turbo run test --concurrency=1` in ci.yml (NB `pnpm test --
+    --concurrency=1` does NOT work — pnpm v7+ forwards the flag through turbo to every
+    vitest), and the runner image already ships an active 4GB `/swapfile` (the swap
+    step is tolerant of that).
+  - **"Flaky" plugin-sign / arc-cli exit-1 failures** (#42, #47 → #51): the heuristic
+    fix (#42) and the diagnostics (#47, exit-code assertions now surface the CLI's
+    captured stderr) led to the real cause — a freshly generated base64url key starts
+    with `-` about **1 in 64 runs**, and Node 24's `parseArgs` (CI) rejects
+    `--pub <dash-value>` as ambiguous while Node 22 (local) accepts it. Every test
+    passing a generated key now uses the equals form (`--pub=${key}`); the help texts
+    tell operators the same.
+  **Keep-decision on the diagnostics:** the `Memory posture` (free/swapon) and
+  always-on `Kernel OOM forensics` (dmesg) steps in ci.yml **stay** — they cost
+  seconds, they're what cracked the RSS-vs-heapUsed case, and they make the next
+  memory regression a one-run diagnosis instead of a four-incident saga.
+- [x] **`TRADEMARK.md` — brand policy for the "arc" mark** (`chore/trademark-policy`,
+  PR #46). Apache-2.0 covers the *code*, not the *name*: the policy allows unmodified
+  redistribution, compatibility statements ("works with arc"), and forks that **rename**,
+  while reserving the bare "arc" name / logo for the canonical distribution (the
+  Vault→OpenBao fork drama is the cautionary tale). Nominative-fair-use carve-outs spelled
+  out; no code changes.
+- [x] **CLA gate wired into CI** (`ops/cla-assistant`, PR #54). The
+  "when a CLA bot is wired" promise in CONTRIBUTING.md is now real:
+  `contributor-assistant/github-action` pinned to **v2.6.1** (verified tag — upstream
+  maintains no sliding `v2`, and an unresolvable tag would instant-fail every PR event,
+  the same class as the phantom-run incident above). First-time contributors get the
+  sign-phrase comment; signatures land on the dedicated `cla-signatures` branch
+  (`signatures/version1/cla.json`); `recheck` re-runs. Runs on `pull_request_target`
+  **with no checkout step** — the job never executes PR code, which is the only reason
+  that trigger is safe (warning comment in the workflow file). Owner + `*[bot]`
+  allowlisted; CONTRIBUTING.md updated to describe the live flow.
 
 ### Open product questions
 
@@ -1174,6 +1267,23 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   PRF-unlock reads a pre-existing item byte-identical; anti-replay (unknown challenge),
   missing `userHandle`, unknown `userHandle`, and the `residentKey: required` option flag
   all asserted. Workspace 70/70 turbo green; server 36 suites, 183 passed.
+  The deferred helper design is now written: **ADR-010**
+  (`architecture/desktop-helper-adr`, doc only). The existing desktop app
+  (`desktop-core` `Session`) *is* the helper; the extension connects through a stateless
+  native-messaging shim (`arc-vault-nm`) + peer-verified local IPC and delegates every
+  key operation — decrypt-narrowly extends across the IPC boundary, so when connected the
+  browser process holds **zero key material** (a full browser memory dump yields
+  ciphertext only). Browser restart → reconnect → unlocked, zero interactions, nothing at
+  rest; helper absent/locked → today's in-SW + passkey-first path unchanged. Explicitly
+  REJECTED: unlocked-key persistence in the OS keychain (Windows Credential Manager and
+  Linux Secret Service have no per-use presence gate — the shortcut would downgrade 2 of
+  3 platforms to *filesystem-read ⇒ vault*); `keychain.rs` keeps its device-key-only
+  contract. Pairing requires explicit desktop-side approval + per-OS peer verification
+  (code-signature on macOS/Windows; `SO_PEERCRED` uid-only on Linux, with pairing
+  approval as the compensating control). Lock semantics shared, helper authoritative; OS
+  sleep/lock-screen become mandatory lock triggers. Implementation (desktop-core `ipc`
+  module → `arc-vault-nm` crate → extension transport → pairing UI) is sequenced in the
+  ADR's construction section and queued as future client work.
 
 ----
 
