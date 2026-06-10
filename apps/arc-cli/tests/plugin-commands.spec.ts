@@ -325,3 +325,204 @@ describe("arc-vault plugin <usage>", () => {
     expect(r.err.join("\n")).toMatch(/mutually exclusive/);
   });
 });
+
+describe("arc-vault plugin install --cosign-bundle", () => {
+  it("accepts when the cosign verifier returns ok=true", async () => {
+    const fx = await makeFixture();
+    const src = join(tmp, "release");
+    require("node:fs").mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "bin.cjs"), fx.binBytes);
+    writeFileSync(join(src, "manifest.json"), fx.manifestJson);
+    const bundlePath = join(src, "bin.cjs.bundle");
+    writeFileSync(bundlePath, Buffer.from("synthetic cosign bundle bytes"));
+
+    let verifierSawArgs: { identityRegexp: string; issuer: string } | null = null;
+    const r = await run(
+      [
+        "install",
+        "--from-dir", src,
+        "--pub", fx.pubB64u,
+        "--out-dir", join(tmp, "installed"),
+        "--cosign-bundle", bundlePath,
+        "--cosign-identity", "^https://github.com/ethchor/arc/.github/workflows/release-plugin-.*",
+        "--cosign-issuer", "https://token.actions.githubusercontent.com",
+      ],
+      {
+        cosignVerify: async (args) => {
+          verifierSawArgs = { identityRegexp: args.identityRegexp, issuer: args.issuer };
+          return { ok: true, stderr: "" };
+        },
+      },
+    );
+    expect(r.code).toBe(0);
+    expect(verifierSawArgs!.identityRegexp).toMatch(/release-plugin-/);
+    expect(verifierSawArgs!.issuer).toBe("https://token.actions.githubusercontent.com");
+    expect(r.out.join("\n")).toMatch(/cosign keyless: verified/);
+  });
+
+  it("refuses install with exit 2 when cosign rejects, leaves files on disk for inspection", async () => {
+    const fx = await makeFixture();
+    const src = join(tmp, "release");
+    require("node:fs").mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "bin.cjs"), fx.binBytes);
+    writeFileSync(join(src, "manifest.json"), fx.manifestJson);
+    const bundlePath = join(src, "bin.cjs.bundle");
+    writeFileSync(bundlePath, Buffer.from("tampered bundle"));
+
+    const r = await run(
+      [
+        "install",
+        "--from-dir", src,
+        "--pub", fx.pubB64u,
+        "--out-dir", join(tmp, "installed"),
+        "--cosign-bundle", bundlePath,
+        "--cosign-identity", "^https://github.com/.*",
+      ],
+      {
+        cosignVerify: async () => ({
+          ok: false,
+          stderr: "Error: no matching signatures: identity not in certificate identities",
+        }),
+      },
+    );
+    expect(r.code).toBe(2);
+    expect(r.err.join("\n")).toMatch(/cosign verify-blob rejected the bundle/);
+    expect(r.err.join("\n")).toMatch(/identity not in certificate identities/);
+    // Files written for forensics
+    expect(existsSync(join(tmp, "installed", "arc-plugin-fake", "bin.cjs"))).toBe(true);
+  });
+
+  it("refuses install with exit 2 + actionable error when cosign is not on PATH", async () => {
+    const fx = await makeFixture();
+    const src = join(tmp, "release");
+    require("node:fs").mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "bin.cjs"), fx.binBytes);
+    writeFileSync(join(src, "manifest.json"), fx.manifestJson);
+    writeFileSync(join(src, "bin.cjs.bundle"), Buffer.from("x"));
+
+    const r = await run(
+      [
+        "install",
+        "--from-dir", src,
+        "--pub", fx.pubB64u,
+        "--out-dir", join(tmp, "installed"),
+        "--cosign-bundle", join(src, "bin.cjs.bundle"),
+        "--cosign-identity", "^https://github.com/.*",
+      ],
+      { cosignVerify: async () => null },
+    );
+    expect(r.code).toBe(2);
+    expect(r.err.join("\n")).toMatch(/cosign.*is not on PATH/);
+  });
+
+  it("usage error when --cosign-bundle is set without --cosign-identity", async () => {
+    const fx = await makeFixture();
+    const src = join(tmp, "release");
+    require("node:fs").mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "bin.cjs"), fx.binBytes);
+    writeFileSync(join(src, "manifest.json"), fx.manifestJson);
+    writeFileSync(join(src, "bin.cjs.bundle"), Buffer.from("x"));
+
+    const r = await run([
+      "install",
+      "--from-dir", src,
+      "--pub", fx.pubB64u,
+      "--out-dir", join(tmp, "installed"),
+      "--cosign-bundle", join(src, "bin.cjs.bundle"),
+    ]);
+    expect(r.code).toBe(1);
+    expect(r.err.join("\n")).toMatch(/--cosign-bundle requires --cosign-identity/);
+  });
+});
+
+describe("arc-vault plugin uninstall", () => {
+  it("removes a previously installed plugin and prints the env-var snippet to remove", async () => {
+    const fx = await makeFixture();
+    const src = join(tmp, "release");
+    require("node:fs").mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "bin.cjs"), fx.binBytes);
+    writeFileSync(join(src, "manifest.json"), fx.manifestJson);
+    const outDir = join(tmp, "installed");
+
+    // Install first so we have a real on-disk layout to uninstall.
+    const inst = await run([
+      "install",
+      "--from-dir", src,
+      "--pub", fx.pubB64u,
+      "--out-dir", outDir,
+    ]);
+    expect(inst.code).toBe(0);
+    expect(existsSync(join(outDir, "arc-plugin-fake", "bin.cjs"))).toBe(true);
+
+    const u = await run([
+      "uninstall",
+      "--name", "arc-plugin-fake",
+      "--out-dir", outDir,
+    ]);
+    expect(u.code).toBe(0);
+    expect(u.out.join("\n")).toMatch(/uninstalled arc-plugin-fake@0\.1\.0/);
+    expect(u.out.join("\n")).toMatch(/publisher: publisher:arc-core/);
+    expect(u.out.join("\n")).toMatch(/fake\/=.*\?manifest=/);
+    // Files gone
+    expect(existsSync(join(outDir, "arc-plugin-fake"))).toBe(false);
+  });
+
+  it("refuses to wipe a directory that doesn't look like an arc-installed plugin", async () => {
+    const outDir = join(tmp, "weird");
+    const pluginDir = join(outDir, "rando");
+    require("node:fs").mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, "important-data.txt"), "I am not a plugin");
+
+    const r = await run([
+      "uninstall",
+      "--name", "rando",
+      "--out-dir", outDir,
+    ]);
+    expect(r.code).toBe(2);
+    expect(r.err.join("\n")).toMatch(/does not look like an installed plugin/);
+    // The user's file is still safe.
+    expect(existsSync(join(pluginDir, "important-data.txt"))).toBe(true);
+  });
+
+  it("--yes overrides the refusal and force-deletes the directory", async () => {
+    const outDir = join(tmp, "force");
+    const pluginDir = join(outDir, "rando");
+    require("node:fs").mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, "data.txt"), "x");
+
+    const r = await run([
+      "uninstall",
+      "--name", "rando",
+      "--out-dir", outDir,
+      "--yes",
+    ]);
+    expect(r.code).toBe(0);
+    expect(existsSync(pluginDir)).toBe(false);
+  });
+
+  it("prints the admin-API DELETE recipe for live-mounted plugins", async () => {
+    const fx = await makeFixture();
+    const src = join(tmp, "release");
+    require("node:fs").mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "bin.cjs"), fx.binBytes);
+    writeFileSync(join(src, "manifest.json"), fx.manifestJson);
+    const outDir = join(tmp, "installed");
+
+    await run([
+      "install", "--from-dir", src, "--pub", fx.pubB64u, "--out-dir", outDir,
+    ]);
+
+    const u = await run([
+      "uninstall", "--name", "arc-plugin-fake", "--out-dir", outDir,
+    ]);
+    // Mount path encoded — `fake/` → `fake%2F`. `[\s\S]*` because the CLI wraps the
+    // `curl -X DELETE \\` onto a second line.
+    expect(u.out.join("\n")).toMatch(/DELETE[\s\S]*\/v1\/sys\/plugins\/mounts\/fake%2F/);
+  });
+
+  it("usage error when --name is missing", async () => {
+    const r = await run(["uninstall", "--out-dir", tmp]);
+    expect(r.code).toBe(1);
+    expect(r.err.join("\n")).toMatch(/missing required --name/);
+  });
+});

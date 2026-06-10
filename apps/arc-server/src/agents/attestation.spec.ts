@@ -459,4 +459,121 @@ describe("AttestationService", () => {
     const wrong = fx.signEdDsa({ sub: fx.spiffeId, aud: "different-service", exp: FUTURE(60) });
     expect(s.verify({ kind: "spiffe", doc: wrong }).reason).toBe("jwt_audience_mismatch");
   });
+
+  // ----- SIGHUP / reloadBundles() hot-reload --------------------------------------
+
+  it("reloadBundles() picks up a JWKS file that was rotated on disk (key rotation flow)", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "arc-jwks-rotate-"));
+    const fxOld = buildJwtFixture();
+    const jwksFile = path.join(dir, "jwks.json");
+    writeFileSync(jwksFile, JSON.stringify(fxOld.jwks));
+
+    process.env.ARC_SPIFFE_ENFORCE = "true";
+    process.env.ARC_SPIFFE_JWKS_BUNDLES = `${fxOld.trustDomain}=${jwksFile}`;
+    process.env.ARC_SPIFFE_REQUIRED_AUDIENCE = "arc-server";
+    const s = new AttestationService();
+
+    // Pre-rotation: a token signed by the OLD key verifies.
+    const oldJwt = fxOld.signEdDsa({ sub: fxOld.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    expect(s.verify({ kind: "spiffe", doc: oldJwt }).ok).toBe(true);
+
+    // Rotate: a new keypair becomes the trust bundle on disk. The OLD key is no longer
+    // anchored anywhere; the NEW key is the only one that should now verify.
+    const fxNew = buildJwtFixture();
+    writeFileSync(jwksFile, JSON.stringify(fxNew.jwks));
+
+    // Pre-reload: arc-server still trusts the OLD key — it hasn't seen the file change.
+    expect(s.verify({ kind: "spiffe", doc: oldJwt }).ok).toBe(true);
+
+    await s.reloadBundles();
+
+    // Post-reload: a token signed by the NEW key verifies; old key is gone.
+    const newJwt = fxNew.signEdDsa({ sub: fxNew.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    expect(s.verify({ kind: "spiffe", doc: newJwt }).ok).toBe(true);
+    expect(s.verify({ kind: "spiffe", doc: oldJwt }).reason).toBe("jwt_signature_invalid");
+
+    s.onModuleDestroy();
+  });
+
+  it("reloadBundles() picks up a JWKS file that was added since boot (new trust domain)", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "arc-jwks-add-"));
+    const fx = buildJwtFixture();
+    const jwksFile = path.join(dir, "jwks.json");
+    // Write the JWKS NOW but env starts with the variable pointing at a non-existent path —
+    // simulates the "I forgot to mount the secret" case followed by the operator fixing
+    // the path and sending SIGHUP.
+    process.env.ARC_SPIFFE_ENFORCE = "true";
+    process.env.ARC_SPIFFE_JWKS_BUNDLES = `${fx.trustDomain}=${path.join(dir, "absent.json")}`;
+    process.env.ARC_SPIFFE_REQUIRED_AUDIENCE = "arc-server";
+    process.env.NODE_ENV = "development"; // tolerate the "no bundles" warning at boot
+    const s = new AttestationService();
+
+    // Boot state: enforce on but bundle file didn't load → no JWKS for the domain.
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    expect(s.verify({ kind: "spiffe", doc: jwt }).reason).toBe("no_jwks_for_domain");
+
+    // Operator fixes the file (writes the JWKS to the *real* path) and updates the env
+    // var to point at it, then sends SIGHUP.
+    writeFileSync(jwksFile, JSON.stringify(fx.jwks));
+    process.env.ARC_SPIFFE_JWKS_BUNDLES = `${fx.trustDomain}=${jwksFile}`;
+    await s.reloadBundles();
+
+    expect(s.verify({ kind: "spiffe", doc: jwt }).ok).toBe(true);
+    s.onModuleDestroy();
+  });
+
+  it("reloadBundles() refuses to disarm enforce: empty bundles on reload keeps the previous verifier", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "arc-jwks-disarm-"));
+    const fx = buildJwtFixture();
+    const jwksFile = path.join(dir, "jwks.json");
+    writeFileSync(jwksFile, JSON.stringify(fx.jwks));
+
+    process.env.ARC_SPIFFE_ENFORCE = "true";
+    process.env.ARC_SPIFFE_JWKS_BUNDLES = `${fx.trustDomain}=${jwksFile}`;
+    process.env.ARC_SPIFFE_REQUIRED_AUDIENCE = "arc-server";
+    const s = new AttestationService();
+
+    const jwt = fx.signEdDsa({ sub: fx.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    expect(s.verify({ kind: "spiffe", doc: jwt }).ok).toBe(true);
+
+    // Operator (or a misconfig) wipes the env vars and tries to reload. The reload MUST
+    // NOT silently disarm enforce — it logs the warning and keeps the previous verifier
+    // alive so production traffic continues to be checked.
+    process.env.ARC_SPIFFE_JWKS_BUNDLES = "";
+    process.env.ARC_SPIFFE_TRUST_BUNDLES = "";
+    await s.reloadBundles();
+
+    expect(s.verify({ kind: "spiffe", doc: jwt }).ok).toBe(true);
+    s.onModuleDestroy();
+  });
+
+  it("SIGHUP signal triggers reloadBundles() (real-signal sanity)", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "arc-jwks-sighup-"));
+    const fxOld = buildJwtFixture();
+    const jwksFile = path.join(dir, "jwks.json");
+    writeFileSync(jwksFile, JSON.stringify(fxOld.jwks));
+
+    process.env.ARC_SPIFFE_ENFORCE = "true";
+    process.env.ARC_SPIFFE_JWKS_BUNDLES = `${fxOld.trustDomain}=${jwksFile}`;
+    process.env.ARC_SPIFFE_REQUIRED_AUDIENCE = "arc-server";
+    const s = new AttestationService();
+
+    const fxNew = buildJwtFixture();
+    writeFileSync(jwksFile, JSON.stringify(fxNew.jwks));
+
+    // `process.emit("SIGHUP")` invokes the listeners synchronously without sending an
+    // OS signal — important because in a jest worker `process.kill(pid, SIGHUP)` can
+    // race Node's default disposition and terminate the worker before the listener
+    // chain settles. The behaviour proven is the same: the wired handler fires and
+    // reloadBundles() runs.
+    process.emit("SIGHUP");
+    // Handler is sync-emit but invokes `reloadBundles()` which is async; let two
+    // microtasks settle so its returned promise resolves.
+    await new Promise<void>((r) => setImmediate(r));
+    await new Promise<void>((r) => setImmediate(r));
+
+    const newJwt = fxNew.signEdDsa({ sub: fxNew.spiffeId, aud: "arc-server", exp: FUTURE(60) });
+    expect(s.verify({ kind: "spiffe", doc: newJwt }).ok).toBe(true);
+    s.onModuleDestroy();
+  });
 });

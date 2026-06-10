@@ -10,7 +10,8 @@
  * releases land in a follow-up; the GitHub Release shape we publish today gives both the
  * raw files and a tarball, so operators can pick whichever fits their automation.
  */
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import {
@@ -26,12 +27,21 @@ export interface PluginCliIO {
   env: Record<string, string | undefined>;
   /** Override for tests: replace with a stub that returns canned bytes for known URLs. */
   fetch?: typeof fetch;
+  /**
+   * Override for tests: the cosign verify-blob spawn shim. Real implementation calls
+   * the `cosign` binary on PATH; tests pass a stub returning `{ ok, stderr }` so the
+   * spec doesn't need a real cosign install. Returning `null` simulates "cosign not
+   * found on PATH" — exercised by the missing-cosign branch.
+   */
+  cosignVerify?: (args: { bundle: Uint8Array; artifactPath: string; identityRegexp: string; issuer: string }) =>
+    Promise<{ ok: boolean; stderr: string } | null>;
 }
 
 const USAGE = `usage: arc-vault plugin <command> [options]
 
 commands:
   install     download + verify a signed plugin release, write to a local layout
+  uninstall   remove a previously installed plugin from its on-disk layout
   verify      verify a local bin + manifest against a pub key (no install)
 
 run \`arc-vault plugin <command> --help\` for command-specific options
@@ -43,6 +53,8 @@ export async function runPluginCli(argv: readonly string[], io: PluginCliIO): Pr
     switch (cmd) {
       case "install":
         return await runInstall(rest, io);
+      case "uninstall":
+        return await runUninstall(rest, io);
       case "verify":
         return await runVerify(rest, io);
       case "--help":
@@ -70,6 +82,9 @@ async function runInstall(rest: readonly string[], io: PluginCliIO): Promise<num
       "out-dir": { type: "string" },
       name: { type: "string" },
       "mount-path": { type: "string" },
+      "cosign-bundle": { type: "string" },
+      "cosign-identity": { type: "string" },
+      "cosign-issuer": { type: "string" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -79,11 +94,20 @@ async function runInstall(rest: readonly string[], io: PluginCliIO): Promise<num
       "usage: arc-vault plugin install (--release <url-prefix> | --from-dir <path>)\n" +
         "                              --pub <b64u-or-file> --out-dir <dir>\n" +
         "                              [--name <plugin-name>] [--mount-path <path>]\n" +
+        "                              [--cosign-bundle <url-or-path>\n" +
+        "                               --cosign-identity <regex>\n" +
+        "                               --cosign-issuer <url>]\n" +
         "\n" +
         "Downloads `bin.cjs` + `manifest.json` from a release URL (or a local dir), verifies\n" +
         "them locally against the publisher pub key (same primitives arc-server uses), lays\n" +
         "them down under `<out-dir>/<name>/`, and prints the `ARC_PLUGIN_MOUNTS` snippet you\n" +
-        "add to arc-server's env to auto-mount on boot.\n",
+        "add to arc-server's env to auto-mount on boot.\n" +
+        "\n" +
+        "Optional second trust layer: when --cosign-bundle is supplied, the install also runs\n" +
+        "`cosign verify-blob` against the artifact + bundle, refusing the install if cosign\n" +
+        "rejects the signature. `cosign` must be on PATH; --cosign-identity (cert-identity\n" +
+        "regex) is required, --cosign-issuer defaults to GitHub Actions OIDC. See ADR-009 +\n" +
+        "the release-plugin-aws.yml workflow for the exact identity pattern.\n",
     );
     return 0;
   }
@@ -97,6 +121,13 @@ async function runInstall(rest: readonly string[], io: PluginCliIO): Promise<num
   }
   const pubRef = requireFlag(values, "pub");
   const outDir = resolvePath(requireFlag(values, "out-dir"));
+  const cosignBundle = optionalString(values, "cosign-bundle");
+  const cosignIdentity = optionalString(values, "cosign-identity");
+  const cosignIssuer = optionalString(values, "cosign-issuer") ??
+    "https://token.actions.githubusercontent.com";
+  if (cosignBundle !== undefined && cosignIdentity === undefined) {
+    throw new Error("--cosign-bundle requires --cosign-identity <regex>");
+  }
 
   const bytes = await loadArtifactAndManifest(
     release !== undefined ? { kind: "url", base: release } : { kind: "dir", path: resolvePath(fromDir!) },
@@ -128,18 +159,124 @@ async function runInstall(rest: readonly string[], io: PluginCliIO): Promise<num
     return 2;
   }
 
+  // Second trust layer (optional): cosign keyless. Runs AFTER Ed25519 verify accepts, so
+  // a tampered artifact never reaches the cosign step. A cosign refusal aborts install
+  // with exit 2 and the files are left on disk for forensics (same posture as a
+  // manifest-signature refusal).
+  if (cosignBundle !== undefined) {
+    const bundleBytes = await loadCosignBundle(cosignBundle, release, io);
+    const verifier = io.cosignVerify ?? cosignVerifyBlobReal;
+    const cosignResult = await verifier({
+      bundle: bundleBytes,
+      artifactPath: binPath,
+      identityRegexp: cosignIdentity!,
+      issuer: cosignIssuer,
+    });
+    if (cosignResult === null) {
+      io.err("refused: cosign verification requested but `cosign` is not on PATH.");
+      io.err("install cosign (brew install cosign / apt-get install cosign / etc.) and retry.");
+      return 2;
+    }
+    if (!cosignResult.ok) {
+      io.err(`refused: cosign verify-blob rejected the bundle`);
+      // Surface cosign's stderr verbatim — its diagnostics are what the operator needs.
+      for (const line of cosignResult.stderr.split("\n").filter(Boolean)) io.err(`  ${line}`);
+      io.err(`the artifact + manifest were written to ${pluginDir} for inspection — delete them before retrying.`);
+      return 2;
+    }
+  }
+
   await chmod(binPath, 0o755); // executable, matches OOP plugin's spec.command expectation
 
   const mountSnippet = `ARC_PLUGIN_MOUNTS=${mountPath}=${binPath}?manifest=${manifestPath}`;
   io.out(`installed ${parsedManifest.claims.name}@${parsedManifest.claims.version} to ${pluginDir}`);
   io.out(`publisher: ${parsedManifest.claims.publisher}`);
   io.out(`capabilities: ${formatCaps(parsedManifest.claims.capabilities)}`);
+  if (cosignBundle !== undefined) {
+    io.out(`cosign keyless: verified against ${cosignIdentity} @ ${cosignIssuer}`);
+  }
   io.out("");
   io.out("add this to arc-server's env to auto-mount on boot:");
   io.out(`  ${mountSnippet}`);
   io.out("");
   io.out("and pin the publisher pub if you haven't already:");
   io.out(`  ARC_PLUGIN_TRUST_ANCHORS=${parsedManifest.claims.publisher}=${pubB64u}`);
+  return 0;
+}
+
+async function runUninstall(rest: readonly string[], io: PluginCliIO): Promise<number> {
+  const { values } = parseArgsSafe(rest, {
+    options: {
+      name: { type: "string" },
+      "out-dir": { type: "string" },
+      "mount-path": { type: "string" },
+      yes: { type: "boolean", short: "y" },
+      help: { type: "boolean", short: "h" },
+    },
+    strict: true,
+  });
+  if (values.help) {
+    io.out(
+      "usage: arc-vault plugin uninstall --name <plugin-name> --out-dir <dir> [--mount-path <path>] [-y]\n" +
+        "\n" +
+        "Removes a previously installed plugin's `bin.cjs` + `manifest.json` from\n" +
+        "`<out-dir>/<name>/` and prints the env-var snippet the operator should DELETE from\n" +
+        "arc-server's env. Pair with the live admin API (POST/DELETE /v1/sys/plugins/mounts)\n" +
+        "if the running server has already mounted the plugin and you want to unmount it\n" +
+        "without bouncing — uninstall only removes the on-disk layout.\n" +
+        "\n" +
+        "By default refuses to remove a directory it didn't itself install (missing\n" +
+        "bin.cjs or manifest.json under the target). Pass --yes to force-delete the\n" +
+        "directory anyway.\n",
+    );
+    return 0;
+  }
+  const name = requireFlag(values, "name");
+  const outDir = resolvePath(requireFlag(values, "out-dir"));
+  const force = values.yes === true;
+  const pluginDir = resolvePath(outDir, name);
+  const binPath = resolvePath(pluginDir, "bin.cjs");
+  const manifestPath = resolvePath(pluginDir, "manifest.json");
+
+  // Refuse to wipe a directory we don't recognize as our own install — protect against
+  // a typo wiping the wrong path. `--yes` overrides this.
+  const looksLikeOurs = await fileExists(binPath) && await fileExists(manifestPath);
+  if (!looksLikeOurs && !force) {
+    io.err(`refused: ${pluginDir} does not look like an installed plugin (missing bin.cjs / manifest.json)`);
+    io.err("pass --yes to delete the directory anyway, or check --name / --out-dir.");
+    return 2;
+  }
+
+  // Read the manifest BEFORE deletion so we can surface the publisher/version in the
+  // success message. Best-effort — missing files just mean we won't print metadata.
+  let publisher: string | undefined;
+  let version: string | undefined;
+  let mountPath = optionalString(values, "mount-path") ?? defaultMountPath(name);
+  if (looksLikeOurs) {
+    try {
+      const m = parseManifest(await readFile(manifestPath));
+      publisher = m.claims.publisher;
+      version = m.claims.version;
+      // Operator may have used a non-default mount path on install; preserve it when
+      // we can read it from the original install layout.
+      if (optionalString(values, "mount-path") === undefined) {
+        mountPath = defaultMountPath(m.claims.name);
+      }
+    } catch {
+      // ignore — best-effort metadata
+    }
+  }
+
+  await rm(pluginDir, { recursive: true, force: true });
+
+  io.out(`uninstalled ${name}${version ? `@${version}` : ""} from ${pluginDir}`);
+  if (publisher) io.out(`publisher: ${publisher}`);
+  io.out("");
+  io.out("remove this entry from arc-server's ARC_PLUGIN_MOUNTS env (one entry per plugin):");
+  io.out(`  ${mountPath}=${binPath}?manifest=${manifestPath}`);
+  io.out("");
+  io.out("if the server has the plugin live-mounted, unmount it via the admin API too:");
+  io.out(`  curl -X DELETE -H "Authorization: Bearer <admin-token>" \\\n    https://<arc-server>/v1/sys/plugins/mounts/${encodeURIComponent(mountPath)}`);
   return 0;
 }
 
@@ -209,6 +346,60 @@ async function fetchBinary(f: typeof fetch, url: string): Promise<Uint8Array> {
   if (!res.ok) throw new Error(`fetch ${url}: HTTP ${res.status}`);
   const ab = await res.arrayBuffer();
   return new Uint8Array(ab);
+}
+
+/** Load a cosign bundle from `--cosign-bundle`. Forms accepted: absolute/relative path,
+ *  HTTP(S) URL, or the literal "auto" — auto uses `<release>/bin.cjs.bundle` (only valid
+ *  when --release is set). */
+async function loadCosignBundle(
+  ref: string,
+  release: string | undefined,
+  io: PluginCliIO,
+): Promise<Uint8Array> {
+  if (ref === "auto") {
+    if (release === undefined) throw new Error("--cosign-bundle auto requires --release");
+    const base = release.endsWith("/") ? release : release + "/";
+    return fetchBinary(io.fetch ?? fetch, base + "bin.cjs.bundle");
+  }
+  if (/^https?:\/\//.test(ref)) return fetchBinary(io.fetch ?? fetch, ref);
+  return readFile(resolvePath(ref));
+}
+
+/** Real cosign verify-blob shim. Spawns `cosign`; returns null when not on PATH. */
+async function cosignVerifyBlobReal(args: {
+  bundle: Uint8Array; artifactPath: string; identityRegexp: string; issuer: string;
+}): Promise<{ ok: boolean; stderr: string } | null> {
+  // Write the bundle to a tmp file because cosign reads --bundle from disk (no stdin).
+  const { tmpdir } = await import("node:os");
+  const { writeFile: write } = await import("node:fs/promises");
+  const { randomBytes } = await import("node:crypto");
+  const tmpPath = resolvePath(tmpdir(), `arc-cosign-${randomBytes(8).toString("hex")}.bundle`);
+  await write(tmpPath, args.bundle);
+  try {
+    return await new Promise<{ ok: boolean; stderr: string } | null>((resolve) => {
+      const child = spawn("cosign", [
+        "verify-blob",
+        "--bundle", tmpPath,
+        "--certificate-identity-regexp", args.identityRegexp,
+        "--certificate-oidc-issuer", args.issuer,
+        args.artifactPath,
+      ], { stdio: ["ignore", "ignore", "pipe"] });
+      let stderr = "";
+      child.stderr.on("data", (d) => { stderr += d.toString(); });
+      child.on("error", (err: NodeJS.ErrnoException) => {
+        // ENOENT = cosign not on PATH. Signal "not installed" to the caller via null.
+        if (err.code === "ENOENT") return resolve(null);
+        resolve({ ok: false, stderr: `${err.message}\n${stderr}` });
+      });
+      child.on("close", (code) => resolve({ ok: code === 0, stderr }));
+    });
+  } finally {
+    await rm(tmpPath, { force: true });
+  }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try { await readFile(path); return true; } catch { return false; }
 }
 
 function parseManifest(bytes: Uint8Array): SignedPluginManifest {

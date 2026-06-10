@@ -21,6 +21,7 @@ import { AuthMethodsModule } from "./auth-methods/auth-methods.module";
 import { EnginesModule } from "./engines/engines.module";
 import { GrantsModule } from "./grants/grants.module";
 import { ObservabilityModule } from "./observability/observability.module";
+import { PluginsAdminModule } from "./plugins/plugins-admin.module";
 import { PluginsModule } from "./plugins/plugins.module";
 import { VaultModule } from "./vault/vault.module";
 
@@ -144,6 +145,12 @@ export function buildDataSourceOptions(): TypeOrmModuleOptions {
     // to register ahead of the engines `/v1/*` catch-all (and it intentionally doesn't import
     // EnginesModule, so it isn't pulled in transitively first).
     AuthMethodsModule,
+    // PluginsAdminModule (ADR-009) must precede EnginesModule for the same reason: its
+    // POST/DELETE /v1/sys/plugins/mounts routes need to register ahead of the engines
+    // `/v1/*` catch-all. It intentionally doesn't import PluginsModule directly — it gets
+    // PluginsService via PluginsModule's @Global() registration, so the transitive
+    // EnginesModule dep stays in PluginsModule's slot below.
+    PluginsAdminModule,
     EnginesModule,
     // AgentsModule imports EnginesModule (for the shared lease registry), so it must come
     // *after* EnginesModule here — otherwise EnginesModule resolves transitively at the

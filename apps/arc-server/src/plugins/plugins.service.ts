@@ -274,6 +274,16 @@ export class PluginsService implements OnApplicationBootstrap {
   }
 
   /**
+   * The manifest-declared capability set pinned to a mount path, or `undefined` when
+   * none is pinned (either no manifest or manifest without `capabilities`). Read-only
+   * accessor for the admin controller — the underlying map is private so callers can't
+   * forge cap pins.
+   */
+  declaredCapabilitiesFor(mountPath: string): ReadonlySet<string> | undefined {
+    return this.config.manifestCapsByMount.get(mountPath) ?? undefined;
+  }
+
+  /**
    * Tear down a mount: remove from the registry, drop the engine, revoke every active lease
    * issued by it, then unregister from the host. Idempotent — returns true if anything was
    * removed.

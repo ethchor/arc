@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
 import { X509Certificate, createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { AgentAttestation } from "@arc/types";
@@ -469,15 +469,49 @@ export function loadJwksBundlesFromEnv(raw: string): Map<string, JwkSet> {
  *    Unset = any non-empty `aud` accepted.
  */
 @Injectable()
-export class AttestationService {
+export class AttestationService implements OnModuleDestroy {
   private readonly logger = new Logger(AttestationService.name);
   private readonly verifiers = new Map<string, AttestationVerifier>();
+  /** Bound SIGHUP listener so we can detach it on shutdown (and avoid Node deprecation
+   *  warnings from never-unregistered handlers in long-lived tests). */
+  private readonly sighupHandler = (): void => {
+    this.reloadBundles().catch((err) => this.logger.error(`SIGHUP reload failed: ${String(err)}`));
+  };
   readonly required: boolean;
   readonly enforce: boolean;
 
   constructor() {
     this.required = (process.env.ARC_AGENT_ATTESTATION ?? "optional").toLowerCase() === "required";
     this.enforce = (process.env.ARC_SPIFFE_ENFORCE ?? "false").toLowerCase() === "true";
+    this.installSpiffeVerifier({ initial: true });
+    // Hot-reload on SIGHUP. `process.on` adds a listener; the test-only `reloadBundles()`
+    // entry point bypasses the signal entirely for deterministic specs. The handler is
+    // detached on shutdown so tests that construct multiple services don't leak warnings
+    // ("possible EventEmitter memory leak detected").
+    process.on("SIGHUP", this.sighupHandler);
+  }
+
+  onModuleDestroy(): void {
+    process.off("SIGHUP", this.sighupHandler);
+  }
+
+  /**
+   * Re-read the SPIFFE bundle env vars from disk and atomically replace the SPIFFE
+   * verifier. Called from the SIGHUP handler at runtime; callable directly from tests
+   * (and the operator-facing dev path) without sending a real signal.
+   *
+   * Race-safety: `Map.set` is synchronous, and any in-flight `verify()` call already
+   * captured its own reference to the prior verifier — those finish against the prior
+   * bundles. Subsequent verifies see the new bundles. SPIFFE rotation tolerates this
+   * benign overlap (it's the same model as restarting the process behind a load
+   * balancer; some pre-rotate calls land on pre-rotate bundles).
+   */
+  async reloadBundles(): Promise<void> {
+    this.installSpiffeVerifier({ initial: false });
+  }
+
+  /** Shared install/replace path used at boot and on reload. */
+  private installSpiffeVerifier(opts: { initial: boolean }): void {
     const domains = new Set(
       (process.env.ARC_SPIFFE_TRUST_DOMAINS ?? "")
         .split(",")
@@ -489,16 +523,19 @@ export class AttestationService {
     const requiredAudience = process.env.ARC_SPIFFE_REQUIRED_AUDIENCE?.trim() || undefined;
     if (this.enforce && bundles.size === 0 && jwks.size === 0) {
       // Operator asked for enforce but configured neither X.509 trust bundles nor JWKS
-      // bundles. Refuse to start in production (fail-closed); in dev/test this is a loud
-      // warning so test envs aren't blocked.
+      // bundles. Fail-closed in production at boot; on a *reload* it's a warning + the
+      // existing verifier stays in place (a bad reload must not silently disarm enforce).
       const msg =
         "ARC_SPIFFE_ENFORCE=true but both ARC_SPIFFE_TRUST_BUNDLES and ARC_SPIFFE_JWKS_BUNDLES " +
         "are empty (or all paths failed to load). Configure at least one bundle, or unset " +
         "ARC_SPIFFE_ENFORCE.";
-      if (process.env.NODE_ENV === "production") {
-        throw new Error(msg);
+      if (opts.initial) {
+        if (process.env.NODE_ENV === "production") throw new Error(msg);
+        this.logger.warn(msg);
+      } else {
+        this.logger.warn(`reload refused: ${msg} — keeping previous verifier`);
+        return;
       }
-      this.logger.warn(msg);
     }
     this.register(new SpiffeAttestationVerifier({
       allowedTrustDomains: domains,
@@ -508,7 +545,8 @@ export class AttestationService {
       ...(requiredAudience ? { requiredAudience } : {}),
     }));
     this.logger.log(
-      `AttestationService (required=${this.required}, enforce=${this.enforce}, ` +
+      `${opts.initial ? "AttestationService" : "SPIFFE verifier reloaded"} ` +
+        `(required=${this.required}, enforce=${this.enforce}, ` +
         `spiffe trust domains=${domains.size > 0 ? [...domains].join(",") : "any"}, ` +
         `x509 bundles=${bundles.size}, jwks bundles=${jwks.size}` +
         (requiredAudience ? `, required aud=${requiredAudience})` : ")"),
