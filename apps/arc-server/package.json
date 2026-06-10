@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "jest --maxWorkers=1 --workerIdleMemoryLimit=250MB '/src/' && jest --maxWorkers=1 --workerIdleMemoryLimit=250MB '/test/'",
+    "test": "jest --maxWorkers=1 --workerIdleMemoryLimit=200MB '/src/plugins/' && jest --maxWorkers=1 --workerIdleMemoryLimit=200MB '/src/' --testPathIgnorePatterns=/src/plugins/ --testPathIgnorePatterns=/test/ && jest --maxWorkers=1 --workerIdleMemoryLimit=200MB '/test/'",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/typeorm.config.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/typeorm.config.ts",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/typeorm.config.ts",
