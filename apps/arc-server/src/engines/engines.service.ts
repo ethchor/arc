@@ -88,12 +88,63 @@ export class EnginesService {
    * (no OpenBao, all mounts come from plugins) is a valid configuration, and the registry
    * is always queryable.
    */
-  async listMounts(): Promise<Array<{ path: string; type: string; description?: string }>> {
-    return this.config.registry.list().map((m) => ({
-      path: m.path,
-      type: String(m.type),
-      description: m.description,
-    }));
+  async listMounts(): Promise<
+    Array<{
+      path: string;
+      type: string;
+      description?: string;
+      /**
+       * Capability set the mount's signed manifest declared (ADR-005 Phase 5b runtime
+       * gate). `undefined` ⇒ no manifest pinned ⇒ no enforcement for this mount (same
+       * posture as a built-in OpenBao engine). Operators consult this to write policy
+       * documents that grant exactly what a plugin needs and nothing more.
+       */
+      declaredCapabilities?: readonly string[];
+    }>
+  > {
+    return this.config.registry.list().map((m) => {
+      const declared = this.config.manifestCapsByMount.get(m.path);
+      return {
+        path: m.path,
+        type: String(m.type),
+        description: m.description,
+        ...(declared ? { declaredCapabilities: [...declared].sort() } : {}),
+      };
+    });
+  }
+
+  /**
+   * Suggested policy documents per plugin mount, derived from the manifest gate's
+   * declared capability set. Admins call this once after mounting plugins to get
+   * copy-paste-ready policies that grant exactly what each plugin needs — no more, no
+   * less — so the policy doesn't drift from the plugin's actual surface as the plugin
+   * upgrades. Built-in mounts (no manifest) and plugins with no declared capabilities are
+   * skipped, since there's nothing to template from.
+   *
+   * The output shape matches `/v1/sys/policy`'s upsert DTO; operators can `curl
+   * /v1/sys/policy-templates | jq '.data[]' | xargs -I {} curl -d {} /v1/sys/policy` to
+   * onboard every plugin at once.
+   */
+  policyTemplates(): Array<{
+    name: string;
+    scopes: Array<{ pathPrefix: string; capabilities: readonly string[] }>;
+  }> {
+    const templates: Array<{
+      name: string;
+      scopes: Array<{ pathPrefix: string; capabilities: readonly string[] }>;
+    }> = [];
+    for (const [mountPath, declared] of this.config.manifestCapsByMount.entries()) {
+      if (!declared || declared.size === 0) continue;
+      const caps = [...declared].sort();
+      // The mount path already ends in "/" (MountRegistry normalization), and a-z0-9 only —
+      // safe for a policy name suffix.
+      const policyName = `plugin:${mountPath.replace(/\/$/, "")}`;
+      templates.push({
+        name: policyName,
+        scopes: [{ pathPrefix: mountPath, capabilities: caps }],
+      });
+    }
+    return templates;
   }
 
   /**

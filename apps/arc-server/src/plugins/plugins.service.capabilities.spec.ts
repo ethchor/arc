@@ -153,4 +153,47 @@ describe("EnginesService — plugin runtime capability gate", () => {
       response: { reason: "plugin_capability_not_declared", capability: "read", declared: [] },
     });
   });
+
+  it("listMounts() surfaces the plugin's declared capabilities for admin/UI consumption", async () => {
+    const { engines, plugins } = buildHarness();
+    await plugins.mountSecretsPlugin(new FakeAwsPlugin(), "aws/", {}, ["read", "delete"]);
+    const mounts = await engines.listMounts();
+    const m = mounts.find((m) => m.path === "aws/");
+    expect(m?.declaredCapabilities).toEqual(["delete", "read"]); // sorted
+  });
+
+  it("listMounts() omits declaredCapabilities for mounts without a pinned manifest", async () => {
+    const { engines, plugins } = buildHarness();
+    await plugins.mountSecretsPlugin(new FakeAwsPlugin(), "aws/"); // no caps
+    const mounts = await engines.listMounts();
+    const m = mounts.find((m) => m.path === "aws/");
+    expect(m?.declaredCapabilities).toBeUndefined();
+  });
+
+  it("policyTemplates() yields one suggested policy per plugin mount with declared caps", async () => {
+    const { engines, plugins } = buildHarness();
+    await plugins.mountSecretsPlugin(new FakeAwsPlugin(), "aws/", {}, ["read", "delete"]);
+    const templates = engines.policyTemplates();
+    expect(templates).toEqual([
+      {
+        name: "plugin:aws",
+        scopes: [{ pathPrefix: "aws/", capabilities: ["delete", "read"] }],
+      },
+    ]);
+  });
+
+  it("policyTemplates() skips mounts with no manifest caps + mounts with empty cap sets", async () => {
+    const { engines, plugins } = buildHarness();
+    // Three plugins: one with caps, one bare (no manifest), one with explicit zero caps.
+    await plugins.mountSecretsPlugin(new FakeAwsPlugin(), "aws/", {}, ["read"]);
+    const bare = new FakeAwsPlugin();
+    Object.defineProperty(bare.meta, "name", { value: "fake-bare" });
+    await plugins.mountSecretsPlugin(bare, "bare/");
+    const empty = new FakeAwsPlugin();
+    Object.defineProperty(empty.meta, "name", { value: "fake-empty" });
+    await plugins.mountSecretsPlugin(empty, "empty/", {}, []);
+
+    const templates = engines.policyTemplates();
+    expect(templates.map((t) => t.name)).toEqual(["plugin:aws"]);
+  });
 });
