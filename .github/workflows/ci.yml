@@ -17,19 +17,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The hosted runner has 7GB RAM and NO swap. The arc-server jest suite (40 suites,
-      # one sequential worker) plus the OOP-plugin e2e specs (which spawn real `node`
-      # child processes) intermittently spike past the ceiling — the kernel OOM killer
-      # then SIGKILLs the worker (exit 137) at whichever spec is mid-flight, which is why
-      # the red runs looked random all day (2026-06-09/10). Four fixes were layered:
-      # turbo --concurrency=1, jest worker recycling, and this swapfile — the swap is the
-      # deterministic one: spikes page out instead of getting killed.
-      - name: Add 4GB swap (hosted runner has none — absorbs jest+OOP-spawn spikes)
+      # Memory posture + diagnostics for the recurring exit-137 (SIGKILL) on
+      # @arc/server#test (2026-06-09/10). The image ships /swapfile already active, so
+      # the kills happened DESPITE host swap — suspect: a cgroup memory limit on the job
+      # scope (cgroup OOM ignores host swap). This step records the facts; the always()
+      # step after the tests prints the kernel's own account of any kill.
+      - name: Memory posture (swap + cgroup limits)
         run: |
-          sudo fallocate -l 4G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          free -h
+          swapon --show || true
+          echo "--- job cgroup memory limits ---"
+          CG="/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)"
+          echo "cgroup: $CG"
+          for f in memory.max memory.swap.max memory.high; do
+            [ -f "$CG/$f" ] && echo "$f = $(cat "$CG/$f")" || echo "$f: (absent)"
+          done
+          # Add 8GB extra swap on the big ephemeral disk — tolerate pre-existing swap.
+          sudo fallocate -l 8G /mnt/swapfile2 \
+            && sudo chmod 600 /mnt/swapfile2 \
+            && sudo mkswap /mnt/swapfile2 \
+            && sudo swapon /mnt/swapfile2 \
+            || echo "extra swap not added (continuing)"
           free -h
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -51,6 +59,11 @@ jobs:
       # and passes the flag down to every package's vitest (which errors on it) instead
       # of consuming it as its own scheduling flag.
       - run: pnpm exec turbo run test --concurrency=1
+      # If anything got OOM-killed, the kernel log names the killer (host OOM vs
+      # "Memory cgroup out of memory") and the victim's RSS — runs even when tests fail.
+      - name: Kernel OOM forensics
+        if: always()
+        run: sudo dmesg | grep -iE "out of memory|oom|killed process" | tail -20 || echo "no OOM events in dmesg"
       - name: Dependency audit (non-blocking)
         run: pnpm audit --audit-level=high
         continue-on-error: true
