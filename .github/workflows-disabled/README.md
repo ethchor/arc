@@ -2,53 +2,85 @@
 
 GitHub Actions only auto-discovers workflows under `.github/workflows/`. Anything
 in this sibling `workflows-disabled/` directory is **not** loaded — it's a
-parking lot for workflows we want to keep version-controlled but not active yet.
+parking lot for workflows we want version-controlled but not active.
 
-## Why this exists
+## Root cause of the phantom failures (solved)
 
-The first workflow parked here (`release-plugin-aws.yml`) was authored in PR #36
-+ extended in PR #40. The intent was to trigger only on tag pushes matching
-`plugin-aws-v*`:
+`release-plugin-aws.yml` (added in PR #36, extended in PR #40) produced a red
+**instant-failure run on every push** to every branch — 0s duration, zero jobs —
+despite its trigger being tags-only:
 
 ```yaml
 on:
   push:
     tags:
       - "plugin-aws-v*"
-  workflow_dispatch:
 ```
 
-But GitHub Actions appears to have been firing it on **every** push (to develop
-and to feature branches) regardless of the `tags` filter — every push showed a
-red "Release plugin" failure run with 0s duration, spamming notifications. PR
-#44 tried two defensive fixes (canonical multiline `tags:` form + job-level
-`if:` guard); neither fully suppressed the phantom failures.
+The cause was **not** the trigger. The file contained a step name with an
+unquoted `colon + space` inside a plain YAML scalar:
 
-Until we're ready to push the first `plugin-aws-v0.1.0` tag (which needs the
-`ARC_PUBLISHER_PRIV` repo secret populated), parking the workflow here keeps
-the file in source control without GitHub Actions evaluating it.
+```yaml
+- name: Self-verify (sanity: would arc-server accept this manifest?)
+#                           ^ YAML parse error: "mapping values are not allowed here"
+```
 
-## How to re-enable
+That makes the whole file unparseable. When a workflow file can't be parsed,
+GitHub Actions cannot evaluate its triggers — so it surfaces the parse failure
+as a failed workflow run **on every push**, attributed to whatever commit was
+pushed. This is why:
 
-When you're ready to do a real release:
+- the `tags:` filter appeared to be ignored,
+- a job-level `if:` guard (tried in PR #44) changed nothing (the file never
+  parsed far enough to evaluate it),
+- the runs always showed 0s duration with no jobs,
+- the other tag-triggered workflows (`release.yml`, `publish-sdk.yml`) never
+  phantom-fired — their YAML is valid.
+
+The step name is fixed in the copy parked here (now
+`Self-verify the signed manifest (as arc-server would)` — no bare colon), and
+the file validates:
 
 ```sh
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows-disabled/release-plugin-aws.yml'))"
+```
+
+## Why it stays parked anyway
+
+The workflow only has work to do when a `plugin-aws-v*` tag is pushed, and the
+first real release also needs the `ARC_PUBLISHER_PRIV` repo secret populated.
+Keeping the file out of `.github/workflows/` until then guarantees zero noise
+regardless of any future YAML mishap, and re-enabling is one `git mv`.
+
+## How to re-enable (first real release)
+
+```sh
+# 1. Validate before you move it — refuse to enable a file that doesn't parse:
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows-disabled/release-plugin-aws.yml'))" && echo OK
+
+# 2. Move it back into the auto-discovered directory:
 git mv .github/workflows-disabled/release-plugin-aws.yml .github/workflows/
 git commit -m "ops: re-enable release-plugin-aws workflow for first release"
 git push
+
+# 3. Populate the ARC_PUBLISHER_PRIV repo secret (arc-plugin-sign keygen), then:
 git tag plugin-aws-v0.1.0
 git push origin plugin-aws-v0.1.0
 ```
 
-The workflow will then run on the tag push as intended. If it phantom-triggers
-again, the next debugging step is to compare the YAML against GitHub's
-[`push.tags` filter docs](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onpushpull_requestpull_request_targetbranchesignore-branchestags-tags-ignore-tagsignore)
-and consider whether the workflow name's em-dash or some YAML quirk is
-interfering with trigger evaluation.
+The tag push triggers the release workflow; ordinary branch pushes will not
+(valid YAML + tags-only trigger — confirmed working by `release.yml` /
+`publish-sdk.yml`, which share the same trigger shape and have never
+phantom-fired).
 
-## Other workflows that may land here
+## Lint rule of thumb for all workflows
 
-- Any workflow that should only run on rare events (release tags, scheduled
-  monthly maintenance, manual operator commands) but where GitHub Actions
-  trigger filtering is unreliable.
-- Workflows under active development that aren't ready to run on every commit.
+Keep workflow **step names free of unquoted `: `** (colon+space) — quote the
+whole name or rephrase. Validate any edited workflow file locally before
+pushing:
+
+```sh
+for f in .github/workflows/*.yml; do
+  python3 -c "import yaml,sys; yaml.safe_load(open('$f'))" || echo "BROKEN: $f"
+done
+```

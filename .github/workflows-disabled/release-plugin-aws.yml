@@ -136,7 +136,12 @@ jobs:
           # Always shred the priv from disk if we wrote a workflow-local one.
           rm -f .release-key
 
-      - name: Self-verify (sanity: would arc-server accept this manifest?)
+      # NB: keep step names free of unquoted "<word>: " sequences — a colon+space inside a
+      # plain YAML scalar makes the whole file unparseable, and GitHub turns an unparseable
+      # workflow into an instant-failure run on EVERY push, ignoring the `tags:` trigger
+      # filter entirely. That's exactly the phantom-failure spam this file caused while the
+      # previous name read "Self-verify (sanity: would arc-server accept this manifest?)".
+      - name: Self-verify the signed manifest (as arc-server would)
         run: |
           node tools/arc-plugin-sign/dist/bin.js verify \
             --artifact "${{ steps.stamp.outputs.artifact }}" \
