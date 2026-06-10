@@ -870,7 +870,7 @@ export class VaultPendingApprovalEntity {
   resolvedAt!: Date | null;
 }
 
-export type ItemSharePermission = "view";
+export type ItemSharePermission = "view" | "edit";
 
 /**
  * Item-level share (ADR-007). One row = one user has cryptographic access to one *version*
@@ -924,9 +924,35 @@ export class VaultItemShareEntity {
   @Column({ type: "text", nullable: true })
   itemType!: string | null;
 
-  /** Reserved for future TTL'd shares; v1 always null. */
+  /**
+   * TTL'd shares (ADR-007 extension): the share is treated as revoked once `expiresAt`
+   * passes — excluded from the grantee's incoming list (and lazily deleted), refused for
+   * write-backs. Null = no expiry.
+   */
   @Column({ type: "datetime", nullable: true })
   expiresAt!: Date | null;
+
+  // --- edit-back proposal (ADR-007 extension). One pending proposal per share row; a
+  //     newer write-back overwrites. All five columns are set + cleared together. ---
+
+  /** Grantee's proposed ciphertext, sealed under a grantee-generated IK. */
+  @Column({ type: "simple-json", nullable: true })
+  pendingCiphertext!: EnvelopeJson | null;
+
+  /** That IK, `pqSeal`'d to the *granter's* hybrid identity (not the vault key). */
+  @Column({ type: "simple-json", nullable: true })
+  pendingWrappedIK!: EnvelopeJson | null;
+
+  /** Source-item version the proposal was based on (AAD binds to baseVersion + 1). */
+  @Column({ type: "int", nullable: true })
+  pendingBaseVersion!: number | null;
+
+  /** Vault key version at proposal time — part of the AAD ref the granter reconstructs. */
+  @Column({ type: "int", nullable: true })
+  pendingKeyVersion!: number | null;
+
+  @Column({ type: "datetime", nullable: true })
+  pendingAt!: Date | null;
 
   @CreateDateColumn()
   createdAt!: Date;

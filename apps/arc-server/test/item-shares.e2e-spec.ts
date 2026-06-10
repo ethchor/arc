@@ -166,4 +166,176 @@ describe("item-level shares (ADR-007)", () => {
     // /vaults/<A's vault id>/items/<itemId>/share returns 404 to him.
     await expect(B.shareItem(vault.id, item.id, charlieId)).rejects.toThrow();
   });
+
+  // ----- TTL'd shares (ADR-007 extension) -----
+
+  it("an expired share disappears from the grantee's incoming list (lazy revoke)", async () => {
+    const A = new VaultClient({ baseUrl, profile: "test" });
+    await A.devLogin("a-ttl@example.com");
+    await A.enroll("pw");
+    const B = new VaultClient({ baseUrl, profile: "test" });
+    const { userId: bobId } = await B.devLogin("b-ttl@example.com");
+    await B.enroll("pw");
+
+    const vault = await A.createVault("team");
+    const item = await A.putItem(vault.id, { type: "secret", key: "T", value: "ttl" }, { type: "secret" });
+
+    // 150ms TTL — comfortably in the future at create, comfortably past after the sleep.
+    const share = await A.shareItem(vault.id, item.id, bobId, { expiresAtMs: Date.now() + 150 });
+    expect(share.expiresAt).not.toBeNull();
+    expect((await B.listIncomingShares())).toHaveLength(1);
+
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await B.listIncomingShares())).toHaveLength(0);
+  });
+
+  it("refuses a TTL in the past at share time (expiry_in_past)", async () => {
+    const A = new VaultClient({ baseUrl, profile: "test" });
+    await A.devLogin("a-ttl-past@example.com");
+    await A.enroll("pw");
+    const B = new VaultClient({ baseUrl, profile: "test" });
+    const { userId: bobId } = await B.devLogin("b-ttl-past@example.com");
+    await B.enroll("pw");
+
+    const vault = await A.createVault("team");
+    const item = await A.putItem(vault.id, { type: "secret", key: "P", value: "x" }, { type: "secret" });
+    await expect(
+      A.shareItem(vault.id, item.id, bobId, { expiresAtMs: Date.now() - 1000 }),
+    ).rejects.toThrow();
+  });
+
+  // ----- Edit-back shares (ADR-007 extension) -----
+
+  it("full edit-back loop: grantee proposes, granter applies, vault item updates", async () => {
+    const A = new VaultClient({ baseUrl, profile: "test" });
+    await A.devLogin("a-editback@example.com");
+    await A.enroll("pw");
+    const B = new VaultClient({ baseUrl, profile: "test" });
+    const { userId: bobId } = await B.devLogin("b-editback@example.com");
+    await B.enroll("pw");
+
+    const vault = await A.createVault("team");
+    const item = await A.putItem(
+      vault.id,
+      { type: "secret", key: "ROTATE_ME", value: "old-password" },
+      { type: "secret" },
+    );
+
+    // Alice shares with edit permission.
+    await A.shareItem(vault.id, item.id, bobId, { permission: "edit" });
+
+    // Bob decrypts, edits, proposes a write-back.
+    const incoming = (await B.listIncomingShares())[0]!;
+    expect(incoming.permission).toBe("edit");
+    const decrypted = B.decryptIncomingShare(incoming) as { value: string };
+    expect(decrypted.value).toBe("old-password");
+
+    const afterPropose = await B.writeBackShare(incoming, {
+      type: "secret",
+      key: "ROTATE_ME",
+      value: "new-password-from-bob",
+    });
+    expect(afterPropose.pending).not.toBeNull();
+
+    // Alice sees the pending proposal in her outgoing list and applies it.
+    const outgoing = (await A.listOutgoingShares()).find((s) => s.granteeUserId === bobId)!;
+    expect(outgoing.pending).not.toBeNull();
+    const { applied, version } = await A.applyShareWriteBack(outgoing);
+    expect((applied as { value: string }).value).toBe("new-password-from-bob");
+    expect(version).toBe(item.version + 1);
+
+    // The VAULT item now decrypts to Bob's payload for Alice (normal member read).
+    const { items } = await A.pull(vault.id, 0);
+    const updated = items.find((i) => i.id === item.id)!;
+    expect((updated.data as { value: string }).value).toBe("new-password-from-bob");
+
+    // Pending is cleared after apply.
+    const after = (await A.listOutgoingShares()).find((s) => s.granteeUserId === bobId)!;
+    expect(after.pending).toBeNull();
+  });
+
+  it("write-back is refused on a view-only share (share_not_editable)", async () => {
+    const A = new VaultClient({ baseUrl, profile: "test" });
+    await A.devLogin("a-viewonly@example.com");
+    await A.enroll("pw");
+    const B = new VaultClient({ baseUrl, profile: "test" });
+    const { userId: bobId } = await B.devLogin("b-viewonly@example.com");
+    await B.enroll("pw");
+
+    const vault = await A.createVault("team");
+    const item = await A.putItem(vault.id, { type: "secret", key: "V", value: "x" }, { type: "secret" });
+    await A.shareItem(vault.id, item.id, bobId); // default view
+    const incoming = (await B.listIncomingShares())[0]!;
+    await expect(B.writeBackShare(incoming, { v: 2 })).rejects.toThrow(/view-only/);
+  });
+
+  it("write-back 409s when the source item moved past the grantee's snapshot", async () => {
+    const A = new VaultClient({ baseUrl, profile: "test" });
+    await A.devLogin("a-conflict@example.com");
+    await A.enroll("pw");
+    const B = new VaultClient({ baseUrl, profile: "test" });
+    const { userId: bobId } = await B.devLogin("b-conflict@example.com");
+    await B.enroll("pw");
+
+    const vault = await A.createVault("team");
+    const item = await A.putItem(vault.id, { type: "secret", key: "C", value: "v1" }, { type: "secret" });
+    await A.shareItem(vault.id, item.id, bobId, { permission: "edit" });
+    const incoming = (await B.listIncomingShares())[0]!;
+
+    // Alice edits the source item AFTER sharing — Bob's snapshot is now stale.
+    await A.putItem(
+      vault.id,
+      { type: "secret", key: "C", value: "v2-from-alice" },
+      { id: item.id, baseVersion: item.version, type: "secret" },
+    );
+
+    await expect(B.writeBackShare(incoming, { value: "bob-stale-edit" })).rejects.toThrow();
+  });
+
+  it("granter can reject a pending write-back without applying it", async () => {
+    const A = new VaultClient({ baseUrl, profile: "test" });
+    await A.devLogin("a-reject@example.com");
+    await A.enroll("pw");
+    const B = new VaultClient({ baseUrl, profile: "test" });
+    const { userId: bobId } = await B.devLogin("b-reject@example.com");
+    await B.enroll("pw");
+
+    const vault = await A.createVault("team");
+    const item = await A.putItem(vault.id, { type: "secret", key: "R", value: "keep-me" }, { type: "secret" });
+    await A.shareItem(vault.id, item.id, bobId, { permission: "edit" });
+    const incoming = (await B.listIncomingShares())[0]!;
+    await B.writeBackShare(incoming, { type: "secret", key: "R", value: "unwanted" });
+
+    const outgoing = (await A.listOutgoingShares()).find((s) => s.granteeUserId === bobId)!;
+    expect(outgoing.pending).not.toBeNull();
+    await A.clearSharePending(outgoing.id);
+
+    // Pending gone, vault item untouched.
+    const after = (await A.listOutgoingShares()).find((s) => s.granteeUserId === bobId)!;
+    expect(after.pending).toBeNull();
+    const { items } = await A.pull(vault.id, 0);
+    const untouched = items.find((i) => i.id === item.id)!;
+    expect((untouched.data as { value: string }).value).toBe("keep-me");
+  });
+
+  it("re-sharing clears a stale pending proposal (snapshot superseded)", async () => {
+    const A = new VaultClient({ baseUrl, profile: "test" });
+    await A.devLogin("a-reshare-pend@example.com");
+    await A.enroll("pw");
+    const B = new VaultClient({ baseUrl, profile: "test" });
+    const { userId: bobId } = await B.devLogin("b-reshare-pend@example.com");
+    await B.enroll("pw");
+
+    const vault = await A.createVault("team");
+    const item = await A.putItem(vault.id, { type: "secret", key: "S", value: "v1" }, { type: "secret" });
+    await A.shareItem(vault.id, item.id, bobId, { permission: "edit" });
+    const incoming = (await B.listIncomingShares())[0]!;
+    await B.writeBackShare(incoming, { value: "based-on-v1" });
+
+    // Alice re-shares (e.g. after her own edit) — the parked proposal was based on a
+    // snapshot that no longer exists, so it's dropped with the upsert.
+    await A.shareItem(vault.id, item.id, bobId, { permission: "edit" });
+    const outgoing = (await A.listOutgoingShares()).find((s) => s.granteeUserId === bobId)!;
+    expect(outgoing.pending).toBeNull();
+  });
 });

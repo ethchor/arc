@@ -4,6 +4,8 @@ import {
   createVaultKey,
   decryptItem,
   encryptItem,
+  encryptShareWriteBack,
+  openShareWriteBack,
   enroll,
   type ItemRef,
   openVaultKeyGrant,
@@ -194,6 +196,55 @@ describe("VK rotation (IK re-wrap, payload untouched)", () => {
         oldVk.vk,
         { vaultId: "v1", itemId: "i1", version: 1, keyVersion: 2 },
         { ciphertext: enc.ciphertext, wrappedItemKey: rewrapped },
+      ),
+    ).toThrow();
+  });
+});
+
+describe("item-share write-back (ADR-007 edit-back extension)", () => {
+  it("grantee proposes a new version; granter opens it with their identity priv", () => {
+    const granter = enroll(PW, { profile });
+    const grantee = enroll("grantee pw", { profile });
+    void grantee; // grantee's own keys aren't needed for the proposal — only the granter's pub
+    const ref: ItemRef = { vaultId: "v1", itemId: "i1", version: 4, keyVersion: 2 };
+    const proposal = { type: "login", title: "GitHub", fields: { password: "rotated!" } };
+
+    const pending = encryptShareWriteBack(
+      { x25519Pub: granter.session.identityPub, mlkemPub: granter.session.identityPubMlkem },
+      ref,
+      proposal,
+    );
+    const opened = openShareWriteBack(
+      { x25519Priv: granter.session.identityPriv, mlkemPriv: granter.session.identityPrivMlkem },
+      ref,
+      pending,
+    );
+    expect(opened).toEqual(proposal);
+  });
+
+  it("a third party cannot open the proposal; AAD binds it to the item coordinates", () => {
+    const granter = enroll(PW, { profile });
+    const stranger = enroll("stranger pw", { profile });
+    const ref: ItemRef = { vaultId: "v1", itemId: "i1", version: 4, keyVersion: 2 };
+    const pending = encryptShareWriteBack(
+      { x25519Pub: granter.session.identityPub, mlkemPub: granter.session.identityPubMlkem },
+      ref,
+      { a: "b" },
+    );
+    // Wrong identity priv → pqSealOpen fails.
+    expect(() =>
+      openShareWriteBack(
+        { x25519Priv: stranger.session.identityPriv, mlkemPriv: stranger.session.identityPrivMlkem },
+        ref,
+        pending,
+      ),
+    ).toThrow();
+    // Right identity, transplanted coordinates → AAD failure.
+    expect(() =>
+      openShareWriteBack(
+        { x25519Priv: granter.session.identityPriv, mlkemPriv: granter.session.identityPrivMlkem },
+        { ...ref, itemId: "i2" },
+        pending,
       ),
     ).toThrow();
   });
