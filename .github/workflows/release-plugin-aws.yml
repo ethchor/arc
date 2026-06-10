@@ -28,7 +28,8 @@ name: Release plugin — arc-plugin-aws
 #  evidence + identity provenance + public-internet audit trail.
 on:
   push:
-    tags: ["plugin-aws-v*"]
+    tags:
+      - "plugin-aws-v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -44,6 +45,12 @@ env:
 
 jobs:
   release:
+    # Explicit safety: only run when the ref is one of our release tags or a
+    # workflow_dispatch invocation. The `on:` filter above should already do this, but
+    # GitHub has historically been quirky with `push.tags`-only workflows showing up as
+    # "failed" runs on branch pushes when the YAML pre-validates. The `if:` guarantees
+    # the job is skipped (not failed) for any non-release ref.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/plugin-aws-v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
