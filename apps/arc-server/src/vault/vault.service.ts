@@ -36,6 +36,7 @@ import type {
   CreateItemShareDto,
   CreateVaultDto,
   EnrollDto,
+  ItemShareWriteBackDto,
   PutHeadDto,
   RecoverKeysetDto,
   RegisterDeviceDto,
@@ -788,6 +789,7 @@ export class VaultService {
       // creating a row that won't tell you anything new.
       throw new BadRequestException({ error: "cannot_share_with_self" });
     }
+    const expiresAt = this.parseShareExpiry(dto.expiresAtMs);
     const recipient = await this.users.findOne({ where: { id: dto.granteeUserId } });
     if (!recipient) throw new NotFoundException("grantee not found");
     const item = await this.items.findOne({ where: { id: dto.itemId, vaultId } });
@@ -798,6 +800,8 @@ export class VaultService {
     });
     if (existing) {
       // Upsert: same row, refreshed wrapping + snapshot. Updated-at moves forward.
+      // A re-share also clears any pending write-back — it was based on a version the
+      // granter has now superseded by re-sharing.
       existing.granterUserId = granterUserId;
       existing.permission = dto.permission ?? "view";
       existing.wrappedIK = dto.wrappedIK;
@@ -805,6 +809,8 @@ export class VaultService {
       existing.vaultKeyVersion = item.vaultKeyVersion;
       existing.itemVersion = item.version;
       existing.itemType = item.type;
+      existing.expiresAt = expiresAt;
+      this.clearPendingFields(existing);
       await this.itemShares.save(existing);
       await this.writeAudit(vaultId, granterUserId, "item_shared", existing.id);
       return this.toWireShare(existing);
@@ -821,20 +827,31 @@ export class VaultService {
         vaultKeyVersion: item.vaultKeyVersion,
         itemVersion: item.version,
         itemType: item.type,
-        expiresAt: null,
+        expiresAt,
       }),
     );
     await this.writeAudit(vaultId, granterUserId, "item_shared", row.id);
     return this.toWireShare(row);
   }
 
-  /** Every share where the caller is the grantee. The whole point — no vault membership required. */
+  /**
+   * Every share where the caller is the grantee. The whole point — no vault membership
+   * required. Expired shares are excluded and lazily hard-deleted: TTL'd shares behave as
+   * revoked the moment the clock passes, without needing a background sweeper.
+   */
   async listIncomingShares(userId: number) {
     const rows = await this.itemShares.find({
       where: { granteeUserId: userId },
       order: { createdAt: "DESC" },
     });
-    return rows.map((r) => this.toWireShare(r));
+    const now = Date.now();
+    const live = rows.filter((r) => !this.isExpired(r, now));
+    const dead = rows.filter((r) => this.isExpired(r, now));
+    if (dead.length > 0) {
+      // Best-effort cleanup — a failed delete just means the row is filtered again next time.
+      await this.itemShares.delete({ id: In(dead.map((r) => r.id)) }).catch(() => undefined);
+    }
+    return live.map((r) => this.toWireShare(r));
   }
 
   /** Every share the caller has granted (any vault they have access to). */
@@ -859,6 +876,79 @@ export class VaultService {
     return { ok: true };
   }
 
+  /**
+   * Grantee proposes a new version of an edit-share (ADR-007 extension). Requirements:
+   * the caller IS the grantee (404-hide otherwise), the share grants `edit`, the share
+   * hasn't expired, and `baseItemVersion` matches the source item's *current* version
+   * (optimistic concurrency — 409 with the current version on mismatch so the grantee
+   * can refresh + re-propose). The proposal parks on the share row; the source item is
+   * untouched until the granter applies it through the normal member write path.
+   */
+  async writeBackItemShare(userId: number, shareId: string, dto: ItemShareWriteBackDto) {
+    const row = await this.itemShares.findOne({ where: { id: shareId } });
+    if (!row || row.granteeUserId !== userId) throw new NotFoundException("share not found");
+    if (row.permission !== "edit") {
+      throw new ForbiddenException({ error: "share_not_editable" });
+    }
+    if (this.isExpired(row, Date.now())) {
+      // Expired = revoked. Same hide-don't-explain posture as a deleted share.
+      await this.itemShares.delete({ id: row.id }).catch(() => undefined);
+      throw new NotFoundException("share not found");
+    }
+    const item = await this.items.findOne({ where: { id: row.itemId, vaultId: row.vaultId } });
+    if (!item || item.deletedAt) throw new NotFoundException("item not found");
+    if (dto.baseItemVersion !== item.version) {
+      throw new ConflictException({ error: "version_conflict", currentVersion: item.version });
+    }
+
+    row.pendingCiphertext = dto.ciphertext;
+    row.pendingWrappedIK = dto.wrappedIKForGranter;
+    row.pendingBaseVersion = dto.baseItemVersion;
+    row.pendingKeyVersion = item.vaultKeyVersion;
+    row.pendingAt = new Date();
+    await this.itemShares.save(row);
+    await this.writeAudit(row.vaultId, userId, "item_share_writeback", row.id);
+    return this.toWireShare(row);
+  }
+
+  /**
+   * Granter clears a pending write-back — after applying it via the normal item-update
+   * path, or to reject it outright. Granter-only (404-hide for everyone else, including
+   * the grantee: the grantee's lever is submitting a new proposal, not retracting).
+   */
+  async clearItemSharePending(userId: number, shareId: string) {
+    const row = await this.itemShares.findOne({ where: { id: shareId } });
+    if (!row || row.granterUserId !== userId) throw new NotFoundException("share not found");
+    if (row.pendingAt === null) {
+      // Nothing pending — idempotent success keeps granter retry loops simple.
+      return { ok: true };
+    }
+    this.clearPendingFields(row);
+    await this.itemShares.save(row);
+    await this.writeAudit(row.vaultId, userId, "item_share_writeback_cleared", row.id);
+    return { ok: true };
+  }
+
+  private clearPendingFields(row: VaultItemShareEntity): void {
+    row.pendingCiphertext = null;
+    row.pendingWrappedIK = null;
+    row.pendingBaseVersion = null;
+    row.pendingKeyVersion = null;
+    row.pendingAt = null;
+  }
+
+  private isExpired(r: VaultItemShareEntity, nowMs: number): boolean {
+    return r.expiresAt !== null && new Date(r.expiresAt).getTime() <= nowMs;
+  }
+
+  private parseShareExpiry(expiresAtMs: number | undefined): Date | null {
+    if (expiresAtMs === undefined) return null;
+    if (expiresAtMs <= Date.now()) {
+      throw new BadRequestException({ error: "expiry_in_past" });
+    }
+    return new Date(expiresAtMs);
+  }
+
   private toWireShare(r: VaultItemShareEntity) {
     return {
       id: r.id,
@@ -872,6 +962,19 @@ export class VaultService {
       vaultKeyVersion: r.vaultKeyVersion,
       itemVersion: r.itemVersion,
       itemType: r.itemType,
+      expiresAt: r.expiresAt ? new Date(r.expiresAt).toISOString() : null,
+      // Pending write-back (ADR-007 extension). Present on both granter + grantee wire
+      // views — the grantee authored it, the granter consumes it; hiding it from either
+      // would only complicate the serializer for zero secrecy gain.
+      pending: r.pendingAt
+        ? {
+            ciphertext: r.pendingCiphertext,
+            wrappedIKForGranter: r.pendingWrappedIK,
+            baseVersion: r.pendingBaseVersion,
+            keyVersion: r.pendingKeyVersion,
+            at: new Date(r.pendingAt).toISOString(),
+          }
+        : null,
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     };

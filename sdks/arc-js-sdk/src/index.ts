@@ -42,6 +42,8 @@ import {
   wrapIdentityForPasskey,
   wrapIdentityMlkemForPasskey,
   wrapItemKeyForShare,
+  encryptShareWriteBack,
+  openShareWriteBack,
   wrapSigningForPasskey,
   wrapVaultKeyFor,
   x25519PubFromPriv,
@@ -168,12 +170,22 @@ export interface ItemShare {
   itemId: string;
   granterUserId: number;
   granteeUserId: number;
-  permission: "view";
+  permission: "view" | "edit";
   wrappedIK: Envelope;
   ciphertext: Envelope;
   vaultKeyVersion: number;
   itemVersion: number;
   itemType: string | null;
+  /** TTL (ISO). Past = the share behaves as revoked. Null = no expiry. */
+  expiresAt: string | null;
+  /** Pending edit-back proposal from the grantee (ADR-007 extension); null when none. */
+  pending: {
+    ciphertext: Envelope;
+    wrappedIKForGranter: Envelope;
+    baseVersion: number;
+    keyVersion: number;
+    at: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -953,6 +965,12 @@ export class VaultClient {
     vaultId: string,
     itemId: string,
     granteeUserId: number,
+    opts: {
+      /** "edit" lets the grantee propose write-backs (ADR-007 extension). Default "view". */
+      permission?: "view" | "edit";
+      /** TTL (epoch ms, must be in the future). Past the TTL the share behaves as revoked. */
+      expiresAtMs?: number;
+    } = {},
   ): Promise<ItemShare> {
     const vk = this.requireVk(vaultId);
     // Fetch the *current* item to grab its wrappedItemKey + version (so the IK we derive
@@ -977,6 +995,8 @@ export class VaultClient {
       itemId,
       granteeUserId,
       wrappedIK,
+      ...(opts.permission ? { permission: opts.permission } : {}),
+      ...(opts.expiresAtMs !== undefined ? { expiresAtMs: opts.expiresAtMs } : {}),
     });
   }
 
@@ -1007,6 +1027,72 @@ export class VaultClient {
   /** Revoke a share. Granter and grantee both have authority. */
   async revokeShare(shareId: string): Promise<{ ok: boolean }> {
     return this.http("DELETE", `/vault/shares/${shareId}`);
+  }
+
+  /**
+   * Grantee proposes a new version of an edit-share (ADR-007 extension). Encrypts the
+   * payload under a fresh IK, wraps that IK to the **granter's** hybrid identity (the
+   * grantee has no vault key), and parks the proposal on the share row. The granter
+   * reviews via {@link applyShareWriteBack}. 409 from the server when the source item
+   * moved since this share's snapshot — re-fetch and re-propose.
+   */
+  async writeBackShare(share: ItemShare, newPayload: JsonValue): Promise<ItemShare> {
+    if (!this.session) throw new Error("not unlocked");
+    if (share.permission !== "edit") throw new Error("share is view-only");
+    const granter = await this.getUserIdentityKey(share.granterUserId);
+    const ref = {
+      vaultId: share.vaultId,
+      itemId: share.itemId,
+      // AAD binds the proposal to the version it would BECOME (base + 1).
+      version: share.itemVersion + 1,
+      keyVersion: share.vaultKeyVersion,
+    };
+    const pending = encryptShareWriteBack(
+      {
+        x25519Pub: fromB64u(granter.identityPublicKey),
+        mlkemPub: fromB64u(granter.identityPublicKeyMlkem),
+      },
+      ref,
+      newPayload,
+    );
+    return this.http<ItemShare>("POST", `/vault/shares/${share.id}/write-back`, {
+      ciphertext: pending.ciphertext,
+      wrappedIKForGranter: pending.wrappedIKForGranter,
+      baseItemVersion: share.itemVersion,
+    });
+  }
+
+  /**
+   * Granter applies a pending write-back: opens the grantee's proposal with the granter's
+   * identity priv, re-encrypts under the vault key through the normal {@link putItem}
+   * path (fresh IK + VK wrap + version bump), then clears the pending proposal. Returns
+   * the decrypted payload that was applied so the caller can render a confirmation.
+   */
+  async applyShareWriteBack(share: ItemShare): Promise<{ applied: JsonValue; version: number }> {
+    if (!this.session) throw new Error("not unlocked");
+    if (!share.pending) throw new Error("share has no pending write-back");
+    const ref = {
+      vaultId: share.vaultId,
+      itemId: share.itemId,
+      version: share.pending.baseVersion + 1,
+      keyVersion: share.pending.keyVersion,
+    };
+    const applied = openShareWriteBack(this.hybridPriv(), ref, {
+      ciphertext: share.pending.ciphertext,
+      wrappedIKForGranter: share.pending.wrappedIKForGranter,
+    });
+    const res = await this.putItem(share.vaultId, applied, {
+      id: share.itemId,
+      baseVersion: share.pending.baseVersion,
+      ...(share.itemType ? { type: share.itemType } : {}),
+    });
+    await this.clearSharePending(share.id);
+    return { applied, version: res.version };
+  }
+
+  /** Granter clears a pending write-back without applying it (reject). Idempotent. */
+  async clearSharePending(shareId: string): Promise<{ ok: boolean }> {
+    return this.http("DELETE", `/vault/shares/${shareId}/pending`);
   }
 
   private async rawItems(vaultId: string): Promise<ItemRow[]> {

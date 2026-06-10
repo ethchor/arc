@@ -509,6 +509,47 @@ export function openItemKeyShare(env: Envelope, recipient: HybridPriv): Uint8Arr
 }
 
 /**
+ * Edit-back share (ADR-007 §extension): the **grantee** proposes a new version of a shared
+ * item. They can't wrap the IK under the vault key (not a member), so they wrap it to the
+ * **granter's** hybrid identity instead — the granter later unwraps, re-encrypts under the
+ * VK via the normal `encryptItem` path, and writes the item back as themselves.
+ *
+ * The AAD binds the proposed ciphertext to the item coordinates the grantee is editing
+ * *against* (`ref.version` should be `share.itemVersion + 1` — the version the write-back
+ * would become). A transplanted ciphertext fails AAD on the granter's decrypt.
+ */
+export function encryptShareWriteBack(
+  granter: HybridPub,
+  ref: ItemRef,
+  item: JsonValue,
+): { ciphertext: Envelope; wrappedIKForGranter: Envelope } {
+  const ik = randomBytes(32);
+  const ciphertext = aeadSeal(ik, utf8(jcs(item)), itemAad(ref), { kv: ref.keyVersion, pad: true });
+  const wrappedIKForGranter = pqSeal(granter, ik);
+  wipe(ik);
+  return { ciphertext, wrappedIKForGranter };
+}
+
+/**
+ * Granter's side of {@link encryptShareWriteBack}: unwrap the grantee's proposed IK with
+ * the granter's hybrid identity priv, then open + JSON-parse the proposed ciphertext.
+ * After reviewing, the granter re-encrypts via `encryptItem` (fresh IK under the VK) and
+ * writes the item through the normal update path.
+ */
+export function openShareWriteBack(
+  granter: HybridPriv,
+  ref: ItemRef,
+  pending: { ciphertext: Envelope; wrappedIKForGranter: Envelope },
+): JsonValue {
+  const ik = pqSealOpen(pending.wrappedIKForGranter, granter);
+  try {
+    return decryptItemWithIK(ik, ref, pending.ciphertext);
+  } finally {
+    wipe(ik);
+  }
+}
+
+/**
  * Decrypt a shared item from the **IK** (not the VK). The recipient already holds the IK
  * (via {@link openItemKeyShare}); this just opens the ciphertext + JSON-parses, mirroring
  * the trailing half of {@link decryptItem}.

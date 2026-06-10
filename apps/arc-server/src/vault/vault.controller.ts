@@ -22,6 +22,7 @@ import {
   ApproveDeviceDto,
   CreateFolderDto,
   CreateItemShareDto,
+  ItemShareWriteBackDto,
   CreateVaultDto,
   EnrollDto,
   PasskeyRegisterDto,
@@ -219,6 +220,27 @@ export class VaultController {
   @Delete("vault/shares/:shareId")
   revokeShare(@CurrentUser() u: CurrentUserData, @Param("shareId") shareId: string) {
     return this.vault.revokeItemShare(u.userId, shareId);
+  }
+
+  /**
+   * Grantee proposes a new version of an edit-share (ADR-007 extension). The proposal
+   * parks on the share row until the granter applies (via the normal member write path)
+   * or rejects. 409 with the current version when the source item moved since the
+   * grantee's snapshot.
+   */
+  @Post("vault/shares/:shareId/write-back")
+  writeBackShare(
+    @CurrentUser() u: CurrentUserData,
+    @Param("shareId") shareId: string,
+    @Body() dto: ItemShareWriteBackDto,
+  ) {
+    return this.vault.writeBackItemShare(u.userId, shareId, dto);
+  }
+
+  /** Granter clears a pending write-back — after applying it, or to reject. Idempotent. */
+  @Delete("vault/shares/:shareId/pending")
+  clearSharePending(@CurrentUser() u: CurrentUserData, @Param("shareId") shareId: string) {
+    return this.vault.clearItemSharePending(u.userId, shareId);
   }
 
   // ----- Encrypted attachments (large item payloads kept in BlobStore) -----

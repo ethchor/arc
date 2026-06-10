@@ -134,3 +134,64 @@ Edit-shares are deferred. Plaintext-already-seen residual on revoke is documente
   404). A recipient can't re-share (they aren't a member of the source vault → 404).
 - **SDK unit:** `shareItem` round-trips through the wire shape; `decryptIncomingShare`
   produces byte-identical plaintext to the original encryptItem input.
+
+---
+
+## Extension (2026-06-10) — TTL'd shares + edit-back shares
+
+Both v1 deferrals shipped. The column reservations made TTL a no-schema-change feature;
+edit-back added five nullable `pending*` columns.
+
+### TTL'd shares
+
+`CreateItemShareDto.expiresAtMs` (epoch ms, must be in the future at share time —
+`expiry_in_past` otherwise). Semantics: **expired = revoked**, enforced lazily:
+
+- excluded from the grantee's `incoming` list and hard-deleted best-effort on that read
+  (no background sweeper needed);
+- refused for write-backs (404-hide, same posture as a deleted share);
+- the granter's `outgoing` list keeps showing the row until cleanup so a re-share is one
+  click — `expiresAt` is on the wire for the UI to render.
+
+### Edit-back shares
+
+`permission: "edit"` unlocks a propose/apply loop that keeps the zero-knowledge posture —
+the grantee never gets the VK, the server never sees an IK:
+
+```
+grantee:  IK' = random(32)
+          ciphertext' = aeadSeal(IK', payload, itemAad(ref @ baseVersion+1))
+          wrappedIKForGranter = pqSeal(IK', granter.identityHybridPub)
+          POST /vault/shares/:id/write-back { ciphertext', wrappedIKForGranter, baseItemVersion }
+
+server:   parks the proposal ON THE SHARE ROW (pending* columns) — the vault item is
+          untouched. 409 when baseItemVersion ≠ the item's current version (optimistic
+          concurrency; the grantee refreshes + re-proposes). One pending per share row;
+          newer write-back overwrites. A re-share clears the pending (snapshot superseded).
+
+granter:  pqSealOpen(wrappedIKForGranter) → decryptItemWithIK → review →
+          normal member putItem (fresh IK + VK wrap + version bump) →
+          DELETE /vault/shares/:id/pending
+```
+
+Crypto additions (`@arc/crypto`): `encryptShareWriteBack` / `openShareWriteBack` — same
+primitives as v1 (`pqSeal`, `aeadSeal` with `itemAad`), AAD-bound to the coordinates the
+proposal would become so a transplanted ciphertext fails on the granter's decrypt.
+
+SDK: `shareItem(..., { permission, expiresAtMs })`, `writeBackShare(share, payload)`,
+`applyShareWriteBack(share)`, `clearSharePending(shareId)`.
+
+Deliberate properties:
+
+- **Apply is a granter-side act.** The vault item only ever changes through the normal
+  member write path, signed/attributed to the granter. The audit trail shows
+  `item_share_writeback` (grantee proposed) and the granter's regular item mutation —
+  no write path bypasses `requireRole`.
+- **Other shares stay snapshot-consistent.** Applying Bob's proposal does not propagate
+  to Carol's share of the same item — exactly the v1 semantics on any other edit.
+- **Reject is first-class.** `DELETE /vault/shares/:id/pending` (granter-only,
+  idempotent) drops a proposal without touching the item.
+
+Tests: 2 crypto round-trips (incl. wrong-recipient + AAD-transplant negatives), 7 new
+e2e (TTL lazy-revoke, past-expiry refusal, full propose→apply loop, view-only refusal,
+409 stale-base, reject, re-share-clears-pending).
