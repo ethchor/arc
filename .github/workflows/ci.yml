@@ -25,7 +25,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm typecheck
-      - run: pnpm test
+      # Tests run sequentially. turbo's default concurrency (10) piles every package's
+      # test suite on top of @arc/server's jest run (which boots multiple Nest apps +
+      # sql.js wasm) — on the 2-core/7GB hosted runner that intermittently trips the
+      # OOM killer (exit 137) or starves sibling vitest processes into transient fs
+      # errors. Three red `node` runs on 2026-06-09/10 traced back to this. Build and
+      # typecheck stay parallel; they've never approached the ceiling.
+      #
+      # NB: invoke turbo directly. `pnpm test -- --concurrency=1` does NOT work — pnpm
+      # v7+ forwards the `--` literally, so turbo sees `run test -- --concurrency=1`
+      # and passes the flag down to every package's vitest (which errors on it) instead
+      # of consuming it as its own scheduling flag.
+      - run: pnpm exec turbo run test --concurrency=1
       - name: Dependency audit (non-blocking)
         run: pnpm audit --audit-level=high
         continue-on-error: true
