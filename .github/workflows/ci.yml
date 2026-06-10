@@ -17,6 +17,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The hosted runner has 7GB RAM and NO swap. The arc-server jest suite (40 suites,
+      # one sequential worker) plus the OOP-plugin e2e specs (which spawn real `node`
+      # child processes) intermittently spike past the ceiling — the kernel OOM killer
+      # then SIGKILLs the worker (exit 137) at whichever spec is mid-flight, which is why
+      # the red runs looked random all day (2026-06-09/10). Four fixes were layered:
+      # turbo --concurrency=1, jest worker recycling, and this swapfile — the swap is the
+      # deterministic one: spikes page out instead of getting killed.
+      - name: Add 4GB swap (hosted runner has none — absorbs jest+OOP-spawn spikes)
+        run: |
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
