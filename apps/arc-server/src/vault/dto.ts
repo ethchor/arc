@@ -51,14 +51,30 @@ export class UnlockDto {
  * higher member of the source vault, then snapshots the item's *current* ciphertext +
  * versions and persists everything together. Server never sees the IK.
  *
- * `permission` is `view` for v1; the column exists so the wire shape doesn't break when
- * edit-shares land.
+ * `permission: "edit"` additionally lets the grantee propose write-backs (ADR-007
+ * extension); `expiresAtMs` adds a TTL after which the share behaves as revoked.
  */
 export class CreateItemShareDto {
   @IsUUID() itemId!: string;
   @IsInt() granteeUserId!: number;
   @IsObject() wrappedIK!: EnvelopeJson;
-  @IsOptional() @IsIn(["view"]) permission?: "view";
+  @IsOptional() @IsIn(["view", "edit"]) permission?: "view" | "edit";
+  /**
+   * Optional TTL (epoch ms). Once passed, the share is hidden from the grantee's incoming
+   * list, refused for write-backs, and lazily deleted. Must be in the future at share
+   * time — a past timestamp is a no-op share and therefore a bug.
+   */
+  @IsOptional() @IsInt() expiresAtMs?: number;
+}
+
+/** Grantee proposes a new version of an edit-share (ADR-007 extension). */
+export class ItemShareWriteBackDto {
+  /** Proposed ciphertext under a grantee-generated IK; AAD = item ref @ baseVersion + 1. */
+  @IsObject() ciphertext!: EnvelopeJson;
+  /** That IK, pqSeal'd to the granter's hybrid identity. */
+  @IsObject() wrappedIKForGranter!: EnvelopeJson;
+  /** Source-item version the grantee edited against (their snapshot's itemVersion). */
+  @IsInt() baseItemVersion!: number;
 }
 
 export class RecoverKeysetDto {

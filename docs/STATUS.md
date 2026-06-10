@@ -1137,8 +1137,22 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   `revokeShare`. **5 e2e** through the real server + SDK: share decrypts byte-identical
   on the recipient + recipient has no membership; snapshot survives edits; re-share upserts
   to the new version; granter + grantee both revoke; non-member can't share; recipient
-  can't re-share. Edit-shares (recipient writes back) and TTL'd shares are documented as
-  follow-ups in ADR-007.
+  can't re-share. ~~Edit-shares (recipient writes back) and TTL'd shares are documented as
+  follow-ups in ADR-007.~~ → **both shipped** (`feat/item-share-editback-ttl`, ADR-007
+  extension section): `expiresAtMs` on share-create (expired = revoked, enforced lazily —
+  excluded from incoming + hard-deleted on read, refused for write-backs, past-expiry
+  refused at create with `expiry_in_past`); `permission: "edit"` unlocks the propose/apply
+  loop — grantee seals the new payload under a fresh IK + `pqSeal`s that IK to the
+  *granter's* hybrid identity (`encryptShareWriteBack`/`openShareWriteBack` in
+  `@arc/crypto`), proposal parks on the share row (`pending*` columns, migration
+  `1718400000000`), granter reviews + applies through the normal member `putItem` path
+  (no write bypasses `requireRole`; audit shows `item_share_writeback` + the granter's
+  regular mutation) or rejects via `DELETE /vault/shares/:id/pending`. 409 on stale
+  `baseItemVersion`; re-share clears a parked proposal. SDK: `shareItem(...,
+  { permission, expiresAtMs })`, `writeBackShare`, `applyShareWriteBack`,
+  `clearSharePending`. **+2 crypto tests** (round-trip + wrong-recipient/AAD-transplant
+  negatives), **+7 e2e** (TTL lazy-revoke, past-expiry, full propose→apply loop with the
+  vault item updating, view-only refusal, 409 stale-base, reject, re-share-clears-pending).
 - ~~[?] Hardware-key (FIDO2 resident credential) as a primary unlock path on the
   extension. Different from passkey-prf; would let the extension run unlocked across
   browser restarts.~~ → resolved (**ADR-008**) — accepted residency, rejected "survives
