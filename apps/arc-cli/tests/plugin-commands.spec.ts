@@ -106,7 +106,7 @@ describe("arc-vault plugin install --from-dir", () => {
     const r = await run([
       "install",
       "--from-dir", src,
-      "--pub", fx.pubB64u,
+      `--pub=${fx.pubB64u}`,
       "--out-dir", dest,
     ]);
     expect(r.code).toBe(0);
@@ -133,7 +133,7 @@ describe("arc-vault plugin install --from-dir", () => {
     const r = await run([
       "install",
       "--from-dir", src,
-      "--pub", fx.pubB64u,
+      `--pub=${fx.pubB64u}`,
       "--out-dir", dest,
     ]);
     expect(r.code).toBe(2);
@@ -153,7 +153,7 @@ describe("arc-vault plugin install --from-dir", () => {
     const r = await run([
       "install",
       "--from-dir", src,
-      "--pub", stranger.pubB64u,
+      `--pub=${stranger.pubB64u}`,
       "--out-dir", join(tmp, "installed"),
     ]);
     expect(r.code).toBe(2);
@@ -169,7 +169,7 @@ describe("arc-vault plugin install --from-dir", () => {
     const r = await run([
       "install",
       "--from-dir", src,
-      "--pub", fx.pubB64u,
+      `--pub=${fx.pubB64u}`,
       "--out-dir", join(tmp, "installed"),
       "--name", "aws",
       "--mount-path", "cloud-aws/",
@@ -227,7 +227,7 @@ describe("arc-vault plugin install --release (HTTP)", () => {
 
     const dest = join(tmp, "installed");
     const r = await run(
-      ["install", "--release", base, "--pub", fx.pubB64u, "--out-dir", dest],
+      ["install", "--release", base, `--pub=${fx.pubB64u}`, "--out-dir", dest],
       { fetch: stubFetch(fetchMap) },
     );
     expect(r.code).toBe(0);
@@ -242,7 +242,7 @@ describe("arc-vault plugin install --release (HTTP)", () => {
       [base + "/manifest.json", new TextEncoder().encode(fx.manifestJson)],
     ]);
     const r = await run(
-      ["install", "--release", base, "--pub", fx.pubB64u, "--out-dir", join(tmp, "installed")],
+      ["install", "--release", base, `--pub=${fx.pubB64u}`, "--out-dir", join(tmp, "installed")],
       { fetch: stubFetch(fetchMap) },
     );
     expect(r.code).toBe(0);
@@ -256,7 +256,7 @@ describe("arc-vault plugin install --release (HTTP)", () => {
       [base + "manifest.json", new TextEncoder().encode(fx.manifestJson)],
     ]);
     const r = await run(
-      ["install", "--release", base, "--pub", fx.pubB64u, "--out-dir", join(tmp, "installed")],
+      ["install", "--release", base, `--pub=${fx.pubB64u}`, "--out-dir", join(tmp, "installed")],
       { fetch: stubFetch(fetchMap) },
     );
     expect(r.code).toBe(1);
@@ -276,7 +276,7 @@ describe("arc-vault plugin verify", () => {
       "verify",
       "--artifact", bin,
       "--manifest", manifest,
-      "--pub", fx.pubB64u,
+      `--pub=${fx.pubB64u}`,
     ]);
     expect(r.code).toBe(0);
     expect(r.out.join("\n")).toMatch(/ok: arc-plugin-fake@0.1.0/);
@@ -293,7 +293,7 @@ describe("arc-vault plugin verify", () => {
       "verify",
       "--artifact", bin,
       "--manifest", manifest,
-      "--pub", fx.pubB64u,
+      `--pub=${fx.pubB64u}`,
     ]);
     expect(r.code).toBe(2);
     expect(r.err.join("\n")).toMatch(/refused: artifact_hash_mismatch/);
@@ -341,7 +341,7 @@ describe("arc-vault plugin install --cosign-bundle", () => {
       [
         "install",
         "--from-dir", src,
-        "--pub", fx.pubB64u,
+        `--pub=${fx.pubB64u}`,
         "--out-dir", join(tmp, "installed"),
         "--cosign-bundle", bundlePath,
         "--cosign-identity", "^https://github.com/ethchor/arc/.github/workflows/release-plugin-.*",
@@ -373,7 +373,7 @@ describe("arc-vault plugin install --cosign-bundle", () => {
       [
         "install",
         "--from-dir", src,
-        "--pub", fx.pubB64u,
+        `--pub=${fx.pubB64u}`,
         "--out-dir", join(tmp, "installed"),
         "--cosign-bundle", bundlePath,
         "--cosign-identity", "^https://github.com/.*",
@@ -404,7 +404,7 @@ describe("arc-vault plugin install --cosign-bundle", () => {
       [
         "install",
         "--from-dir", src,
-        "--pub", fx.pubB64u,
+        `--pub=${fx.pubB64u}`,
         "--out-dir", join(tmp, "installed"),
         "--cosign-bundle", join(src, "bin.cjs.bundle"),
         "--cosign-identity", "^https://github.com/.*",
@@ -426,7 +426,7 @@ describe("arc-vault plugin install --cosign-bundle", () => {
     const r = await run([
       "install",
       "--from-dir", src,
-      "--pub", fx.pubB64u,
+      `--pub=${fx.pubB64u}`,
       "--out-dir", join(tmp, "installed"),
       "--cosign-bundle", join(src, "bin.cjs.bundle"),
     ]);
@@ -448,7 +448,7 @@ describe("arc-vault plugin uninstall", () => {
     const inst = await run([
       "install",
       "--from-dir", src,
-      "--pub", fx.pubB64u,
+      `--pub=${fx.pubB64u}`,
       "--out-dir", outDir,
     ]);
     expect(inst.code).toBe(0);
@@ -509,7 +509,7 @@ describe("arc-vault plugin uninstall", () => {
     const outDir = join(tmp, "installed");
 
     await run([
-      "install", "--from-dir", src, "--pub", fx.pubB64u, "--out-dir", outDir,
+      "install", "--from-dir", src, `--pub=${fx.pubB64u}`, "--out-dir", outDir,
     ]);
 
     const u = await run([
