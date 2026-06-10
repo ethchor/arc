@@ -99,7 +99,7 @@ describe("arc-plugin-sign CLI", () => {
       "verify",
       "--artifact", artifact,
       "--manifest", manifestPath,
-      "--pub", pub,
+      `--pub=${pub}`,
     ]);
     expectCode(verified, 0);
     expect(verified.out.join("\n")).toMatch(/ok: manifest verified for arc-plugin-fake@0.1.0/);
@@ -153,7 +153,7 @@ describe("arc-plugin-sign CLI", () => {
       "verify",
       "--artifact", artifact,
       "--manifest", join(tmp, "m.json"),
-      "--pub", pub,
+      `--pub=${pub}`,
     ]);
     expectCode(verified, 0);
   });
@@ -198,7 +198,7 @@ describe("arc-plugin-sign CLI", () => {
       "verify",
       "--artifact", artifact,
       "--manifest", manifestPath,
-      "--pub", pub,
+      `--pub=${pub}`,
     ]);
     expectCode(r, 2);
     expect(r.err.join("\n")).toMatch(/refused: artifact_hash_mismatch/);

@@ -211,6 +211,9 @@ async function runVerify(rest: readonly string[], io: CliIO): Promise<number> {
       "usage: arc-plugin-sign verify --artifact <path> --manifest <manifest.json>\n" +
         "                            --pub <b64u-or-file>\n" +
         "\n" +
+        "If the key begins with a dash, use the equals form: --pub=-XYZ... (Node 24's\n" +
+        "parseArgs rejects `--pub -XYZ` as ambiguous).\n" +
+        "\n" +
         "Exits 0 on success, 2 if verification fails (with a structured reason on stderr).\n",
     );
     return 0;

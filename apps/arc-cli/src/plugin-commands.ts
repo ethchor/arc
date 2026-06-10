@@ -103,6 +103,9 @@ async function runInstall(rest: readonly string[], io: PluginCliIO): Promise<num
         "them down under `<out-dir>/<name>/`, and prints the `ARC_PLUGIN_MOUNTS` snippet you\n" +
         "add to arc-server's env to auto-mount on boot.\n" +
         "\n" +
+        "If the pub key begins with a dash, pass it as --pub=-XYZ... (equals form) — Node 24's\n" +
+        "parseArgs rejects `--pub -XYZ` as ambiguous.\n" +
+        "\n" +
         "Optional second trust layer: when --cosign-bundle is supplied, the install also runs\n" +
         "`cosign verify-blob` against the artifact + bundle, refusing the install if cosign\n" +
         "rejects the signature. `cosign` must be on PATH; --cosign-identity (cert-identity\n" +
@@ -294,6 +297,9 @@ async function runVerify(rest: readonly string[], io: PluginCliIO): Promise<numb
     io.out(
       "usage: arc-vault plugin verify --artifact <bin> --manifest <json>\n" +
         "                              --pub <b64u-or-file>\n" +
+        "\n" +
+        "If the key begins with a dash, use the equals form: --pub=-XYZ... (Node 24's\n" +
+        "parseArgs rejects `--pub -XYZ` as ambiguous).\n" +
         "\n" +
         "Re-hash the artifact + check the manifest's signature against the publisher pub\n" +
         "key (and the declared capabilities against the canonical vocabulary). Mirrors\n" +
