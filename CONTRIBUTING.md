@@ -22,8 +22,12 @@ before your first PR so we can execute a Corporate CLA.
 git commit -s -m "fix: …"      # adds Signed-off-by: Your Name <your@email>
 ```
 
-When a CLA bot is wired into CI it'll prompt you on your first PR; for now the
-`Signed-off-by` trailer + your PR submission constitute your agreement to the CLA.
+A CLA bot ([contributor-assistant](https://github.com/contributor-assistant/github-action),
+`.github/workflows/cla.yml`) checks every PR: on your first contribution it comments with
+a sign phrase — reply with exactly that phrase once and the check goes green for that PR
+and all future ones (signatures are recorded on the `cla-signatures` branch). Comment
+`recheck` to re-run the check. The `Signed-off-by` trailer is still appreciated as a
+per-commit signal, but the bot's recorded signature is what satisfies the CLA gate.
 
 ## License
 
