@@ -1,11 +1,22 @@
 # 05 — Plugin host (AWS / GCP / GitHub)
 
-`PluginsService` in arc-server hosts in-process secrets plugins. Each plugin claims a
-mount path and answers `GET /v1/<mount>/creds/<role>` like a native engine. Today the
-admin HTTP API for plugin registration isn't shipped yet (queued in `STATUS.md`); plugins
-are wired in **programmatically** at boot via a small custom main entry.
+`PluginsService` in arc-server hosts secrets plugins. Each plugin claims a mount path and
+answers `GET /v1/<mount>/creds/<role>` like a native engine. There are **three ways to
+mount one**, and this guide uses all of them:
 
-This guide shows how to mount each plugin and exercise the `/v1` surface against it.
+| Path | When to use it | Persists restart? |
+| --- | --- | --- |
+| `ARC_PLUGIN_MOUNTS=<path>=<bin>?manifest=<json>` env | production / boot-time, signed OOP artifacts | yes — env is the source of truth |
+| `POST /v1/sys/plugins/mounts` admin API (ADR-009) | live mount/unmount without bouncing the server | **no** — response includes the `envSnippet` to make it stick |
+| programmatic `mountSecretsPlugin()` in a custom main | **this guide's fake-vendor testing** — inject in-memory transports | n/a (dev entrypoint) |
+
+The env + admin paths run every artifact through the signed-manifest gate
+(`ARC_PLUGIN_TRUST_ANCHORS` pins publishers); the operator-side
+`arc-vault plugin install|uninstall` CLI verifies a release and prints exactly these env
+snippets / admin `curl`s. Sections A–F below use the programmatic path because injecting
+**fake vendor transports** (no real AWS/GCP/GitHub accounts) requires constructing the
+plugin instance yourself; section G exercises the admin API + env path with the signed
+OOP artifact.
 
 ## Approach: a custom main entry that mounts plugins at boot
 
@@ -187,3 +198,60 @@ the wire shape stays identical.
 Stop OpenBao + restart arc-server without `BAO_ADDR`. The three plugin mounts above
 still work — they don't depend on the OpenBao backend. Only OpenBao-backed engine routes
 (KV, transit, PKI, database) disappear from `/v1/sys/mounts`.
+
+## G. Live mount/unmount via the admin API (ADR-009) + boot-time env mount
+
+This path exercises the **signed OOP artifact** flow — the one operators actually run.
+It needs a built plugin bin + signed manifest; the quickest source is a local install:
+
+```bash
+# Build + sign a release dir (test key), then install it the way an operator would.
+pnpm --filter @arc/plugin-aws build                           # tsup emits dist/bin.cjs
+mkdir -p /tmp/rel
+npx arc-plugin-sign keygen --out-priv /tmp/pub.key            # prints PUB_B64U on stdout
+npx arc-plugin-sign sign --artifact plugins/cloud/arc-plugin-aws/dist/bin.cjs \
+  --priv /tmp/pub.key --publisher publisher:arc-core --name arc-plugin-aws \
+  --version 0.1.0 --kind process --capabilities read,delete --out /tmp/rel/manifest.json
+cp plugins/cloud/arc-plugin-aws/dist/bin.cjs /tmp/rel/
+arc-vault plugin install --from-dir /tmp/rel --pub <PUB_B64U> --out-dir /tmp/arc-plugins
+# (if the printed key starts with a dash, pass it as --pub=<PUB_B64U> — Node 24 parseArgs)
+```
+
+Boot the server with the publisher pinned and yourself as a root user (sudo on `*` via
+the seeded `root` policy — the admin endpoints require `sudo` on `sys/plugins/`). The
+value is the numeric **userId**; the first dev-login on a fresh DB is `1`:
+
+```bash
+ARC_ROOT_USERS=1 \
+ARC_PLUGIN_TRUST_ANCHORS=publisher:arc-core=<PUB_B64U> \
+pnpm --filter @arc/server start
+```
+
+Mount it live — no restart:
+
+```bash
+curl -X POST http://localhost:3001/v1/sys/plugins/mounts \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"mountPath":"aws-live/","binPath":"/tmp/arc-plugins/arc-plugin-aws/bin.cjs",
+       "manifestPath":"/tmp/arc-plugins/arc-plugin-aws/manifest.json"}' | jq
+# → 201 { "data": { "name": "arc-plugin-aws", "mountPath": "aws-live/",
+#         "declaredCapabilities": ["read","delete"],
+#         "envSnippet": "aws-live/=/tmp/arc-plugins/.../bin.cjs?manifest=..." } }
+# Tampered bin / unpinned publisher → 400 with the same structured reason as boot
+# (artifact_hash_mismatch, untrusted_publisher, …). Mount-path collision → 409.
+```
+
+The mount is **runtime-only**: it does not survive a restart. To persist it, append the
+returned `envSnippet` to `ARC_PLUGIN_MOUNTS` (comma-separated entries) — at next boot the
+auto-mount path mounts it through the same gate.
+
+Unmount live (mount path URL-encoded — `aws-live/` → `aws-live%2F`):
+
+```bash
+curl -X DELETE http://localhost:3001/v1/sys/plugins/mounts/aws-live%2F \
+  -H "Authorization: Bearer $TOKEN" -i
+# → 204; repeat → 404. `arc-vault plugin uninstall` prints this exact curl for you.
+```
+
+A non-sudo subject gets 403 from `CapabilityGuard` on both verbs — delegate with the
+`plugin-admin` policy from ADR-009 §2 if a non-root operator should manage plugins.
