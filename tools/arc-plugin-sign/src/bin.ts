@@ -20,7 +20,6 @@
  *
  * Exit codes: 0 success · 1 usage/IO error · 2 verification refused.
  */
-import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
@@ -298,7 +297,12 @@ async function readPubKey(ref: string): Promise<string> {
 }
 
 function looksLikeB64u(s: string): boolean {
-  return /^[A-Za-z0-9_-]+$/.test(s) && s.length >= 32 && !existsSync(s);
+  // A raw b64u key is all b64u chars with no path separators or dots. Real file paths
+  // almost always contain "/" or "." (extension), both of which the strict b64u charset
+  // already excludes — so a charset+length check alone is the unambiguous heuristic.
+  // We previously also did `!existsSync(s)`, but that was fragile against unusual cwd
+  // state on CI runners and didn't actually disambiguate (the charset already handles it).
+  return /^[A-Za-z0-9_-]+$/.test(s) && s.length >= 32;
 }
 
 async function writeAtomic(path: string, content: string): Promise<void> {
