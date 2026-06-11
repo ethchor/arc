@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { AgentTokenAllowed } from "../auth/agent-token-allowed.decorator";
 import { CurrentUser, type CurrentUserData } from "../auth/current-user.decorator";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/types";
 import { AgentsService } from "./agents.service";
@@ -130,8 +131,13 @@ export class AgentsController {
    * owner JWT or the **agent's own** token (from `POST :id/auth/token`); an agent token may
    * only submit intents for its own id. The intent is agent-signed regardless, which is what
    * gets verified + chained — the token just authenticates the submitter.
+   *
+   * `@AgentTokenAllowed()` whitelists this single route for agent-issued JWTs; the global
+   * `JwtAuthGuard` rejects them on every other endpoint (ADR-005 CRIT-1 — agent tokens
+   * carry `sub = ownerUserId` and would otherwise grant full owner authority).
    */
   @Post(":id/intents")
+  @AgentTokenAllowed()
   submitIntent(@CurrentUser() u: CurrentUserData, @Param("id") id: string, @Body() dto: SubmitIntentDto) {
     if (u.agentId !== undefined && u.agentId !== id) {
       throw new ForbiddenException({ error: "agent_token_scope_mismatch" });

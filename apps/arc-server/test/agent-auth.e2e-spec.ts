@@ -153,4 +153,72 @@ describe("Engine-C agent self-authentication (ADR-005)", () => {
     const r = await request(server).post(`/vault/agents/${agentId}/auth/token`).send({ signature }).expect(400);
     expect(r.body.error).toBe("invalid_challenge_signature");
   });
+
+  /**
+   * CRIT regression (audit: "human→agent→action trust chain"). Before this fix, an agent
+   * JWT carried `sub = ownerUserId` and Nest's JwtStrategy turned that into a request
+   * with full owner authority on every endpoint. So a holder of the agent's signing key
+   * could `agentToken()` → then hit `/vaults`, `/v1/secret/*`, `/v1/sys/plugins/mounts`,
+   * `/vault/agents` (register a second backdoor agent) — fully owner-equivalent — and the
+   * delegation/intent/CIBA chain was bypassed because `submitIntent` only records, it
+   * doesn't execute. The fix marks `submitIntent` as the *only* route an agent token can
+   * reach; everything else rejects 403 with a stable error code so SDKs / operators can
+   * detect the boundary cleanly.
+   */
+  describe("agent tokens are confined to the intent path (CRIT)", () => {
+    let ownerToken: string;
+    let agentTokenStr: string;
+    let agentId: string;
+
+    beforeAll(async () => {
+      const a = await login("agentauth-confine@example.com");
+      await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(enroll(PW, { profile }))).expect(201);
+      ownerToken = a.token;
+      const reg = await registerAgent(a.token, "confine-bot");
+      agentId = reg.agentId;
+      agentTokenStr = await agentToken(reg.agentId, reg.signing.priv);
+    });
+
+    it.each([
+      ["GET",  "/vaults"],
+      ["POST", "/vaults"],
+      ["GET",  "/vault/devices"],
+      ["POST", "/vault/agents"],
+      ["GET",  "/v1/sys/seal-status"],
+    ] as const)("rejects an agent token on %s %s (off the intent path)", async (method, path) => {
+      const req = method === "GET"
+        ? request(server).get(path)
+        : request(server).post(path).send({});
+      const r = await req.set(auth(agentTokenStr));
+      expect(r.status).toBe(403);
+      expect(r.body.error).toBe("agent_token_off_intent_path");
+    });
+
+    it("rejects an agent token even on its own agent's GET /vault/agents/:id (control plane)", async () => {
+      const r = await request(server)
+        .get(`/vault/agents/${agentId}`)
+        .set(auth(agentTokenStr));
+      expect(r.status).toBe(403);
+      expect(r.body.error).toBe("agent_token_off_intent_path");
+    });
+
+    it("still ACCEPTS the owner token on every route that rejects the agent token", async () => {
+      // Spot-check the owner's session works untouched — the guard MUST not regress
+      // human callers. (Just two routes; full coverage is the rest of the e2e suite.)
+      await request(server).get("/vaults").set(auth(ownerToken)).expect(200);
+      await request(server).get(`/vault/agents/${agentId}`).set(auth(ownerToken)).expect(200);
+    });
+
+    it("still ACCEPTS the agent token on POST /vault/agents/:id/intents (the allowed path)", async () => {
+      // The intent submission body itself is independently validated; we don't need a
+      // valid signed intent here — we only need to prove the guard lets the request
+      // through to the handler. A malformed body produces a 400 from the handler, not
+      // the 403 the guard would produce. Either non-403 status is acceptable proof.
+      const r = await request(server)
+        .post(`/vault/agents/${agentId}/intents`)
+        .set(auth(agentTokenStr))
+        .send({ claims: { v: 99 }, signature: { alg: "Ed25519", sig: "AA" } });
+      expect(r.status).not.toBe(403);
+    });
+  });
 });
