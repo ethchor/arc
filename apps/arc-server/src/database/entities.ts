@@ -785,6 +785,10 @@ export class VaultAgentTaskEntity {
  * these for a task reproduces `task.chainHead` — tamper-evidence + gap detection.
  */
 @Entity("vault_agent_intents")
+@Index("UQ_vault_agent_intents_task_digest", ["taskId", "intentDigest"], {
+  unique: true,
+  where: '"intentDigest" IS NOT NULL',
+})
 export class VaultAgentIntentEntity {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
@@ -809,6 +813,15 @@ export class VaultAgentIntentEntity {
   /** Chain head after folding this intent (`chainNext(prev, intentDigest(claims))`). */
   @Column({ type: "text" })
   chainHead!: string;
+
+  /**
+   * HIGH-D (audit): `intentDigest(claims)` persisted so the unique constraint above
+   * catches replay at the DB layer (`(taskId, intentDigest)` partial-unique on the
+   * non-null rows). Nullable so the migration is additive — pre-existing test rows
+   * have NULL and the partial-unique index skips them. New rows always write it.
+   */
+  @Column({ type: "text", nullable: true })
+  intentDigest!: string | null;
 
   @Column({ type: "text" })
   decision!: string;

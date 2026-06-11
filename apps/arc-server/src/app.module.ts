@@ -15,6 +15,7 @@ import { AgentTasksIntents1718000000000 } from "./migrations/1718000000000-agent
 import { PendingApprovals1718100000000 } from "./migrations/1718100000000-pending-approvals";
 import { SigningRecovery1718200000000 } from "./migrations/1718200000000-signing-recovery";
 import { ItemShares1718300000000 } from "./migrations/1718300000000-item-shares";
+import { AgentIntentDigestUnique1718500000000 } from "./migrations/1718500000000-agent-intent-digest-unique";
 import { AgentsModule } from "./agents/agents.module";
 import { AuthModule } from "./auth/auth.module";
 import { AuthMethodsModule } from "./auth-methods/auth-methods.module";
@@ -38,6 +39,7 @@ const migrations = [
   PendingApprovals1718100000000,
   SigningRecovery1718200000000,
   ItemShares1718300000000,
+  AgentIntentDigestUnique1718500000000,
 ];
 
 /**

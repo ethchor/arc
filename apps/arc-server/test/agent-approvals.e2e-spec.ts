@@ -131,11 +131,11 @@ describe("Engine-C push-consent for elevated ops (ADR-005 Phase 4)", () => {
       ts: new Date().toISOString(), nonce: toB64u(randomBytes(16)),
     };
     const intent = { claims: iclaims, signature: signIntent(signing.priv, iclaims), args: { k: "DB" } };
-    return { token: a.token, agentId, taskId: task.body.taskId as string, authn, intent };
+    return { token: a.token, agentId, taskId: task.body.taskId as string, authn, intent, agentSigning: signing };
   }
 
   it("elevated intent is blocked pending approval, then a passkey grant lets the resubmit through", async () => {
-    const { token, agentId, taskId, authn, intent } = await setup("appr-grant@example.com", "g");
+    const { token, agentId, taskId, authn, intent, agentSigning } = await setup("appr-grant@example.com", "g");
 
     // 1) First submit → blocked, pending approval created, action NOT recorded.
     let r = await request(server).post(`/vault/agents/${agentId}/intents`).set(auth(token)).send(intent).expect(201);
@@ -164,9 +164,30 @@ describe("Engine-C push-consent for elevated ops (ADR-005 Phase 4)", () => {
     v = await request(server).get(`/vault/agents/${agentId}/tasks/${taskId}?verify=true`).set(auth(token)).expect(200);
     expect(v.body).toMatchObject({ callsUsed: 1, chainOk: true });
 
-    // 5) Approval is single-use: a further identical submit is blocked again.
-    r = await request(server).post(`/vault/agents/${agentId}/intents`).set(auth(token)).send(intent).expect(201);
+    // 5) Approval is single-use: a NEW signed intent for the same action does NOT reuse
+    //    the prior approval — it goes back to "approval-required" and parks a new
+    //    pending row. A literal-bytes resubmit is now correctly rejected as a replay
+    //    (HIGH-D — `intent_replay` regression in agent-tasks.e2e-spec). The
+    //    single-use property is the security claim under test, not the wire shape; we
+    //    sign a fresh intent (new nonce + ts) so the digest differs.
+    const freshClaims: IntentClaims = {
+      ...(intent.claims as IntentClaims),
+      ts: new Date(Date.now() + 1000).toISOString(),
+      nonce: toB64u(randomBytes(16)),
+    };
+    const freshIntent = {
+      claims: freshClaims,
+      signature: signIntent(agentSigning.priv, freshClaims),
+      args: intent.args,
+    };
+    r = await request(server).post(`/vault/agents/${agentId}/intents`).set(auth(token)).send(freshIntent).expect(201);
     expect(r.body.reason).toBe("approval-required");
+
+    // The literal-bytes resubmit IS now a replay (different test guarantee — pinned in
+    // agent-tasks.e2e-spec). Asserting it here too so a future refactor that changes
+    // ordering doesn't silently regress either property.
+    const replay = await request(server).post(`/vault/agents/${agentId}/intents`).set(auth(token)).send(intent).expect(409);
+    expect(replay.body.error).toBe("intent_replay");
   });
 
   it("a denied approval leaves the elevated action blocked", async () => {

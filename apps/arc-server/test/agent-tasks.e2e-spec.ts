@@ -241,4 +241,61 @@ describe("Engine-C signed intents + task chain (ADR-005 Phase 3)", () => {
     const r = await request(server).post(`/vault/agents/${agentId}/intents`).set(auth(token)).send(i1).expect(409);
     expect(r.body.error).toBe("task_not_open");
   });
+
+  /**
+   * HIGH-D regression (audit: human→agent→action trust chain). ADR-005 §3/§4 claim
+   * "Replay is blocked by nonce + task-chain position" — but the implementation
+   * never enforced nonce uniqueness. Submitting an identical signed intent twice
+   * folded it into the chain twice, double-incrementing callsUsed and growing the
+   * intent ledger. The fix: an `intentDigest` column on `vault_agent_intents` with
+   * a UNIQUE constraint per `(taskId, intentDigest)`, plus an explicit pre-check
+   * inside the submit transaction so we return a clean 409 instead of a raw
+   * constraint violation.
+   */
+  it("rejects an identical resubmitted signed intent with 409 intent_replay", async () => {
+    const { token, agentId, signingPriv, delegationId } = await setup("replay@example.com", "replay");
+    const task = await request(server)
+      .post(`/vault/agents/${agentId}/tasks`)
+      .set(auth(token)).send({ delegationId }).expect(201);
+    const taskId: string = task.body.taskId;
+
+    const i0 = buildIntent(agentId, signingPriv, {
+      taskId, op: "kv.read", path: "secret/data/app/db", delegationId, args: { k: "DATABASE_URL" },
+    });
+
+    // First submit lands.
+    const ok = await request(server)
+      .post(`/vault/agents/${agentId}/intents`)
+      .set(auth(token)).send(i0).expect(201);
+    expect(ok.body).toMatchObject({ decision: "allow", seq: 0 });
+    const headAfterOne: string = ok.body.chainHead;
+
+    // Exact same payload → 409 intent_replay. Chain MUST NOT advance, budget MUST NOT
+    // increment. Verifying via getTask(verify=true): length stays 1, callsUsed stays 1.
+    const dupe = await request(server)
+      .post(`/vault/agents/${agentId}/intents`)
+      .set(auth(token)).send(i0).expect(409);
+    expect(dupe.body.error).toBe("intent_replay");
+
+    const after = await request(server)
+      .get(`/vault/agents/${agentId}/tasks/${taskId}?verify=true`)
+      .set(auth(token)).expect(200);
+    expect(after.body).toMatchObject({
+      chainOk: true,
+      length: 1,
+      callsUsed: 1,
+      chainHead: headAfterOne,
+    });
+
+    // A *new* intent (different nonce, same op + path) still works — only true replays
+    // are blocked, not legitimate sequential reads.
+    const i1 = buildIntent(agentId, signingPriv, {
+      taskId, op: "kv.read", path: "secret/data/app/db", delegationId, args: { k: "DATABASE_URL" },
+    });
+    const next = await request(server)
+      .post(`/vault/agents/${agentId}/intents`)
+      .set(auth(token)).send(i1).expect(201);
+    expect(next.body).toMatchObject({ decision: "allow", seq: 1 });
+    expect(next.body.chainHead).not.toBe(headAfterOne);
+  });
 });

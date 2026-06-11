@@ -131,6 +131,13 @@ export class AgentTasksService {
     const capability = opToCapability(claims.op);
     if (!capability) throw new BadRequestException({ error: "unknown_op", op: claims.op });
 
+    // HIGH-D: replay protection. The same SignedIntent JSON yields the same `intentDigest`
+    // (SHA-256 over JCS of the canonical claims object); per task, that digest must be
+    // unique. We compute it once and reuse for both the pre-check below AND the elevated/
+    // CIBA approval binding, so the "approval is bound to this exact intent" property
+    // composes with the replay check.
+    const digest = intentDigest(claims);
+
     return this.dataSource.transaction(async (mgr) => {
       const task = await mgr.findOne(VaultAgentTaskEntity, { where: { taskId: claims.taskId } });
       if (!task) throw new NotFoundException("task not found");
@@ -149,6 +156,22 @@ export class AgentTasksService {
         throw new ConflictException({ error: "task_budget_exhausted" });
       }
 
+      // Replay block: if an intent with the same `(taskId, intentDigest)` is already on
+      // the chain, refuse 409 BEFORE running auth / budget metering / writing audit. The
+      // partial-unique index on the entity is the race-safe belt; this is the clean error
+      // surface. (`intentDigest` is nullable for pre-migration rows; we only look at the
+      // new column, so legacy rows can't cause a phantom-replay false positive.)
+      const dupe = await mgr.findOne(VaultAgentIntentEntity, {
+        where: { taskId: task.taskId, intentDigest: digest },
+        select: ["id"],
+      });
+      if (dupe) {
+        throw new ConflictException({
+          error: "intent_replay",
+          message: "this signed intent has already been submitted for this task",
+        });
+      }
+
       let decision = await this.agentsService.authorize(agentId, {
         path: claims.path,
         capability,
@@ -161,7 +184,6 @@ export class AgentTasksService {
       // recording or metering the action — the agent re-submits the identical intent once
       // the owner has approved out-of-band (a WebAuthn assertion).
       if (decision.decision === "allow" && decision.elevated) {
-        const digest = intentDigest(claims);
         const approved = await this.approvals.tryConsume(agentId, task.taskId, digest);
         if (!approved) {
           const approvalId = await this.approvals.ensurePending({
@@ -214,6 +236,7 @@ export class AgentTasksService {
           claims: claims as unknown as Record<string, unknown>,
           signature: dto.signature,
           chainHead,
+          intentDigest: digest,
           decision: decision.decision,
         }),
       );
