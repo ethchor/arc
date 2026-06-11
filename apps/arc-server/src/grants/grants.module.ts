@@ -17,19 +17,38 @@ import { TypeOrmPolicyStore } from "./typeorm-policy-store";
 const TYPEORM_POLICY_STORE = Symbol("TYPEORM_POLICY_STORE");
 
 /**
- * Read `ARC_DEFAULT_POLICY` once at boot. `"allow"` (the default) keeps dev/test working
- * while ACL admin tooling lands; production deployments should set `"deny"` once they have
- * the policy bootstrap they need (see `ARC_ROOT_USERS`).
+ * Read `ARC_DEFAULT_POLICY` once at boot — the Engine-A fail-open vs fail-closed posture
+ * for a subject with no attached policy.
+ *
+ * Contract:
+ *  - explicit `deny` / `allow` always wins (case-insensitive), in any environment;
+ *  - **unset → fail closed (`deny`) when `NODE_ENV=production`**, else `allow` for dev/test
+ *    ergonomics while ACL admin tooling is set up;
+ *  - an invalid value falls back to the same environment-appropriate default and warns.
+ *
+ * This is the difference between "a production deploy that forgot the env var locks Engine-A
+ * down until an admin is bootstrapped (`ARC_ROOT_USERS`)" and the old behavior — "that same
+ * deploy silently grants every authenticated user full Engine-A authority." Fail closed.
  */
 export function buildDefaultMode(): DefaultMode {
-  const raw = (process.env.ARC_DEFAULT_POLICY ?? "allow").toLowerCase();
+  const isProd = process.env.NODE_ENV === "production";
+  const raw = process.env.ARC_DEFAULT_POLICY?.toLowerCase();
   if (raw === "deny") return "deny";
-  if (raw !== "allow") {
-    new Logger("GrantsModule").warn(
-      `ARC_DEFAULT_POLICY=${raw} is not 'allow' or 'deny'; defaulting to 'allow'`,
+  if (raw === "allow") return "allow";
+
+  const fallback: DefaultMode = isProd ? "deny" : "allow";
+  const log = new Logger("GrantsModule");
+  if (raw !== undefined) {
+    log.warn(`ARC_DEFAULT_POLICY=${raw} is not 'allow' or 'deny'; defaulting to '${fallback}'`);
+  } else if (isProd) {
+    // Make the implicit fail-closed legible: an operator who forgot the env var needs to
+    // know *why* Engine-A is locked down and how to open it deliberately.
+    log.log(
+      "ARC_DEFAULT_POLICY unset with NODE_ENV=production → defaulting to 'deny' (fail-closed). " +
+        "Set ARC_ROOT_USERS to bootstrap an admin, or ARC_DEFAULT_POLICY=allow to opt out.",
     );
   }
-  return "allow";
+  return fallback;
 }
 
 /**
