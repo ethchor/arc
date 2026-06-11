@@ -11,7 +11,7 @@ fn session_encrypts_decrypts_and_auto_locks() {
     let pt = s
         .decrypt_item("v1", "i1", 1, 1, 1000, &enc.ciphertext, &enc.wrapped_item_key)
         .unwrap();
-    assert_eq!(pt, b"top-secret");
+    assert_eq!(&*pt, b"top-secret");
 
     assert!(!s.is_locked(1000));
     assert!(!s.is_locked(1299));
@@ -69,7 +69,7 @@ fn cipher_cache_round_trips_and_decrypts() {
     let pt = s
         .decrypt_item("v1", "i1", 1, 1, 0, &got.ciphertext, &got.wrapped_item_key)
         .unwrap();
-    assert_eq!(pt, b"cached-secret");
+    assert_eq!(&*pt, b"cached-secret");
     assert_eq!(cache.list("v1").unwrap().len(), 1);
 }
 

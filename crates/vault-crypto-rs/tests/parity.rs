@@ -35,7 +35,7 @@ fn argon2id_matches_ts() {
         a["p"].as_u64().unwrap() as u32,
         a["dkLen"].as_u64().unwrap() as usize,
     );
-    assert_eq!(hex::encode(out), a["outHex"].as_str().unwrap());
+    assert_eq!(hex::encode(&*out), a["outHex"].as_str().unwrap());
 }
 
 #[test]
@@ -43,8 +43,8 @@ fn hkdf_split_matches_ts() {
     let v = vectors();
     let h = &v["hkdfSplit"];
     let split = split_master_key(&hx(h["ikmHex"].as_str().unwrap()));
-    assert_eq!(hex::encode(split.auth_seed), h["authSeedHex"].as_str().unwrap());
-    assert_eq!(hex::encode(split.wk), h["wkHex"].as_str().unwrap());
+    assert_eq!(hex::encode(*split.auth_seed), h["authSeedHex"].as_str().unwrap());
+    assert_eq!(hex::encode(*split.wk), h["wkHex"].as_str().unwrap());
 }
 
 #[test]
@@ -87,7 +87,7 @@ fn aead_matches_ts_and_round_trips() {
 
     // decrypt the TS-produced ciphertext
     let ts_ct = hx(a["ciphertextHex"].as_str().unwrap());
-    assert_eq!(aead_decrypt(&key, &nonce, &ts_ct, aad).unwrap(), plaintext);
+    assert_eq!(&*aead_decrypt(&key, &nonce, &ts_ct, aad).unwrap(), &plaintext);
 
     // tamper / wrong-AAD must fail closed
     assert!(aead_decrypt(&key, &nonce, &ts_ct, b"different-aad").is_err());
@@ -117,7 +117,7 @@ fn opens_a_ts_produced_envelope() {
     let aad = e["aad"].as_str().unwrap();
     let env: Envelope = serde_json::from_value(e["envelope"].clone()).unwrap();
     let pt = aead_open_envelope(&key, &env, aad).unwrap();
-    assert_eq!(hex::encode(pt), e["plaintextHex"].as_str().unwrap());
+    assert_eq!(hex::encode(&*pt), e["plaintextHex"].as_str().unwrap());
     // wrong AAD fails closed
     assert!(aead_open_envelope(&key, &env, "different").is_err());
 }
@@ -128,7 +128,7 @@ fn item_encrypt_decrypt_round_trips() {
     let plaintext = br#"{"type":"secret","key":"API_KEY","value":"sk-live"}"#;
     let item = encrypt_item(&vek, "v1", "i1", 1, 1, plaintext);
     let out = decrypt_item(&vek, "v1", "i1", 1, 1, &item.ciphertext, &item.wrapped_item_key).unwrap();
-    assert_eq!(out, plaintext);
+    assert_eq!(&*out, &plaintext[..]);
     // a wrong VEK cannot open the wrapped IK
     assert!(decrypt_item(&random32(), "v1", "i1", 1, 1, &item.ciphertext, &item.wrapped_item_key).is_err());
 }
@@ -140,7 +140,7 @@ fn seal_envelope_round_trips() {
     // Legacy seal-without-AAD envelope (env.aad == None) — open with `""` (the back-compat
     // default in TS). HIGH-E parity: a wrapper-level expected_aad arg is now required.
     assert_eq!(
-        seal_open_envelope(&rpriv, &rpub, &env, "").unwrap(),
+        &*seal_open_envelope(&rpriv, &rpub, &env, "").unwrap(),
         b"vault-key",
     );
 }
@@ -150,7 +150,7 @@ fn seal_round_trips_and_rejects_wrong_recipient() {
     let (rpriv, rpub) = x25519_keypair();
     let sealed = seal(&rpub, b"vault-key");
     assert_eq!(
-        seal_open(&rpriv, &rpub, &sealed.eph_pub, &sealed.nonce, &sealed.ct).unwrap(),
+        &*seal_open(&rpriv, &rpub, &sealed.eph_pub, &sealed.nonce, &sealed.ct).unwrap(),
         b"vault-key",
     );
     let (wrong_priv, _) = x25519_keypair();
@@ -236,7 +236,7 @@ fn pq_seal_round_trips_within_rust() {
         "vault/x#kv1",
     )
     .expect("round-trip open");
-    assert_eq!(opened, b"a-known-secret");
+    assert_eq!(&*opened, b"a-known-secret");
 }
 
 // --- small base64url helpers for the tampering check above ---
@@ -249,4 +249,42 @@ fn base64_urlsafe_encode(b: &[u8]) -> String {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine as _;
     URL_SAFE_NO_PAD.encode(b)
+}
+
+/// HIGH-F regression (crypto audit). ADR-001 promises "Rust earns its keep here:
+/// Zeroizing buffers." The `zeroize = "1"` dep was declared but unused — every
+/// intermediate AEAD key, IK, and shared-secret sat on the stack/heap unwiped, so a
+/// coredump / swap after `encrypt_item` captured live key material.
+///
+/// This test pins the contract at the type level: each secret-returning function now
+/// hands back a `Zeroizing<...>` so the bytes are wiped on `Drop` (including when the
+/// caller forgets / panics / etc). The compiler accepts these annotations only if the
+/// signatures match — that IS the test. A regression that strips Zeroizing from any of
+/// these returns is a compile error, not a silent leak.
+#[test]
+fn returns_zeroizing_wrappers_on_secret_outputs() {
+    use zeroize::Zeroizing;
+
+    // Argon2id output (MK material) wraps in Zeroizing.
+    let _mk: Zeroizing<Vec<u8>> = argon2id(b"pw", b"salt-16-bytes-ok", 64, 1, 1, 32);
+
+    // split_master_key returns Zeroizing-protected halves.
+    let _split: Split = split_master_key(b"high-entropy-input");
+    let _auth_seed: &Zeroizing<[u8; 32]> = &_split.auth_seed;
+    let _wk: &Zeroizing<[u8; 32]> = &_split.wk;
+
+    // AEAD decrypt outputs (plaintext that must be wiped) wrap.
+    let key = [0u8; 32];
+    let nonce = [0u8; 24];
+    let ct = aead_encrypt(&key, &nonce, b"secret", b"");
+    let _pt: Zeroizing<Vec<u8>> = aead_decrypt(&key, &nonce, &ct, b"").unwrap();
+
+    // Item decrypt (the highest-value plaintext path) wraps too.
+    let vek = random32();
+    let item = encrypt_item(&vek, "v1", "i1", 1, 1, b"super-secret-item");
+    let _pt2: Zeroizing<Vec<u8>> =
+        decrypt_item(&vek, "v1", "i1", 1, 1, &item.ciphertext, &item.wrapped_item_key).unwrap();
+
+    let _opened: Zeroizing<Vec<u8>> = aead_open_envelope(&vek, &item.wrapped_item_key, "")
+        .unwrap_or_else(|_| Zeroizing::new(Vec::new()));
 }
