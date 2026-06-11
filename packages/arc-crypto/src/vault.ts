@@ -95,7 +95,19 @@ export interface EnrollResult {
   personalVaultKey: VaultKeyMaterial;
 }
 
-const privAad = (keyName: string, keyVersion: number, wrap?: string) =>
+/**
+ * MED-G (supply-chain audit): an earlier draft of docs/03 §3.4 listed
+ * `AAD = userId | keyName | keyVersion` for wrapped private keys, but `userId` is
+ * server-assigned and not available client-side at enroll time. The real AAD is
+ * `keyName | keyVersion` (+ optional `wrap` to separate the WK-wrapped form from the
+ * recovery-key-wrapped form). Exported so the cross-platform parity test (and a future
+ * Rust port) can assert the exact bytes — no silent drift in either direction.
+ *
+ * **NOTE for implementers:** if you ever change this shape, update docs/03 §3.4 IN THE
+ * SAME COMMIT. The vault.test.ts regression below pins the literal output for the
+ * canonical inputs.
+ */
+export const privAad = (keyName: string, keyVersion: number, wrap?: string): string =>
   buildAad(
     wrap
       ? [["keyName", keyName], ["wrap", wrap], ["keyVersion", String(keyVersion)]]

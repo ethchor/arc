@@ -9,6 +9,7 @@ import {
   enroll,
   type ItemRef,
   openVaultKeyGrant,
+  privAad,
   randomBytes,
   recover,
   recoverIdentityPriv,
@@ -273,5 +274,45 @@ describe("vault key grants (post-quantum hybrid)", () => {
         mlkemPriv: admin.session.identityPrivMlkem,
       }),
     ).toThrow();
+  });
+});
+
+/**
+ * MED-G regression (supply-chain audit). docs/03 §3.4 used to say
+ * `AAD = userId | keyName | keyVersion` for wrapped private keys, but the actual code
+ * binds only `keyName | keyVersion` (+ optional `wrap` discriminator) — `userId` isn't
+ * available client-side at enroll time, so binding it is a non-goal in v1 (the docs are
+ * now corrected to match). This block pins the wire shape so a future "improvement" that
+ * silently re-introduces or removes a field gets caught at test time, not by a Rust
+ * verifier discovering it can't reproduce the AAD bytes.
+ */
+describe("privAad — docs/03 §3.4 wire shape pinned (MED-G)", () => {
+  it("identity-priv AAD format (no wrap discriminator)", () => {
+    // arc-aad/1 + 3 fields: ("keyName","identity-priv"), ("keyVersion","1")
+    expect(privAad("identity-priv", 1)).toBe(
+      "arc-aad/1\nkeyName:13:identity-priv\nkeyVersion:1:1",
+    );
+  });
+
+  it("identity-priv AAD with recovery wrap discriminator", () => {
+    expect(privAad("identity-priv", 1, "recovery")).toBe(
+      'arc-aad/1\nkeyName:13:identity-priv\nwrap:8:recovery\nkeyVersion:1:1',
+    );
+  });
+
+  it("does NOT include userId — server assigns it post-enroll (see vault.ts comment)", () => {
+    const out = privAad("identity-priv", 1);
+    expect(out).not.toContain("userId");
+    // Belt + suspenders: the canonical AAD has exactly two fields and no `userId:` row.
+    expect(out.split("\n")).toHaveLength(3); // header + 2 fields
+  });
+
+  it("changes when keyVersion bumps (so rotated keys can't open old slots)", () => {
+    expect(privAad("identity-priv", 1)).not.toBe(privAad("identity-priv", 2));
+  });
+
+  it("differs across keyNames so cross-slot opens fail closed", () => {
+    expect(privAad("identity-priv", 1)).not.toBe(privAad("identity-priv-mlkem", 1));
+    expect(privAad("identity-priv", 1)).not.toBe(privAad("signing-priv", 1));
   });
 });
