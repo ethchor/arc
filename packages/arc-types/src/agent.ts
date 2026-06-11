@@ -140,6 +140,16 @@ export interface IntentClaims {
   argsDigest: string;
   ts: string;
   nonce: string;
+  /**
+   * MED-E (supply-chain audit): the chain head the agent observed *before* signing this
+   * intent — hex (sha256), `ZERO_CHAIN` for the first intent on a fresh task. Binds the
+   * agent's signature to a specific chain position so the server can't accept an intent
+   * at a different position than the agent intended. Previously each intent only carried
+   * content; the running chain head was an audit-time recomputation that detected
+   * tampering *after the fact*. With prevChainHead in the signed claims, an out-of-order
+   * accept or a server-side omission produces a fail-closed at submit time instead.
+   */
+  prevChainHead: string;
 }
 
 /** An intent as transmitted: the claims plus the agent's signature over them. */

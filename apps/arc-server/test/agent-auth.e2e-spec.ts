@@ -14,6 +14,7 @@ import {
   signObject,
   toB64u,
   wrapVaultKeyFor,
+  ZERO_CHAIN,
 } from "@arc/crypto";
 import { scope } from "@arc/grants";
 import { agentSubject, userSubject, type DelegationClaims, type IntentClaims } from "@arc/types";
@@ -115,10 +116,12 @@ describe("Engine-C agent self-authentication (ADR-005)", () => {
     expect(payload.act).toEqual({ sub: agentSubject(agentId) });
 
     // Submit an intent authenticated with the AGENT's own token (not the owner's).
+    // MED-E: first intent on a fresh task → prevChainHead = ZERO_CHAIN.
     const iclaims: IntentClaims = {
       v: 1, agent: agentSubject(agentId), delegation: del.body.id, taskId: task.body.taskId,
       op: "kv.read", path: "secret/data/app/db", argsDigest: intentArgsDigest({ k: "x" } as never),
       ts: new Date().toISOString(), nonce: toB64u(randomBytes(16)),
+      prevChainHead: ZERO_CHAIN,
     };
     const r = await request(server).post(`/vault/agents/${agentId}/intents`).set(auth(token))
       .send({ claims: iclaims, signature: signIntent(signing.priv, iclaims), args: { k: "x" } }).expect(201);
@@ -133,10 +136,13 @@ describe("Engine-C agent self-authentication (ADR-005)", () => {
     const tokenOne = await agentToken(one.agentId, one.signing.priv);
 
     // Use agent-one's token to target agent-two's intent endpoint → 403.
+    // The 403 fires at the JWT-guard layer before any chain-position validation, so
+    // prevChainHead value here doesn't influence the test outcome.
     const iclaims: IntentClaims = {
       v: 1, agent: agentSubject(two.agentId), delegation: null, taskId: randomUUID(),
       op: "kv.read", path: "secret/data/app/db", argsDigest: intentArgsDigest(null),
       ts: new Date().toISOString(), nonce: toB64u(randomBytes(16)),
+      prevChainHead: ZERO_CHAIN,
     };
     const r = await request(server).post(`/vault/agents/${two.agentId}/intents`).set(auth(tokenOne))
       .send({ claims: iclaims, signature: signIntent(two.signing.priv, iclaims), args: null }).expect(403);

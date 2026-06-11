@@ -78,6 +78,7 @@ describe("signIntent / verifyIntent + intentArgsDigest", () => {
     argsDigest: intentArgsDigest({ value: "s3cr3t", b: 2, a: 1 }),
     ts: "2026-06-07T00:30:00.000Z",
     nonce: "nonce-xyz",
+    prevChainHead: ZERO_CHAIN,
   };
 
   it("round-trips under the agent's signing key", () => {
@@ -117,6 +118,7 @@ describe("intent chain (ADR-005 Phase 3)", () => {
     argsDigest: intentArgsDigest({ k: "v" }),
     ts: "2026-06-07T00:30:00.000Z",
     nonce: "n1",
+    prevChainHead: ZERO_CHAIN,
     ...over,
   });
 
@@ -126,6 +128,7 @@ describe("intent chain (ADR-005 Phase 3)", () => {
     const b: IntentClaims = {
       path: a.path, op: a.op, agent: a.agent, v: 1, delegation: a.delegation,
       taskId: a.taskId, argsDigest: a.argsDigest, ts: a.ts, nonce: "x",
+      prevChainHead: a.prevChainHead,
     };
     expect(intentDigest(a)).toBe(intentDigest(b));
   });

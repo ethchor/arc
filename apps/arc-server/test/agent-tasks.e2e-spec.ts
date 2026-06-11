@@ -84,11 +84,13 @@ describe("Engine-C signed intents + task chain (ADR-005 Phase 3)", () => {
     };
   }
 
-  /** Build a signed intent. `argsForDigest` defaults to `args` (set differently to forge a mismatch). */
+  /** Build a signed intent. `argsForDigest` defaults to `args` (set differently to forge a mismatch).
+   * MED-E: `prevChainHead` defaults to `ZERO_CHAIN` (first intent on a fresh task); callers
+   * pass the prior response's `chainHead` for subsequent intents. */
   function buildIntent(
     agentId: string,
     signingPriv: Uint8Array,
-    f: { taskId: string; op: string; path: string; delegationId?: string | null; args?: unknown; argsForDigest?: unknown },
+    f: { taskId: string; op: string; path: string; delegationId?: string | null; args?: unknown; argsForDigest?: unknown; prevChainHead?: string },
   ) {
     const args = f.args ?? null;
     const claims: IntentClaims = {
@@ -101,6 +103,7 @@ describe("Engine-C signed intents + task chain (ADR-005 Phase 3)", () => {
       argsDigest: intentArgsDigest((f.argsForDigest ?? args) as never),
       ts: new Date().toISOString(),
       nonce: toB64u(randomBytes(16)),
+      prevChainHead: f.prevChainHead ?? ZERO_CHAIN,
     };
     const signature = signIntent(signingPriv, claims);
     return { claims, signature, args };
@@ -166,7 +169,9 @@ describe("Engine-C signed intents + task chain (ADR-005 Phase 3)", () => {
     const headAfter0: string = r.body.chainHead;
 
     // Out-of-scope delete → recorded as deny, chain still advances (seq 1).
-    const i1 = buildIntent(agentId, signingPriv, { taskId, op: "kv.delete", path: "secret/data/app/db", delegationId });
+    // MED-E: pass the prior response's chainHead so the agent's signature binds the
+    // new intent to this exact position. A stale prevChainHead would 409 immediately.
+    const i1 = buildIntent(agentId, signingPriv, { taskId, op: "kv.delete", path: "secret/data/app/db", delegationId, prevChainHead: headAfter0 });
     r = await request(server).post(`/vault/agents/${agentId}/intents`).set(auth(token)).send(i1).expect(201);
     expect(r.body).toMatchObject({ decision: "deny", seq: 1 });
     expect(r.body.chainHead).not.toBe(headAfter0);
@@ -289,13 +294,63 @@ describe("Engine-C signed intents + task chain (ADR-005 Phase 3)", () => {
 
     // A *new* intent (different nonce, same op + path) still works — only true replays
     // are blocked, not legitimate sequential reads.
+    // MED-E: signed against the post-replay-attempt chain head (still headAfterOne since
+    // the dupe didn't advance the chain).
     const i1 = buildIntent(agentId, signingPriv, {
-      taskId, op: "kv.read", path: "secret/data/app/db", delegationId, args: { k: "DATABASE_URL" },
+      taskId, op: "kv.read", path: "secret/data/app/db", delegationId, args: { k: "DATABASE_URL" }, prevChainHead: headAfterOne,
     });
     const next = await request(server)
       .post(`/vault/agents/${agentId}/intents`)
       .set(auth(token)).send(i1).expect(201);
     expect(next.body).toMatchObject({ decision: "allow", seq: 1 });
     expect(next.body.chainHead).not.toBe(headAfterOne);
+  });
+
+  /**
+   * MED-E regression (supply-chain audit). ADR-005 claimed "the signed intent binds the
+   * agent to a specific position in the task's chain", but until this commit the running
+   * `chainHead` was a server-side hash never covered by the agent's signature. Server (or
+   * a network-on-path attacker) could record an intent at a different chain position than
+   * the agent intended; the signed-claims check would still pass because the chain head
+   * wasn't in the claims. We now require `claims.prevChainHead` and refuse the submit if
+   * it disagrees with the server's current head — fail-closed at submit time instead of
+   * after-the-fact at verify time.
+   */
+  it("refuses an intent signed against a stale chain head with 409 intent_chain_mismatch", async () => {
+    const { token, agentId, signingPriv, delegationId } = await setup("chain-mismatch@example.com", "chain-mismatch");
+    const task = await request(server)
+      .post(`/vault/agents/${agentId}/tasks`)
+      .set(auth(token)).send({ delegationId }).expect(201);
+    const taskId: string = task.body.taskId;
+
+    // First intent lands → chain advances off ZERO_CHAIN.
+    const i0 = buildIntent(agentId, signingPriv, { taskId, op: "kv.read", path: "secret/data/app/db", delegationId });
+    const r0 = await request(server).post(`/vault/agents/${agentId}/intents`).set(auth(token)).send(i0).expect(201);
+    const headAfter0: string = r0.body.chainHead;
+
+    // The agent's local view is stale: signs the next intent with prevChainHead=ZERO_CHAIN
+    // even though the server's head is now headAfter0. Different nonce / args so it's not
+    // a literal replay — the only signal that this is wrong is the chain position.
+    const stale = buildIntent(agentId, signingPriv, {
+      taskId, op: "kv.read", path: "secret/data/app/db", delegationId,
+      args: { k: "different-nonce" }, prevChainHead: ZERO_CHAIN,
+    });
+    const rStale = await request(server).post(`/vault/agents/${agentId}/intents`).set(auth(token)).send(stale).expect(409);
+    expect(rStale.body.error).toBe("intent_chain_mismatch");
+    expect(rStale.body.expected).toBe(headAfter0);
+    expect(rStale.body.observed).toBe(ZERO_CHAIN);
+
+    // Task state untouched — chain didn't advance, callsUsed didn't increment, and the
+    // recorded chain still has just the original intent on it.
+    const v = await request(server).get(`/vault/agents/${agentId}/tasks/${taskId}?verify=true`).set(auth(token)).expect(200);
+    expect(v.body).toMatchObject({ chainOk: true, length: 1, callsUsed: 1, chainHead: headAfter0 });
+
+    // Same payload, this time signed with the *correct* prevChainHead → accepted.
+    const fresh = buildIntent(agentId, signingPriv, {
+      taskId, op: "kv.read", path: "secret/data/app/db", delegationId,
+      args: { k: "different-nonce" }, prevChainHead: headAfter0,
+    });
+    const rFresh = await request(server).post(`/vault/agents/${agentId}/intents`).set(auth(token)).send(fresh).expect(201);
+    expect(rFresh.body).toMatchObject({ decision: "allow", seq: 1 });
   });
 });
