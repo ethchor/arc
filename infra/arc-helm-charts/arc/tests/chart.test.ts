@@ -125,6 +125,33 @@ describe("templates/", () => {
   });
 });
 
+describe("arcServer.secret.jwtSecret required guard (MED-B)", () => {
+  // MED-B (supply-chain audit): a default `arcServer.secret.jwtSecret: ""` plus a
+  // `with`-skipped template silently rendered a Secret missing the JWT_SECRET key —
+  // arc-server then crashed at boot with a misleading runtime error. The chart now
+  // `required`s a non-empty value when create=true, so the failure surfaces at
+  // `helm install` time with a clear "set --set-string arcServer.secret.jwtSecret=..."
+  // hint. The helm-render flow is covered by ci.yml's `helm refuses to render`
+  // step; this test pins the contract structurally so a contributor without helm
+  // installed still trips the regression.
+  const secret = readFileSync(join(templatesDir, "secret.yaml"), "utf8");
+
+  it("uses `required` on arcServer.secret.jwtSecret so the chart fails fast", () => {
+    expect(secret).toMatch(/required\b[\s\S]*\.Values\.arcServer\.secret\.jwtSecret/);
+  });
+
+  it("still unconditionally writes JWT_SECRET when the guard passes (no silent skip)", () => {
+    expect(secret).toMatch(/JWT_SECRET:\s*\{\{\s*\$jwtSecret/);
+    // The old `with`-pattern was the silent-skip bug — make sure it didn't come back.
+    expect(secret).not.toMatch(/with\s+\.Values\.arcServer\.secret\.jwtSecret/);
+  });
+
+  it("the error message names the knob to set + the existingSecret escape hatch", () => {
+    expect(secret).toContain("arcServer.secret.jwtSecret is required");
+    expect(secret).toContain("arcServer.secret.existingSecret");
+  });
+});
+
 describe("openbao production-safety guard (HIGH-B)", () => {
   const statefulset = readFileSync(join(templatesDir, "openbao-statefulset.yaml"), "utf8");
 
