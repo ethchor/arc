@@ -28,10 +28,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # MED-A (supply-chain audit): never interpolate `${{ ... }}` directly inside `run:`
+      # — a crafted tag/ref or workflow_dispatch input becomes shell when evaluated. We
+      # forward both candidates through `env:` (which the runner sets as plain process
+      # env vars, not literal substitution) and quote them inside bash, where the values
+      # are parameters and cannot break out of the string.
       - name: Resolve version
         id: version
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          ref="${INPUT_TAG:-$REF_NAME}"
           echo "tag=${ref}" >> "$GITHUB_OUTPUT"
           echo "version=${ref#v}" >> "$GITHUB_OUTPUT"
 
@@ -95,17 +103,23 @@ jobs:
           name: arc-server-sbom-${{ steps.version.outputs.version }}
           path: arc-server.sbom.spdx.json
 
+      # MED-A: forward `tag`/`version`/`digest` through env (real env vars, no shell
+      # substitution) so a tag containing shell metacharacters can't escape the echo.
       - name: Summary
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           {
-            echo "### arc-server ${{ steps.version.outputs.tag }} published"
+            echo "### arc-server ${TAG} published"
             echo ""
-            echo "- Image: \`${REGISTRY}/${IMAGE_NAME}@${{ steps.build.outputs.digest }}\`"
+            echo "- Image: \`${REGISTRY}/${IMAGE_NAME}@${DIGEST}\`"
             echo "- Signed (keyless cosign) + SBOM attested (SPDX) + SLSA provenance."
             echo ""
             echo "Verify:"
             echo '```sh'
-            echo "cosign verify ${REGISTRY}/${IMAGE_NAME}:${{ steps.version.outputs.version }} \\"
+            echo "cosign verify ${REGISTRY}/${IMAGE_NAME}:${VERSION} \\"
             echo "  --certificate-identity-regexp 'https://github.com/ethchor/arc/.github/workflows/release.yml@.*' \\"
             echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com"
             echo '```'
