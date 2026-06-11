@@ -105,7 +105,7 @@ describe("PluginsService — signed release end-to-end", () => {
 
     const { plugins, engines } = buildHarness();
     const mounted = await plugins.mountRemoteSecretsPlugin(
-      { command: artifact, args: [] },
+      { command: artifact, args: [], env: { PATH: process.env.PATH ?? "" } },
       "signed/",
       {},
       manifest,
@@ -155,7 +155,7 @@ describe("PluginsService — signed release end-to-end", () => {
     const { plugins } = buildHarness();
     await expect(
       plugins.mountRemoteSecretsPlugin(
-        { command: artifact, args: [] },
+        { command: artifact, args: [], env: { PATH: process.env.PATH ?? "" } },
         "tampered/",
         {},
         manifest,
@@ -186,7 +186,7 @@ describe("PluginsService — signed release end-to-end", () => {
     const { plugins } = buildHarness();
     await expect(
       plugins.mountRemoteSecretsPlugin(
-        { command: artifact, args: [] },
+        { command: artifact, args: [], env: { PATH: process.env.PATH ?? "" } },
         "stranger/",
         {},
         manifest,

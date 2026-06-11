@@ -81,8 +81,17 @@ export class RemoteSecretsPlugin implements SecretsPlugin {
 
   /** Spawn the plugin process and complete the meta handshake. */
   static async spawn(spec: RemoteProcessSpec): Promise<RemoteSecretsPlugin> {
+    // SECURITY: undefined env on Node's `child_process.spawn` *inherits* the parent's
+    // process.env, which would hand a plugin arc-server's JWT_SECRET, BAO_TOKEN,
+    // DATABASE_URL, ARC_PUBLISHER_PRIV, etc. — exactly what `RemoteProcessSpec.env`'s
+    // doc forbids ("merged on top of an *empty* env"). Honor the contract by treating
+    // `undefined` as the empty env. Operators who need passthrough list specific keys
+    // (e.g. AWS_REGION) in `spec.env`; the build helper at `apps/arc-server`'s
+    // `plugin-mounts.ts` populates them from `process.env` when the operator opts in
+    // via the `env=` query param on `ARC_PLUGIN_MOUNTS`.
+    const childEnv = (spec.env ?? {}) as NodeJS.ProcessEnv;
     const child = spawn(spec.command, [...(spec.args ?? [])], {
-      env: spec.env as NodeJS.ProcessEnv,
+      env: childEnv,
       cwd: spec.cwd,
       stdio: ["pipe", "pipe", "pipe"],
     });

@@ -41,6 +41,16 @@ export interface PluginMountSpec {
   manifestPath?: string;
   /** Optional path to a JSON file passed to the plugin's `configure()`. */
   configPath?: string;
+  /**
+   * Names of env vars to forward from arc-server's `process.env` into the plugin child
+   * process. Empty/absent (the secure default) means the plugin child sees **no env vars
+   * at all** — same posture as the WASM backend. Operators who run a plugin that needs
+   * e.g. `AWS_REGION` declare it explicitly via `?env=AWS_REGION:AWS_DEFAULT_REGION` on
+   * the mount entry (colon-separated — comma is the outer entry separator). Unknown
+   * env-var names are silently dropped (the operator just doesn't have one set); the env
+   * passthrough never invents values.
+   */
+  envPassthrough?: readonly string[];
 }
 
 /**
@@ -85,6 +95,21 @@ function parseEntry(entry: string): PluginMountSpec {
   if (manifest) out.manifestPath = manifest.trim();
   const config = params.get("config");
   if (config) out.configPath = config.trim();
+  const env = params.get("env");
+  if (env) {
+    // Colon-separated, not comma — the top-level entry splitter already consumes commas
+    // (`ARC_PLUGIN_MOUNTS=aws/=…,github/=…`), so a comma inside `env=` would smuggle one
+    // env name into the next mount entry. Colon isn't a valid POSIX env-name char, so it
+    // is unambiguous as a name separator. Example:
+    //   ARC_PLUGIN_MOUNTS=aws/=/x/bin?env=AWS_REGION:AWS_PROFILE
+    const names = env.split(":").map((s) => s.trim()).filter(Boolean);
+    for (const n of names) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) {
+        throw new Error(`invalid env-var name "${n}" — expected POSIX identifier`);
+      }
+    }
+    if (names.length > 0) out.envPassthrough = names;
+  }
   return out;
 }
 
@@ -136,18 +161,44 @@ export async function resolveMountFiles(spec: PluginMountSpec): Promise<{
 }
 
 /**
+ * Names always forwarded from arc-server's `process.env` to a plugin child. These are
+ * **not** secrets in any threat model arc cares about — `PATH` is required for the
+ * kernel to resolve `#!/usr/bin/env node` shebangs and for the child to find any sub-
+ * binaries; nothing about it lets a plugin read arc-server's keys, tokens, or DB
+ * connection. Kept tight on purpose: anything operationally useful but secret-shaped
+ * (AWS_*, GCP_*, KUBECONFIG, …) must still be listed explicitly via `envPassthrough`.
+ */
+export const ALWAYS_PASSTHROUGH_ENV: ReadonlySet<string> = new Set(["PATH"]);
+
+/**
  * Build the `RemoteProcessSpec` that `PluginsService.mountRemoteSecretsPlugin` consumes
  * for a given mount spec. The OOP bin is `spec.command` directly (operators chmod +x'd
  * the file at install time), so arc-server's manifest gate hashes the actual executable
  * bytes that will run.
+ *
+ * SECURITY: `env` is **always set explicitly** — never left undefined. Node's
+ * `child_process.spawn` treats undefined env as "inherit `process.env`", which would
+ * hand the plugin arc-server's JWT_SECRET / BAO_TOKEN / DATABASE_URL / ARC_PUBLISHER_PRIV
+ * — full server-equivalent compromise. By default the only key forwarded is `PATH`
+ * (see `ALWAYS_PASSTHROUGH_ENV`); operators add more via `envPassthrough` on the spec
+ * (set by the `?env=K1:K2` query param on `ARC_PLUGIN_MOUNTS`).
  */
-export function buildRemoteProcessSpec(spec: PluginMountSpec): RemoteProcessSpec {
+export function buildRemoteProcessSpec(
+  spec: PluginMountSpec,
+  hostEnv: NodeJS.ProcessEnv = process.env,
+): RemoteProcessSpec {
+  const env: Record<string, string> = {};
+  for (const name of ALWAYS_PASSTHROUGH_ENV) {
+    const value = hostEnv[name];
+    if (typeof value === "string") env[name] = value;
+  }
+  for (const name of spec.envPassthrough ?? []) {
+    const value = hostEnv[name];
+    if (typeof value === "string") env[name] = value;
+  }
   return {
     command: spec.artifactPath,
     args: [],
-    // No env passthrough by default — plugins inherit only the env they need from the
-    // operator's deploy config (e.g. AWS_REGION, AWS_PROFILE for the AWS plugin) when
-    // operators explicitly add it to the spec. Today the bin reads from process.env
-    // since RemoteSecretsPlugin.spawn inherits the parent's env by default.
+    env,
   };
 }

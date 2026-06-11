@@ -174,4 +174,74 @@ describe("RemoteSecretsPlugin ↔ runSecretsPlugin round-trip", () => {
     const result = spawnSync(process.execPath, ["-e", `require("${join(process.cwd(), "dist", "runtime.cjs")}")`], { encoding: "utf8" });
     expect(result.status).toBe(0);
   });
+
+  /**
+   * Regression for the env-leak CRIT: with `spec.env` undefined, Node's `child_process.spawn`
+   * would inherit `process.env`, handing the child arc-server's `JWT_SECRET`, `BAO_TOKEN`,
+   * `DATABASE_URL`, etc. The documented contract on `RemoteProcessSpec.env`
+   * ("Environment vars merged on top of an *empty* env") requires the opposite — undefined
+   * means empty, not inherit. This test asserts the host honors that contract by sneaking
+   * a marker env var into the runner and asserting the child cannot see it.
+   */
+  it("does NOT inherit arc-server's env when spec.env is undefined (CRIT regression)", async () => {
+    const marker = "ARC_TEST_LEAK_MARKER_DO_NOT_LEAK";
+    const sentinel = `SENTINEL-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    process.env[marker] = sentinel;
+    try {
+      // Plugin reflects what it sees of the marker var into its `meta.description`. If the
+      // child inherits the parent's env it'll echo the sentinel back; if isolated it echoes
+      // "<absent>".
+      const file = writePluginScript(`
+        const leaked = process.env["${marker}"];
+        const impl = {
+          meta: {
+            name: "env-leak-probe",
+            version: "1",
+            kind: "secrets",
+            description: leaked ? "leaked:" + leaked : "<absent>",
+          },
+          async configure() {},
+          async issue() { return { data: {}, leaseId: "x", ttlSeconds: 1, renewable: false }; },
+          async renew() { throw new Error("nr"); },
+          async revoke() {},
+        };
+      `);
+      // No env in spec → undefined → contract says empty env.
+      const p = await RemoteSecretsPlugin.spawn({ command: process.execPath, args: [file] });
+      plugins.push(p);
+      expect(p.meta.description).toBe("<absent>");
+      expect(p.meta.description).not.toContain(sentinel);
+    } finally {
+      delete process.env[marker];
+    }
+  });
+
+  /**
+   * Counterpart to the env-leak regression: an *explicit* env passthrough must reach the
+   * child. Without this the security default would also break legitimate plugins that need
+   * AWS_REGION etc.; this test pins the operator-opt-in path.
+   */
+  it("DOES pass through env vars an operator explicitly lists in spec.env", async () => {
+    const file = writePluginScript(`
+      const impl = {
+        meta: {
+          name: "env-passthrough-probe",
+          version: "1",
+          kind: "secrets",
+          description: "got:" + (process.env.AWS_REGION ?? "<absent>"),
+        },
+        async configure() {},
+        async issue() { return { data: {}, leaseId: "x", ttlSeconds: 1, renewable: false }; },
+        async renew() { throw new Error("nr"); },
+        async revoke() {},
+      };
+    `);
+    const p = await RemoteSecretsPlugin.spawn({
+      command: process.execPath,
+      args: [file],
+      env: { AWS_REGION: "us-west-2" },
+    });
+    plugins.push(p);
+    expect(p.meta.description).toBe("got:us-west-2");
+  });
 });
