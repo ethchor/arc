@@ -317,12 +317,30 @@ export class PasskeyService {
    * is gating (e.g. a pending approval) and later passes it to
    * {@link verifyAssertionWithChallenge}. Throws if the user has no registered passkeys.
    */
-  async beginAssertionChallenge(userId: number): Promise<PublicKeyCredentialRequestOptionsJSON> {
+  /**
+   * `forcedChallenge` (MED-F): when set, the WebAuthn challenge is *pinned* to this exact
+   * base64url-encoded value instead of a server-random one. The CIBA / push-consent path
+   * passes a value derived from the intent digest so the authenticator-signed challenge
+   * bytes are bound to "the user agreed to **this specific intent**" — a malicious server
+   * cannot redirect the signed assertion to a different pending approval at verify time.
+   *
+   * `@simplewebauthn` treats a `string` challenge as raw UTF-8 (re-base64url-encodes), so
+   * we decode `forcedChallenge` to the original bytes before passing it. The
+   * `options.challenge` the client sees is then byte-identical to `forcedChallenge`, which
+   * is what the verify path will recompute as the expected challenge.
+   */
+  async beginAssertionChallenge(
+    userId: number,
+    forcedChallenge?: string,
+  ): Promise<PublicKeyCredentialRequestOptionsJSON> {
     const credentials = await this.passkeys.find({ where: { userId } });
     if (credentials.length === 0) throw new NotFoundException("no passkeys registered");
     return generateAuthenticationOptions({
       rpID: this.rpId(),
       userVerification: "required",
+      ...(forcedChallenge !== undefined
+        ? { challenge: Buffer.from(forcedChallenge, "base64url") }
+        : {}),
       allowCredentials: credentials.map((c) => ({
         id: c.credentialId,
         transports: (c.transports ?? undefined) as AuthenticatorTransportLike[] | undefined,
