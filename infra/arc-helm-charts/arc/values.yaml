@@ -112,11 +112,19 @@ openbao:
   enabled: true
   image:
     repository: quay.io/openbao/openbao
-    tag: latest
+    # Pinned, never `latest` — a mutable base tag lets a re-pull swap the Engine-A binary
+    # out from under a pinned arc-server. Bump deliberately to a version you've tested;
+    # for the strongest assurance pin by digest (`repository@sha256:...`) and clear `tag`.
+    tag: "2.3.1"
     pullPolicy: IfNotPresent
-  # Dev mode unseals + auto-initializes for first-boot ergonomics. Production deployments
-  # MUST switch to non-dev mode + a real seal config (KMS / Shamir).
-  devMode: true
+  # Dev mode runs OpenBao in-memory (every secret is LOST on restart) and auto-unseals with
+  # a well-known root token — it is **off by default**. The chart refuses to render a
+  # dev-mode OpenBao alongside a production arc-server (see openbao-statefulset.yaml's
+  # guard): `helm install` defaults give you a non-dev Engine-A you wire a real seal +
+  # storage config into. For a LOCAL trial set BOTH `openbao.devMode=true` AND
+  # `arcServer.env.NODE_ENV=development`.
+  devMode: false
+  # Only consulted when devMode=true (local trials). Never a production credential.
   devRootToken: root
   service:
     type: ClusterIP

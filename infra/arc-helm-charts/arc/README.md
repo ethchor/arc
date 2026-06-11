@@ -39,7 +39,11 @@ The chart does **not** install Postgres — production uses a managed offering. 
 
 - `arcServer.env.NODE_ENV=production` (default).
 - `arcServer.env.ARC_DEFAULT_POLICY=deny` + at least one id in `ARC_ROOT_USERS`.
-- `openbao.devMode=false` (and supply your real config + seal).
+- `openbao.devMode=false` (the default; supply your real config + seal). The chart
+  **refuses to render** a dev-mode OpenBao under a production arc-server — flip
+  `arcServer.env.NODE_ENV=development` if you genuinely want a local in-memory trial.
+- `openbao.image.tag` is pinned (default `2.3.1`, not `latest`). Bump deliberately to a
+  version you've tested; pin by digest for the strongest supply-chain assurance.
 - Bind `serviceMonitor.enabled=true` if you run kube-prometheus-stack.
 - Provide `arcServer.secret.existingSecret` (managed via External Secrets / SealedSecrets)
   instead of writing values into the chart.

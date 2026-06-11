@@ -61,10 +61,20 @@ describe("values.yaml", () => {
     const o = values.openbao as Record<string, unknown>;
     expect(o.enabled).toBe(true);
     expect(o.image).toBeDefined();
-    expect(o.devMode).toBe(true);
-    expect(typeof o.devRootToken).toBe("string");
+    // HIGH-B (untrusted-code audit): the secure default is NON-dev mode. dev mode runs
+    // OpenBao in-memory (loses every secret on restart) with a well-known root token, so
+    // a `helm install` with defaults must NOT ship a dev-mode Engine-A.
+    expect(o.devMode).toBe(false);
+    expect(typeof o.devRootToken).toBe("string"); // still present, only used when devMode=true
     expect(o.service).toBeDefined();
     expect(o.persistence).toBeDefined();
+  });
+
+  it("pins the OpenBao image to a concrete tag, never the mutable `latest`", () => {
+    const img = (values.openbao as Record<string, unknown>).image as Record<string, unknown>;
+    expect(img.tag).toBeTypeOf("string");
+    expect(img.tag).not.toBe("latest");
+    expect((img.tag as string).length).toBeGreaterThan(0);
   });
 });
 
@@ -112,6 +122,25 @@ describe("templates/", () => {
       const ok = prefixes.some((p) => seen.has(p));
       expect(ok, `${file} references .Values.${ref} but no such key exists in values.yaml`).toBe(true);
     }
+  });
+});
+
+describe("openbao production-safety guard (HIGH-B)", () => {
+  const statefulset = readFileSync(join(templatesDir, "openbao-statefulset.yaml"), "utf8");
+
+  it("fails the render when devMode=true is combined with NODE_ENV=production", () => {
+    // The dangerous combination is "production arc-server talking to a dev-mode (in-memory,
+    // root-token) OpenBao". A `fail` guard makes that combination un-renderable instead of
+    // silently insecure.
+    expect(statefulset).toMatch(/\{\{-?\s*fail\b/);
+    expect(statefulset).toContain(".Values.openbao.devMode");
+    expect(statefulset).toContain("NODE_ENV");
+  });
+
+  it("still supports an explicit dev-mode trial (devMode=true requires NODE_ENV != production)", () => {
+    // The guard couples the two: a developer opts into dev OpenBao AND dev arc-server
+    // together. The template keeps the `server -dev` branch for that path.
+    expect(statefulset).toContain('args: ["server", "-dev"]');
   });
 });
 
