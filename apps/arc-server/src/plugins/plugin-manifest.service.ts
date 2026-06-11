@@ -70,7 +70,7 @@ export class PluginManifestService {
   readonly required: boolean;
 
   constructor() {
-    this.required = (process.env.ARC_PLUGIN_MANIFEST ?? "optional").toLowerCase() === "required";
+    this.required = resolveManifestRequired();
     this.anchors = parseTrustAnchors(process.env.ARC_PLUGIN_TRUST_ANCHORS ?? "");
     this.logger.log(
       `PluginManifestService (required=${this.required}, trust anchors=${this.anchors.size})`,
@@ -132,6 +132,44 @@ export class PluginManifestService {
 
 function reject(reason: NonNullable<ManifestVerifyResult["reason"]>): ManifestVerifyResult {
   return { ok: false, reason };
+}
+
+/**
+ * MED-D (supply-chain audit): the old default was `"optional"`, so a production
+ * deployment that forgot to set `ARC_PLUGIN_MANIFEST=required` silently accepted
+ * unsigned plugins — the binary trust contract from ADR-004/005 went unenforced
+ * unless the operator opted in. Now the default depends on environment:
+ *
+ *  - explicit `"required"` or `"optional"` (case-insensitive) always wins;
+ *  - **unset → `"required"` when `NODE_ENV=production`**, otherwise `"optional"`
+ *    (kept for the dev-loop ergonomics that ADR-005 §5.2 calls out);
+ *  - any other value falls back to the environment-appropriate default with a warn.
+ *
+ * Pattern mirrors `buildDefaultMode` in `grants/grants.module.ts` (CRIT-B from the
+ * same audit). The operator who *wants* unsigned plugins in production still has
+ * an explicit `ARC_PLUGIN_MANIFEST=optional` knob — they just can't get there by
+ * forgetting to set it.
+ */
+export function resolveManifestRequired(): boolean {
+  const isProd = process.env.NODE_ENV === "production";
+  const raw = process.env.ARC_PLUGIN_MANIFEST?.toLowerCase();
+  if (raw === "required") return true;
+  if (raw === "optional") return false;
+  const log = new Logger("PluginManifestService");
+  if (raw !== undefined) {
+    log.warn(
+      `ARC_PLUGIN_MANIFEST=${JSON.stringify(process.env.ARC_PLUGIN_MANIFEST)} is not "required" or "optional" — ` +
+        `falling back to ${isProd ? '"required" (NODE_ENV=production)' : '"optional"'}.`,
+    );
+  } else if (isProd) {
+    // Make the implicit fail-closed legible: an operator running prod without the env var
+    // needs to know *why* the plugin host is rejecting their unsigned binary.
+    log.log(
+      "ARC_PLUGIN_MANIFEST unset with NODE_ENV=production → defaulting to 'required' (fail-closed). " +
+        "Sign plugins with @arc/plugin-sign + set ARC_PLUGIN_TRUST_ANCHORS, or ARC_PLUGIN_MANIFEST=optional to opt out.",
+    );
+  }
+  return isProd;
 }
 
 /**
