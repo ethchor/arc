@@ -146,8 +146,32 @@ jobs:
           version: v3.16.3
       - name: helm lint
         run: helm lint infra/arc-helm-charts/arc
-      - name: helm template (default values)
-        run: helm template arc infra/arc-helm-charts/arc > /tmp/arc-default.yaml
+      # MED-B (supply-chain audit): the chart now `required`s arcServer.secret.jwtSecret
+      # when create=true. A bare-defaults render is intentionally a render-time failure;
+      # this step asserts the failure happens at chart layer (clear message), not at pod
+      # CrashLoop time. Greps for the chart's error wording so a regression that drops the
+      # guard breaks CI loudly.
+      - name: helm refuses to render without arcServer.secret.jwtSecret (MED-B regression)
+        run: |
+          set +e
+          out="$(helm template arc infra/arc-helm-charts/arc 2>&1)"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::Chart rendered with empty arcServer.secret.jwtSecret; MED-B guard regressed."
+            exit 1
+          fi
+          echo "$out" | grep -q "arcServer.secret.jwtSecret is required" || {
+            echo "::error::Chart failed for an unexpected reason — guard wording changed?"
+            echo "$out"
+            exit 1
+          }
+          echo "MED-B guard fired as expected: $(echo "$out" | head -1)"
+      - name: helm template (default values, jwt secret supplied)
+        run: |
+          helm template arc infra/arc-helm-charts/arc \
+            --set arcServer.secret.jwtSecret=ci-default-test-jwt \
+            > /tmp/arc-default.yaml
       - name: helm template (production-ish overrides)
         run: |
           helm template arc infra/arc-helm-charts/arc \

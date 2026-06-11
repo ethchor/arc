@@ -44,9 +44,11 @@ arcServer:
   secret:
     create: true
     existingSecret: ""
-    # Required when create=true. Either provide here (committed values are NOT recommended
-    # — overlay via `--set-string` / external-secrets) or leave blank for "use a literal
-    # in `secret.literals`".
+    # REQUIRED when create=true — the chart's `required` guard refuses to render the Secret
+    # if this is empty (MED-B from the supply-chain audit). Production deployments must
+    # overlay via `--set-string arcServer.secret.jwtSecret=$(openssl rand -hex 32)` or wire
+    # external-secrets / SealedSecrets and switch to `create=false` + `existingSecret`.
+    # Committed values are NOT recommended.
     jwtSecret: ""
     # Connection URL the server reads as DATABASE_URL.
     databaseUrl: ""
