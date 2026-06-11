@@ -119,11 +119,17 @@ impl Session {
 }
 
 /// Open a device-targeted VEK grant with this device's private key.
+///
+/// HIGH-E (crypto audit): `seal_open_envelope` now takes an `expected_aad` parameter
+/// (defaults to `""` in the TS surface) so the wrapper layer enforces coordinate-binding
+/// on the carried AAD. Device-grant envelopes are sealed without AAD binding (legacy
+/// shape, `env.aad == None`), so `""` is the correct expected value here.
 pub fn open_vek_from_device(
     device_priv: &[u8; 32],
     device_pub: &[u8; 32],
     env: &Envelope,
 ) -> Result<[u8; 32], SessionError> {
-    let v = seal_open_envelope(device_priv, device_pub, env).map_err(|_| SessionError::Crypto)?;
+    let v = seal_open_envelope(device_priv, device_pub, env, "")
+        .map_err(|_| SessionError::Crypto)?;
     v.try_into().map_err(|_| SessionError::Crypto)
 }
