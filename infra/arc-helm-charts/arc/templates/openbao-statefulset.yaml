@@ -1,4 +1,14 @@
 {{- if .Values.openbao.enabled -}}
+{{- /*
+  HIGH-B production-safety guard (untrusted-code audit). Dev-mode OpenBao is in-memory
+  (every secret lost on restart) and auto-unseals with a well-known root token; running
+  it under a production arc-server is a silent, total Engine-A compromise. Make that
+  combination un-renderable rather than insecure-by-accident. A local trial opts into
+  BOTH dev-mode OpenBao and a development arc-server together.
+*/ -}}
+{{- if and .Values.openbao.devMode (eq (default "" .Values.arcServer.env.NODE_ENV) "production") }}
+{{- fail "openbao.devMode=true is unsafe with arcServer.env.NODE_ENV=production: dev-mode OpenBao runs in-memory (all secrets lost on restart) and uses a well-known root token. Set openbao.devMode=false and wire a real seal + storage config, or set arcServer.env.NODE_ENV=development for a local trial." }}
+{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
