@@ -3,7 +3,7 @@
  * The "real" Engine-A-with-ACL path is covered in the engines e2e suite; this spec stays
  * narrow on the guard's own logic so a regression here points at the right line.
  */
-import { ExecutionContext, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ExecutionContext, ForbiddenException } from "@nestjs/common";
 import { InMemoryPolicyStore, scope } from "@arc/grants";
 import { MetricsService } from "../observability/metrics.service";
 import { CapabilityGuard, pickCapability, stripV1Prefix } from "./capability.guard";
@@ -107,6 +107,31 @@ describe("CapabilityGuard", () => {
 
     const ctx = fakeCtx({ method: "GET", url: "/v1/database/creds/app", user: { userId: 1, email: "a" } });
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  // HIGH-A regression (untrusted-code audit): the guard was matching ACL by raw
+  // `startsWith` on a path that could carry `..`. With `fetch` collapsing `..` before
+  // sending, a caller authorized for `secret/` could reach `sys/seal-status` via
+  // `/v1/secret/data/../../sys/seal-status`. The canonicalizer now rejects the path
+  // before the ACL check, returning 400 invalid_engine_path (not 403 — the request is
+  // malformed, not unauthorized; the distinction matters for SDK error handling).
+  it("rejects /v1 path traversal with 400 BEFORE the ACL match runs", async () => {
+    const { guard, grants } = makeGuard("deny");
+    // Even with a covering scope: traversal still 400s — never reaches the ACL check.
+    await grants.upsertPolicy({ name: "reader", scopes: [scope("secret/", ["read"])] });
+    await grants.attach("1", "reader");
+
+    for (const url of [
+      "/v1/secret/data/../../sys/seal-status",
+      "/v1/secret/./data/x",
+      "/v1/secret/data/%2e%2e/sys/seal-status",
+      "/v1/secret/data/%2E%2E/sys/seal-status",
+      "/v1/secret//data/x",
+      "/v1/",
+    ]) {
+      const ctx = fakeCtx({ method: "GET", url, user: { userId: 1, email: "a" } });
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(BadRequestException);
+    }
   });
 
   it("`?list=true` requires the `list` capability (not just `read`)", async () => {

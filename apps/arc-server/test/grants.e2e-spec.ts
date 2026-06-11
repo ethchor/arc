@@ -107,6 +107,30 @@ describe("grants e2e — ARC_DEFAULT_POLICY=deny enforces per-mount ACL", () => 
     await request(server).get("/v1/secret/data/x").set(auth(token)).expect(403);
   });
 
+  // HIGH-A regression (untrusted-code audit) — note on test coverage:
+  //
+  //   The audit identified a `..` traversal that escapes the ACL-matched mount. We
+  //   empirically verified that Express's URL normalizer collapses LITERAL `..`, and
+  //   path-to-regexp v8's segment decoder collapses ENCODED `%2e%2e`/`%2E%2E`/`.%2e`
+  //   BEFORE the `*splat` handler runs (probe: `/v1/secret/data/%2e%2e/sys/seal-status`
+  //   becomes `/v1/secret/sys/seal-status` by the time req.url is read). So no HTTP
+  //   shape can reach the controller with a traversal segment intact — Express does
+  //   our work for us at runtime today.
+  //
+  //   The canonicalizer / joinSplatStrict / OpenBao adapter rejection layers therefore
+  //   guard non-HTTP entry points (the leasing-driven revoke, the CLI tools, any
+  //   future SDK consumer) AND act as defense in depth against an Express
+  //   normalization regression. Their behavior is pinned by:
+  //     - src/engines/path-canon.spec.ts (17 cases incl. literal + encoded + empty)
+  //     - src/grants/capability.guard.spec.ts (guard rejects traversal at the unit
+  //       level, where Express isn't in the loop)
+  //     - integrations/arc-openbao-adapter/tests/client.test.ts (adapter rejects
+  //       BEFORE the fetch call — the real value-add for non-HTTP callers).
+  //
+  //   This e2e suite intentionally does NOT pin an HTTP-level rejection: it would be a
+  //   test of Express's normalizer, not of our code, and Express's behavior here is
+  //   the property *we depend on*, not the property *we provide*.
+
   it("does NOT block non-/v1 routes — Engine-B's vault API still works", async () => {
     // The vault endpoints have their own membership ACL in VaultService.
     await request(server).get("/vaults").set(auth(token)).expect(200);

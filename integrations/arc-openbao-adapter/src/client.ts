@@ -57,6 +57,57 @@ export class OpenBaoError extends Error {
   }
 }
 
+/**
+ * Thrown when a request path contains a traversal artifact (`.` / `..` / empty segment /
+ * `%2e%2e` / mal-encoded percent). Last-line defense in depth: arc-server already rejects
+ * traversal in `CapabilityGuard` and `EnginesController`, but a future call into this
+ * adapter from elsewhere (a sidecar, a CLI, a leasing-driven revoke) must not silently
+ * relay a path that `fetch` would collapse to a different mount on the upstream OpenBao.
+ */
+export class OpenBaoPathError extends Error {
+  constructor(public readonly reason: string, public readonly segment?: string) {
+    super(`OpenBao path rejected: ${reason}${segment !== undefined ? ` (segment="${segment}")` : ""}`);
+    this.name = "OpenBaoPathError";
+  }
+}
+
+/**
+ * True iff `rawSeg` is a path-traversal artifact: empty, equals `.` / `..` after percent-
+ * decoding, or contains malformed percent-encoding. Mirrors arc-server's canonicalizer.
+ */
+function isUnsafeSegment(rawSeg: string): boolean {
+  if (rawSeg.length === 0) return true;
+  if (rawSeg === "." || rawSeg === "..") return true;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rawSeg);
+  } catch {
+    return true;
+  }
+  return decoded === "." || decoded === "..";
+}
+
+/**
+ * Validate that an OpenBao request path has no traversal segments. Returns the path
+ * unchanged on success (so the caller still picks its own slash handling); throws
+ * {@link OpenBaoPathError} on rejection.
+ */
+function assertSafePath(path: string): void {
+  const stripped = path.replace(/^\/+/, "");
+  if (stripped.length === 0) throw new OpenBaoPathError("empty_path");
+  // Trailing slash is fine for KV v2 metadata, just don't let it cause an empty segment.
+  const trimmed = stripped.endsWith("/") ? stripped.slice(0, -1) : stripped;
+  if (trimmed.length === 0) throw new OpenBaoPathError("empty_path");
+  for (const seg of trimmed.split("/")) {
+    if (isUnsafeSegment(seg)) {
+      throw new OpenBaoPathError(
+        seg.length === 0 ? "empty_segment" : "dot_segment",
+        seg,
+      );
+    }
+  }
+}
+
 const TOKEN_HEADER = "X-Vault-Token";
 const NAMESPACE_HEADER = "X-Vault-Namespace";
 
@@ -104,6 +155,7 @@ export class OpenBaoClient {
     path: string,
     body?: Record<string, unknown>,
   ): Promise<OpenBaoResponse> {
+    assertSafePath(path);
     const url = `${this.addr}/v1/${path.replace(/^\/+/, "")}`;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.token) headers[TOKEN_HEADER] = this.token;
