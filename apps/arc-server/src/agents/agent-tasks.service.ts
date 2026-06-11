@@ -161,6 +161,11 @@ export class AgentTasksService {
       // partial-unique index on the entity is the race-safe belt; this is the clean error
       // surface. (`intentDigest` is nullable for pre-migration rows; we only look at the
       // new column, so legacy rows can't cause a phantom-replay false positive.)
+      //
+      // Runs BEFORE the MED-E chain check so a literal byte-for-byte resubmit of the same
+      // signed intent surfaces as `intent_replay` (the precise diagnosis) instead of the
+      // generic `intent_chain_mismatch` it would otherwise also fail (since the chain has
+      // moved past the prevChainHead the agent originally signed).
       const dupe = await mgr.findOne(VaultAgentIntentEntity, {
         where: { taskId: task.taskId, intentDigest: digest },
         select: ["id"],
@@ -169,6 +174,21 @@ export class AgentTasksService {
         throw new ConflictException({
           error: "intent_replay",
           message: "this signed intent has already been submitted for this task",
+        });
+      }
+
+      // MED-E (supply-chain audit): the agent committed to a specific chain position when
+      // it signed `claims.prevChainHead`. Refuse if the server's current head doesn't
+      // match — that means either the agent's view is stale (another intent landed first)
+      // or the server tried to slot this intent at a different position than the signer
+      // intended. The signature already covered the chain head, so accepting at the wrong
+      // position would silently break the position-binding security claim.
+      if (claims.prevChainHead !== task.chainHead) {
+        throw new ConflictException({
+          error: "intent_chain_mismatch",
+          message: "claims.prevChainHead does not match the task's current chain head",
+          expected: task.chainHead,
+          observed: claims.prevChainHead,
         });
       }
 
