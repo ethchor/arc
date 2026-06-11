@@ -288,15 +288,35 @@ pub fn seal_to_envelope(recipient_pub: &[u8; 32], plaintext: &[u8]) -> Envelope 
     }
 }
 
+/// Open a `seal` envelope, refusing it unless the envelope's bound AAD matches the
+/// caller's `expected_aad`. Mirrors the TS wrapper-layer AAD discipline added in HIGH-E:
+/// a server cannot silently substitute a coordinate-A envelope into a coordinate-B slot
+/// for the same recipient. Backward-compatible: `expected_aad = ""` accepts legacy
+/// null-AAD envelopes; a coordinate-bound envelope cannot be opened by a caller passing
+/// `""`. The AEAD layer also runs against `expected_aad` (not the envelope's claimed
+/// `aad`), defense in depth — a missing wrapper check still surfaces as an AEAD failure.
 pub fn seal_open_envelope(
     recipient_priv: &[u8; 32],
     recipient_pub: &[u8; 32],
     env: &Envelope,
+    expected_aad: &str,
 ) -> Result<Vec<u8>, ()> {
+    if let Some(carried) = env.aad.as_deref() {
+        if carried != expected_aad {
+            return Err(());
+        }
+    }
     let ep: [u8; 32] = b64u_decode(env.ep.as_deref().ok_or(())?)?.try_into().map_err(|_| ())?;
     let nonce: [u8; 24] = b64u_decode(&env.n)?.try_into().map_err(|_| ())?;
     let ct = b64u_decode(&env.ct)?;
-    seal_open(recipient_priv, recipient_pub, &ep, &nonce, &ct)
+    // The lower-level `seal_open` binds AAD as `b""` — for parity with the TS wrapper we
+    // route through the envelope-AEAD layer using `expected_aad`.
+    let recipient_static = StaticSecret::from(*recipient_priv);
+    let shared = recipient_static
+        .diffie_hellman(&PublicKey::from(ep))
+        .to_bytes();
+    let key = seal_key(&shared, &ep, recipient_pub);
+    aead_decrypt(&key, &nonce, &ct, expected_aad.as_bytes())
 }
 
 // --- item encrypt/decrypt (IK under VEK; payload under IK) ---
@@ -474,9 +494,23 @@ pub fn pq_seal_to_envelope(recipient: HybridPub<'_>, plaintext: &[u8], aad: &str
     }
 }
 
-pub fn pq_seal_open_envelope(env: &Envelope, recipient: HybridPriv<'_>) -> Result<Vec<u8>, ()> {
+/// Open a `pq-seal` envelope, refusing it unless the envelope's bound AAD matches the
+/// caller's `expected_aad`. Same wrapper-layer AAD discipline as `seal_open_envelope`
+/// (HIGH-E from the crypto audit). Backward-compatible: `expected_aad = ""` accepts
+/// legacy null-AAD envelopes; a coordinate-bound envelope cannot be opened by a caller
+/// passing `""`.
+pub fn pq_seal_open_envelope(
+    env: &Envelope,
+    recipient: HybridPriv<'_>,
+    expected_aad: &str,
+) -> Result<Vec<u8>, ()> {
     if env.alg != PQ_SEAL_ALG {
         return Err(());
+    }
+    if let Some(carried) = env.aad.as_deref() {
+        if carried != expected_aad {
+            return Err(());
+        }
     }
     let eph_pub: [u8; 32] = b64u_decode(env.ep.as_deref().ok_or(())?)?
         .try_into()
@@ -513,6 +547,5 @@ pub fn pq_seal_open_envelope(env: &Envelope, recipient: HybridPriv<'_>) -> Resul
 
     let nonce: [u8; 24] = b64u_decode(&env.n)?.try_into().map_err(|_| ())?;
     let ct = b64u_decode(&env.ct)?;
-    let expected_aad = env.aad.as_deref().unwrap_or("");
     aead_decrypt(&key, &nonce, &ct, expected_aad.as_bytes())
 }

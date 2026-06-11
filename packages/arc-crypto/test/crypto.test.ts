@@ -70,6 +70,39 @@ describe("seal (anonymous box)", () => {
     const env = seal(r.pub, utf8("vault-key"));
     expect(() => sealOpen(other.priv, env)).toThrow();
   });
+
+  /**
+   * HIGH-E regression (crypto audit). The wrapper used to trust whatever AAD the envelope
+   * carried; the wrapper now accepts `expectedAad` and refuses any envelope whose carried
+   * AAD disagrees. Backward-compatible default: `""` lets legacy null-AAD envelopes open
+   * unchanged. A coordinate-bound envelope cannot be substituted into a legacy callsite.
+   */
+  describe("sealOpen expectedAad enforcement", () => {
+    it("refuses an envelope whose carried AAD differs from the caller's expectedAad", () => {
+      const r = generateIdentityKeyPair();
+      const env = seal(r.pub, utf8("VK-A"), "share/A#kv1");
+      expect(() => sealOpen(r.priv, env, "share/B#kv1")).toThrow();
+    });
+
+    it("accepts an envelope whose carried AAD matches the caller's expectedAad", () => {
+      const r = generateIdentityKeyPair();
+      const env = seal(r.pub, utf8("VK"), "share/A#kv1");
+      expect(fromUtf8(sealOpen(r.priv, env, "share/A#kv1"))).toBe("VK");
+    });
+
+    it("defaults expectedAad to '' so legacy null-AAD envelopes open unchanged", () => {
+      const r = generateIdentityKeyPair();
+      const env = seal(r.pub, utf8("legacy"));
+      expect(env.aad).toBeNull();
+      expect(fromUtf8(sealOpen(r.priv, env))).toBe("legacy");
+    });
+
+    it("refuses a coordinate-bound envelope when caller passes the default (empty) expectedAad", () => {
+      const r = generateIdentityKeyPair();
+      const env = seal(r.pub, utf8("substitute"), "share/A#kv1");
+      expect(() => sealOpen(r.priv, env)).toThrow();
+    });
+  });
 });
 
 describe("signatures", () => {

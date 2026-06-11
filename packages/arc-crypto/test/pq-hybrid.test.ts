@@ -26,7 +26,7 @@ describe("pq-hybrid sealed box (X25519 + ML-KEM-768)", () => {
     const pt = pqSealOpen(env, {
       x25519Priv: recipient.x25519.priv,
       mlkemPriv: recipient.mlkem.secretKey,
-    });
+    }, "vault/123#kv1");
     expect(pt).toEqual(vk);
   });
 
@@ -174,5 +174,79 @@ describe("pq-hybrid sealed box (X25519 + ML-KEM-768)", () => {
     expect(kp.x25519.priv.length).toBe(PQ_HYBRID_LENGTHS.X25519_PRIV);
     expect(kp.mlkem.publicKey.length).toBe(PQ_HYBRID_LENGTHS.MLKEM_PUB);
     expect(kp.mlkem.secretKey.length).toBe(PQ_HYBRID_LENGTHS.MLKEM_PRIV);
+  });
+
+  /**
+   * HIGH-E regression (crypto audit). The wrapper used to trust whatever AAD the envelope
+   * carried, so a server who swapped a valid `pqSeal` envelope into a different slot for
+   * the *same* recipient (one bound to coordinates A, the slot expecting coordinates B)
+   * would unwrap cleanly — confidentiality was upheld at the AEAD layer, but the
+   * coordinate-binding the threat model promises was silently absent. The wrapper now
+   * accepts an `expectedAad` and refuses any envelope whose carried AAD disagrees.
+   */
+  describe("expectedAad enforcement at the wrapper", () => {
+    it("refuses an envelope whose carried AAD differs from the caller's expectedAad", () => {
+      const recipient = generateHybridIdentityKeyPair();
+      const env = pqSeal(
+        { x25519Pub: recipient.x25519.pub, mlkemPub: recipient.mlkem.publicKey },
+        utf8("vault-key-for-slot-A"),
+        "share/A#kv1",
+      );
+      // Caller asks for slot B. Even though the envelope opens (recipient priv is right),
+      // the wrapper must refuse — the envelope is for the wrong coordinates.
+      expect(() =>
+        pqSealOpen(env, {
+          x25519Priv: recipient.x25519.priv,
+          mlkemPriv: recipient.mlkem.secretKey,
+        }, "share/B#kv1"),
+      ).toThrow(VaultCryptoError);
+    });
+
+    it("accepts an envelope whose carried AAD matches the caller's expectedAad", () => {
+      const recipient = generateHybridIdentityKeyPair();
+      const env = pqSeal(
+        { x25519Pub: recipient.x25519.pub, mlkemPub: recipient.mlkem.publicKey },
+        utf8("VK"),
+        "share/A#kv1",
+      );
+      const pt = pqSealOpen(env, {
+        x25519Priv: recipient.x25519.priv,
+        mlkemPriv: recipient.mlkem.secretKey,
+      }, "share/A#kv1");
+      expect(new TextDecoder().decode(pt)).toBe("VK");
+    });
+
+    it("defaults expectedAad to '' so legacy null-AAD envelopes open unchanged (back-compat)", () => {
+      const recipient = generateHybridIdentityKeyPair();
+      // pqSeal with empty AAD stores `aad: null` in the envelope — the legacy shape.
+      const env = pqSeal(
+        { x25519Pub: recipient.x25519.pub, mlkemPub: recipient.mlkem.publicKey },
+        utf8("legacy-payload"),
+      );
+      expect(env.aad).toBeNull();
+      const pt = pqSealOpen(env, {
+        x25519Priv: recipient.x25519.priv,
+        mlkemPriv: recipient.mlkem.secretKey,
+      });
+      expect(new TextDecoder().decode(pt)).toBe("legacy-payload");
+    });
+
+    it("refuses a coordinate-bound envelope when the caller passes the default (empty) expectedAad", () => {
+      // A caller that hasn't been upgraded to pass the expected coordinate still gets
+      // protection against substitution: an envelope whose seal-time AAD is a coordinate
+      // string can NOT be substituted into a legacy callsite expecting empty AAD.
+      const recipient = generateHybridIdentityKeyPair();
+      const env = pqSeal(
+        { x25519Pub: recipient.x25519.pub, mlkemPub: recipient.mlkem.publicKey },
+        utf8("substitute"),
+        "share/A#kv1",
+      );
+      expect(() =>
+        pqSealOpen(env, {
+          x25519Priv: recipient.x25519.priv,
+          mlkemPriv: recipient.mlkem.secretKey,
+        }),
+      ).toThrow(VaultCryptoError);
+    });
   });
 });

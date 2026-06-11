@@ -137,7 +137,12 @@ fn item_encrypt_decrypt_round_trips() {
 fn seal_envelope_round_trips() {
     let (rpriv, rpub) = x25519_keypair();
     let env = seal_to_envelope(&rpub, b"vault-key");
-    assert_eq!(seal_open_envelope(&rpriv, &rpub, &env).unwrap(), b"vault-key");
+    // Legacy seal-without-AAD envelope (env.aad == None) — open with `""` (the back-compat
+    // default in TS). HIGH-E parity: a wrapper-level expected_aad arg is now required.
+    assert_eq!(
+        seal_open_envelope(&rpriv, &rpub, &env, "").unwrap(),
+        b"vault-key",
+    );
 }
 
 #[test]
@@ -164,12 +169,16 @@ fn pq_seal_opens_a_ts_produced_envelope() {
     let x25519_priv = a32(p["x25519PrivHex"].as_str().unwrap());
 
     let env: Envelope = serde_json::from_value(p["envelope"].clone()).unwrap();
+    // HIGH-E parity: the TS seal vector binds an AAD (`buildAad(...)`); the Rust open must
+    // pass the same string so the wrapper check + AEAD layer both agree.
+    let expected_aad = p["aad"].as_str().unwrap();
     let pt = pq_seal_open_envelope(
         &env,
         HybridPriv {
             x25519: &x25519_priv,
             mlkem: &mlkem_priv,
         },
+        expected_aad,
     )
     .expect("pq-seal open against the TS-produced envelope");
     assert_eq!(hex::encode(&pt), p["plaintextHex"].as_str().unwrap());
@@ -186,6 +195,7 @@ fn pq_seal_opens_a_ts_produced_envelope() {
             x25519: &x25519_priv,
             mlkem: &mlkem_priv,
         },
+        expected_aad,
     )
     .is_err());
 }
@@ -223,6 +233,7 @@ fn pq_seal_round_trips_within_rust() {
             x25519: &x25519_priv,
             mlkem: &mlkem_priv,
         },
+        "vault/x#kv1",
     )
     .expect("round-trip open");
     assert_eq!(opened, b"a-known-secret");
