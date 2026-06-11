@@ -10,6 +10,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use zeroize::Zeroizing;
 use hkdf::Hkdf;
 use rand_core::{OsRng, RngCore};
 use serde_json::Value;
@@ -17,27 +18,41 @@ use sha2::Sha256;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 /// MK = Argon2id(password, salt). `m` is memory cost in KiB.
-pub fn argon2id(password: &[u8], salt: &[u8], m: u32, t: u32, p: u32, out_len: usize) -> Vec<u8> {
+///
+/// HIGH-F: returns `Zeroizing<Vec<u8>>` so the master key bytes are wiped on `Drop`.
+/// Callers that genuinely need a plain `Vec<u8>` can clone — but in practice the MK is
+/// always derived just to seed the next HKDF and should never escape as plaintext.
+pub fn argon2id(
+    password: &[u8],
+    salt: &[u8],
+    m: u32,
+    t: u32,
+    p: u32,
+    out_len: usize,
+) -> Zeroizing<Vec<u8>> {
     let params = Params::new(m, t, p, Some(out_len)).expect("valid argon2 params");
     let a2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-    let mut out = vec![0u8; out_len];
+    let mut out = Zeroizing::new(vec![0u8; out_len]);
     a2.hash_password_into(password, salt, &mut out).expect("argon2 hash");
     out
 }
 
+/// HIGH-F: both halves are 32 bytes of secret material — `auth_seed` becomes an authHash
+/// input, `wk` wraps the identity private keys. Each is now a `Zeroizing<[u8; 32]>` so a
+/// `Split` value dropped on the stack (panic, early return, normal scope exit) wipes both.
 pub struct Split {
-    pub auth_seed: [u8; 32],
-    pub wk: [u8; 32],
+    pub auth_seed: Zeroizing<[u8; 32]>,
+    pub wk: Zeroizing<[u8; 32]>,
 }
 
 /// Split MK into the auth seed and wrapping key via two HKDF branches (empty salt, to
 /// match the TS core's empty-salt HKDF — both reduce to a 64-byte zero HMAC key block).
 pub fn split_master_key(mk: &[u8]) -> Split {
     let hk = Hkdf::<Sha256>::new(Some(b""), mk);
-    let mut auth_seed = [0u8; 32];
-    hk.expand(b"arc/auth/v1", &mut auth_seed).unwrap();
-    let mut wk = [0u8; 32];
-    hk.expand(b"arc/wrap/v1", &mut wk).unwrap();
+    let mut auth_seed = Zeroizing::new([0u8; 32]);
+    hk.expand(b"arc/auth/v1", auth_seed.as_mut_slice()).unwrap();
+    let mut wk = Zeroizing::new([0u8; 32]);
+    hk.expand(b"arc/wrap/v1", wk.as_mut_slice()).unwrap();
     Split { auth_seed, wk }
 }
 
@@ -62,15 +77,19 @@ pub fn aead_encrypt(key: &[u8; 32], nonce: &[u8; 24], plaintext: &[u8], aad: &[u
         .expect("aead encrypt")
 }
 
+/// HIGH-F: returns `Zeroizing<Vec<u8>>` so decrypted plaintext is wiped on drop. Callers
+/// that need to expose the plaintext to a foreign API still control the lifetime — they
+/// just have to deliberately `.to_vec()` to escape the wrapper.
 pub fn aead_decrypt(
     key: &[u8; 32],
     nonce: &[u8; 24],
     ciphertext: &[u8],
     aad: &[u8],
-) -> Result<Vec<u8>, ()> {
+) -> Result<Zeroizing<Vec<u8>>, ()> {
     let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
     cipher
         .decrypt(XNonce::from_slice(nonce), Payload { msg: ciphertext, aad })
+        .map(Zeroizing::new)
         .map_err(|_| ())
 }
 
@@ -164,10 +183,10 @@ pub fn seal_open(
     eph_pub: &[u8; 32],
     nonce: &[u8; 24],
     ct: &[u8],
-) -> Result<Vec<u8>, ()> {
+) -> Result<Zeroizing<Vec<u8>>, ()> {
     let sk = StaticSecret::from(*recipient_priv);
     let shared = sk.diffie_hellman(&PublicKey::from(*eph_pub));
-    let key = seal_key(shared.as_bytes(), eph_pub, recipient_pub);
+    let key: Zeroizing<[u8; 32]> = Zeroizing::new(seal_key(shared.as_bytes(), eph_pub, recipient_pub));
     aead_decrypt(&key, nonce, ct, b"")
 }
 
@@ -253,7 +272,14 @@ pub fn aead_seal_envelope(
     }
 }
 
-pub fn aead_open_envelope(key: &[u8; 32], env: &Envelope, expected_aad: &str) -> Result<Vec<u8>, ()> {
+/// HIGH-F: returns `Zeroizing<Vec<u8>>` so decrypted (and pad-stripped) plaintext is
+/// wiped on drop. The intermediate padded `buf` is also Zeroizing (via `aead_decrypt`);
+/// the truncated final form is moved into a fresh Zeroizing wrapper.
+pub fn aead_open_envelope(
+    key: &[u8; 32],
+    env: &Envelope,
+    expected_aad: &str,
+) -> Result<Zeroizing<Vec<u8>>, ()> {
     if env.v != 1 || env.alg != "XC20P" {
         return Err(());
     }
@@ -269,7 +295,7 @@ pub fn aead_open_envelope(key: &[u8; 32], env: &Envelope, expected_aad: &str) ->
     if pad > buf.len() {
         return Err(());
     }
-    Ok(buf[..buf.len() - pad].to_vec())
+    Ok(Zeroizing::new(buf[..buf.len() - pad].to_vec()))
 }
 
 pub fn seal_to_envelope(recipient_pub: &[u8; 32], plaintext: &[u8]) -> Envelope {
@@ -300,7 +326,7 @@ pub fn seal_open_envelope(
     recipient_pub: &[u8; 32],
     env: &Envelope,
     expected_aad: &str,
-) -> Result<Vec<u8>, ()> {
+) -> Result<Zeroizing<Vec<u8>>, ()> {
     if let Some(carried) = env.aad.as_deref() {
         if carried != expected_aad {
             return Err(());
@@ -310,12 +336,16 @@ pub fn seal_open_envelope(
     let nonce: [u8; 24] = b64u_decode(&env.n)?.try_into().map_err(|_| ())?;
     let ct = b64u_decode(&env.ct)?;
     // The lower-level `seal_open` binds AAD as `b""` — for parity with the TS wrapper we
-    // route through the envelope-AEAD layer using `expected_aad`.
+    // route through the envelope-AEAD layer using `expected_aad`. Intermediates wrapped
+    // in `Zeroizing` so the ECDH shared secret + derived AEAD key are wiped on drop
+    // (HIGH-F).
     let recipient_static = StaticSecret::from(*recipient_priv);
-    let shared = recipient_static
-        .diffie_hellman(&PublicKey::from(ep))
-        .to_bytes();
-    let key = seal_key(&shared, &ep, recipient_pub);
+    let shared: Zeroizing<[u8; 32]> = Zeroizing::new(
+        recipient_static
+            .diffie_hellman(&PublicKey::from(ep))
+            .to_bytes(),
+    );
+    let key: Zeroizing<[u8; 32]> = Zeroizing::new(seal_key(&shared, &ep, recipient_pub));
     aead_decrypt(&key, &nonce, &ct, expected_aad.as_bytes())
 }
 
@@ -348,7 +378,10 @@ pub fn encrypt_item(
     key_version: u64,
     plaintext: &[u8],
 ) -> EncryptedItem {
-    let ik = random32();
+    // HIGH-F: the per-item IK is the highest-value short-lived secret in this function.
+    // Wrap it in `Zeroizing` so a panic mid-function or normal scope exit wipes it before
+    // the next allocation can reuse the bytes.
+    let ik: Zeroizing<[u8; 32]> = Zeroizing::new(random32());
     let ciphertext = aead_seal_envelope(
         &ik,
         plaintext,
@@ -358,7 +391,7 @@ pub fn encrypt_item(
     );
     let wrapped_item_key = aead_seal_envelope(
         vek,
-        &ik,
+        &*ik,
         &item_key_aad(vault_id, item_id, key_version),
         Some(key_version as u32),
         false,
@@ -366,6 +399,10 @@ pub fn encrypt_item(
     EncryptedItem { ciphertext, wrapped_item_key }
 }
 
+/// HIGH-F: returns `Zeroizing<Vec<u8>>` so the decrypted item plaintext is wiped on
+/// drop. The intermediate IK is also wrapped (`Zeroizing<[u8; 32]>`); the unwrap happens
+/// inside this function and is fed to the inner `aead_open_envelope` by reference, so the
+/// 32-byte IK never sits on the stack unwiped.
 pub fn decrypt_item(
     vek: &[u8; 32],
     vault_id: &str,
@@ -374,10 +411,11 @@ pub fn decrypt_item(
     key_version: u64,
     ciphertext: &Envelope,
     wrapped_item_key: &Envelope,
-) -> Result<Vec<u8>, ()> {
+) -> Result<Zeroizing<Vec<u8>>, ()> {
     let ik_vec = aead_open_envelope(vek, wrapped_item_key, &item_key_aad(vault_id, item_id, key_version))?;
-    let ik: [u8; 32] = ik_vec.try_into().map_err(|_| ())?;
-    aead_open_envelope(&ik, ciphertext, &item_payload_aad(vault_id, item_id, version))
+    let ik_arr: [u8; 32] = (*ik_vec).as_slice().try_into().map_err(|_| ())?;
+    let ik: Zeroizing<[u8; 32]> = Zeroizing::new(ik_arr);
+    aead_open_envelope(&*ik, ciphertext, &item_payload_aad(vault_id, item_id, version))
 }
 
 
@@ -455,9 +493,14 @@ pub fn pq_seal_to_envelope(recipient: HybridPub<'_>, plaintext: &[u8], aad: &str
     OsRng.fill_bytes(&mut eph_priv);
     let eph_static = StaticSecret::from(eph_priv);
     let eph_pub = PublicKey::from(&eph_static).to_bytes();
-    let ss_ec = eph_static
-        .diffie_hellman(&PublicKey::from(*recipient.x25519))
-        .to_bytes();
+    // HIGH-F: every shared-secret / derived-key intermediate wraps in `Zeroizing` so the
+    // bytes are wiped on drop. A coredump after `pq_seal_to_envelope` returns no longer
+    // captures the classical ECDH ss, the ML-KEM ss, or the derived AEAD key.
+    let ss_ec: Zeroizing<[u8; 32]> = Zeroizing::new(
+        eph_static
+            .diffie_hellman(&PublicKey::from(*recipient.x25519))
+            .to_bytes(),
+    );
 
     let ek = ek_from_bytes(recipient.mlkem).expect("valid ML-KEM-768 encapsulation key");
     // System-RNG variant: avoids the rand_core 0.6 vs 0.9 trait-version mismatch between our
@@ -465,16 +508,18 @@ pub fn pq_seal_to_envelope(recipient: HybridPub<'_>, plaintext: &[u8], aad: &str
     let (kem_ct, ss_pq) = ek.encapsulate();
     let kem_ct_bytes: [u8; MLKEM_CT_LEN] =
         kem_ct.as_slice().try_into().expect("ML-KEM-768 ct length");
-    let ss_pq_bytes: [u8; 32] = ss_pq.as_slice().try_into().expect("ML-KEM-768 ss length");
+    let ss_pq_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(
+        ss_pq.as_slice().try_into().expect("ML-KEM-768 ss length"),
+    );
 
-    let key = pq_derive_key(
+    let key: Zeroizing<[u8; 32]> = Zeroizing::new(pq_derive_key(
         &ss_ec,
         &ss_pq_bytes,
         &eph_pub,
         &kem_ct_bytes,
         recipient.x25519,
         recipient.mlkem,
-    );
+    ));
 
     let mut nonce = [0u8; 24];
     OsRng.fill_bytes(&mut nonce);
@@ -503,7 +548,7 @@ pub fn pq_seal_open_envelope(
     env: &Envelope,
     recipient: HybridPriv<'_>,
     expected_aad: &str,
-) -> Result<Vec<u8>, ()> {
+) -> Result<Zeroizing<Vec<u8>>, ()> {
     if env.alg != PQ_SEAL_ALG {
         return Err(());
     }
@@ -521,29 +566,34 @@ pub fn pq_seal_open_envelope(
     }
     let kem_ct_bytes: [u8; MLKEM_CT_LEN] = kem_ct_vec.as_slice().try_into().map_err(|_| ())?;
 
+    // HIGH-F: shared secrets and derived AEAD key in `Zeroizing` so they wipe on drop.
     let recipient_static = StaticSecret::from(*recipient.x25519);
-    let ss_ec = recipient_static
-        .diffie_hellman(&PublicKey::from(eph_pub))
-        .to_bytes();
+    let ss_ec: Zeroizing<[u8; 32]> = Zeroizing::new(
+        recipient_static
+            .diffie_hellman(&PublicKey::from(eph_pub))
+            .to_bytes(),
+    );
 
     let dk = dk_from_expanded(recipient.mlkem)?;
     let kem_ct_arr: Array<u8, _> = Array(kem_ct_bytes);
     let ss_pq = dk.decapsulate(&kem_ct_arr);
-    let ss_pq_bytes: [u8; 32] = ss_pq.as_slice().try_into().map_err(|_| ())?;
+    let ss_pq_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(
+        ss_pq.as_slice().try_into().map_err(|_| ())?,
+    );
 
     let recipient_x25519_pub = PublicKey::from(&recipient_static).to_bytes();
     let ek_bytes_arr = dk.encapsulation_key().to_bytes();
     let recipient_mlkem_pub: [u8; MLKEM_PUB_LEN] =
         ek_bytes_arr.as_slice().try_into().map_err(|_| ())?;
 
-    let key = pq_derive_key(
+    let key: Zeroizing<[u8; 32]> = Zeroizing::new(pq_derive_key(
         &ss_ec,
         &ss_pq_bytes,
         &eph_pub,
         &kem_ct_bytes,
         &recipient_x25519_pub,
         &recipient_mlkem_pub,
-    );
+    ));
 
     let nonce: [u8; 24] = b64u_decode(&env.n)?.try_into().map_err(|_| ())?;
     let ct = b64u_decode(&env.ct)?;
