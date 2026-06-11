@@ -8,7 +8,7 @@ import {
   toB64u,
 } from "@arc/crypto";
 import type { PluginManifestClaims, SignedPluginManifest } from "@arc/types";
-import { PluginManifestService, parseTrustAnchors } from "./plugin-manifest.service";
+import { PluginManifestService, parseTrustAnchors, resolveManifestRequired } from "./plugin-manifest.service";
 
 async function writeTempArtifact(bytes: Buffer): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "arc-pm-"));
@@ -176,6 +176,92 @@ describe("PluginManifestService", () => {
     expect(r.ok).toBe(true);
     expect(r.capabilities).toEqual(["sudo"]);
   });
+});
+
+describe("resolveManifestRequired — MED-D defaults", () => {
+  // MED-D regression (supply-chain audit). The old default
+  // `(ARC_PLUGIN_MANIFEST ?? "optional").toLowerCase() === "required"` silently
+  // accepted unsigned plugins in production when the operator forgot the env var. New
+  // contract mirrors `buildDefaultMode` for grants (CRIT-B):
+  //   - explicit "required" / "optional" (case-insensitive) always wins;
+  //   - **unset → "required" when NODE_ENV=production**, else "optional";
+  //   - garbage value falls back to the env-appropriate default with a warn.
+  let envBefore: string | undefined;
+  let nodeEnvBefore: string | undefined;
+  beforeEach(() => {
+    envBefore = process.env.ARC_PLUGIN_MANIFEST;
+    nodeEnvBefore = process.env.NODE_ENV;
+  });
+  afterEach(() => {
+    if (envBefore === undefined) delete process.env.ARC_PLUGIN_MANIFEST;
+    else process.env.ARC_PLUGIN_MANIFEST = envBefore;
+    if (nodeEnvBefore === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = nodeEnvBefore;
+  });
+
+  it("defaults to REQUIRED when ARC_PLUGIN_MANIFEST is unset and NODE_ENV=production", () => {
+    delete process.env.ARC_PLUGIN_MANIFEST;
+    process.env.NODE_ENV = "production";
+    expect(resolveManifestRequired()).toBe(true);
+  });
+
+  it("defaults to OPTIONAL when unset and NODE_ENV is not production (dev ergonomics)", () => {
+    delete process.env.ARC_PLUGIN_MANIFEST;
+    process.env.NODE_ENV = "development";
+    expect(resolveManifestRequired()).toBe(false);
+  });
+
+  it("explicit 'required' wins in any environment", () => {
+    process.env.ARC_PLUGIN_MANIFEST = "required";
+    process.env.NODE_ENV = "development";
+    expect(resolveManifestRequired()).toBe(true);
+    process.env.NODE_ENV = "production";
+    expect(resolveManifestRequired()).toBe(true);
+  });
+
+  it("explicit 'optional' wins in any environment (the prod opt-out)", () => {
+    process.env.ARC_PLUGIN_MANIFEST = "optional";
+    process.env.NODE_ENV = "production";
+    expect(resolveManifestRequired()).toBe(false);
+    process.env.NODE_ENV = "development";
+    expect(resolveManifestRequired()).toBe(false);
+  });
+
+  it.each(["REQUIRED", "Required", "ReQuIrEd"])(
+    "accepts the case-insensitive value %j as 'required'",
+    (val) => {
+      process.env.ARC_PLUGIN_MANIFEST = val;
+      process.env.NODE_ENV = "development";
+      expect(resolveManifestRequired()).toBe(true);
+    },
+  );
+
+  it.each(["OPTIONAL", "Optional", "OpTiOnAl"])(
+    "accepts the case-insensitive value %j as 'optional'",
+    (val) => {
+      process.env.ARC_PLUGIN_MANIFEST = val;
+      process.env.NODE_ENV = "production";
+      expect(resolveManifestRequired()).toBe(false);
+    },
+  );
+
+  it.each(["true", "1", "yes", "off", "no", "enabled", "strict"])(
+    "garbage value %j falls back to environment default (production → required)",
+    (val) => {
+      process.env.ARC_PLUGIN_MANIFEST = val;
+      process.env.NODE_ENV = "production";
+      expect(resolveManifestRequired()).toBe(true);
+    },
+  );
+
+  it.each(["true", "1", "yes", "off", "no", "enabled", "strict"])(
+    "garbage value %j falls back to environment default (non-prod → optional)",
+    (val) => {
+      process.env.ARC_PLUGIN_MANIFEST = val;
+      process.env.NODE_ENV = "development";
+      expect(resolveManifestRequired()).toBe(false);
+    },
+  );
 });
 
 describe("parseTrustAnchors", () => {
