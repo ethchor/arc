@@ -80,6 +80,47 @@ describe("parsePluginMountsEnv", () => {
     expect(r.errors).toHaveLength(1);
     expect(r.errors[0]?.reason).toMatch(/missing bin path/);
   });
+
+  it("parses env=K1:K2 (colon-separated) as an envPassthrough list", () => {
+    // Colon-separator: comma is the outer entry separator, so an embedded comma would
+    // smuggle one env name into the next mount entry.
+    const r = parsePluginMountsEnv("aws/=/x/bin?env=AWS_REGION:AWS_PROFILE");
+    expect(r.errors).toEqual([]);
+    expect(r.specs[0]?.envPassthrough).toEqual(["AWS_REGION", "AWS_PROFILE"]);
+  });
+
+  it("parses env passthrough alongside manifest + config + a second mount entry", () => {
+    const r = parsePluginMountsEnv(
+      "aws/=/a/bin?manifest=/a/m.json&env=AWS_REGION:AWS_PROFILE,github/=/g/bin?config=/g/c.json",
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.specs).toHaveLength(2);
+    expect(r.specs[0]).toMatchObject({
+      mountPath: "aws/",
+      manifestPath: "/a/m.json",
+      envPassthrough: ["AWS_REGION", "AWS_PROFILE"],
+    });
+    expect(r.specs[1]).toMatchObject({ mountPath: "github/", configPath: "/g/c.json" });
+    expect(r.specs[1]?.envPassthrough).toBeUndefined();
+  });
+
+  it("drops empty env tokens (env=A::B) without sinking the entry", () => {
+    const r = parsePluginMountsEnv("aws/=/x/bin?env=A::B");
+    expect(r.errors).toEqual([]);
+    expect(r.specs[0]?.envPassthrough).toEqual(["A", "B"]);
+  });
+
+  it("rejects env names that aren't POSIX identifiers (refuses to smuggle = / ; / spaces)", () => {
+    const r = parsePluginMountsEnv("aws/=/x/bin?env=GOOD:BAD=evil");
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]?.reason).toMatch(/invalid env-var name/);
+  });
+
+  it("omits envPassthrough when env= is absent (secure default)", () => {
+    const r = parsePluginMountsEnv("aws/=/x/bin");
+    expect(r.errors).toEqual([]);
+    expect(r.specs[0]?.envPassthrough).toBeUndefined();
+  });
 });
 
 describe("resolveMountFiles", () => {
@@ -148,10 +189,72 @@ describe("resolveMountFiles", () => {
 });
 
 describe("buildRemoteProcessSpec", () => {
-  it("maps the artifact path onto spec.command (operators chmod +x'd the bin at install)", () => {
-    expect(buildRemoteProcessSpec({ mountPath: "x/", artifactPath: "/x/bin" })).toEqual({
-      command: "/x/bin",
-      args: [],
+  it("maps the artifact path onto spec.command + forwards only PATH by default", () => {
+    const spec = buildRemoteProcessSpec(
+      { mountPath: "x/", artifactPath: "/x/bin" },
+      { PATH: "/usr/bin" },
+    );
+    expect(spec).toEqual({ command: "/x/bin", args: [], env: { PATH: "/usr/bin" } });
+  });
+
+  // CRIT regression: without an explicit env on the spec, Node's spawn would inherit
+  // arc-server's process.env (JWT_SECRET, BAO_TOKEN, DATABASE_URL, ARC_PUBLISHER_PRIV).
+  it("does NOT forward arc-server secrets when envPassthrough is absent (CRIT regression)", () => {
+    const fakeEnv = {
+      JWT_SECRET: "must-not-leak",
+      BAO_TOKEN: "root",
+      DATABASE_URL: "postgres://secret",
+      ARC_PUBLISHER_PRIV: "must-not-leak",
+      PATH: "/usr/bin",
+    };
+    const spec = buildRemoteProcessSpec({ mountPath: "x/", artifactPath: "/x/bin" }, fakeEnv);
+    // Only PATH is always-forwarded; nothing else crosses.
+    expect(spec.env).toEqual({ PATH: "/usr/bin" });
+    expect(spec.env).not.toHaveProperty("JWT_SECRET");
+    expect(spec.env).not.toHaveProperty("BAO_TOKEN");
+    expect(spec.env).not.toHaveProperty("DATABASE_URL");
+    expect(spec.env).not.toHaveProperty("ARC_PUBLISHER_PRIV");
+  });
+
+  it("forwards only the env vars an operator listed in envPassthrough (plus PATH)", () => {
+    const fakeEnv = {
+      JWT_SECRET: "must-not-leak",
+      BAO_TOKEN: "must-not-leak",
+      AWS_REGION: "us-west-2",
+      AWS_PROFILE: "prod",
+      PATH: "/usr/bin",
+    };
+    const spec = buildRemoteProcessSpec(
+      { mountPath: "x/", artifactPath: "/x/bin", envPassthrough: ["AWS_REGION", "AWS_PROFILE"] },
+      fakeEnv,
+    );
+    expect(spec.env).toEqual({
+      PATH: "/usr/bin",
+      AWS_REGION: "us-west-2",
+      AWS_PROFILE: "prod",
     });
+    // Belt + suspenders: explicit assertions that server secrets did NOT cross.
+    expect(spec.env).not.toHaveProperty("JWT_SECRET");
+    expect(spec.env).not.toHaveProperty("BAO_TOKEN");
+  });
+
+  it("silently drops env-passthrough names that aren't set in the host env", () => {
+    const spec = buildRemoteProcessSpec(
+      { mountPath: "x/", artifactPath: "/x/bin", envPassthrough: ["AWS_REGION", "MISSING"] },
+      { AWS_REGION: "us-east-1", PATH: "/usr/bin" },
+    );
+    expect(spec.env).toEqual({ AWS_REGION: "us-east-1", PATH: "/usr/bin" });
+  });
+
+  it("operator-listed envPassthrough cannot smuggle a secret by re-listing arc-server keys", () => {
+    // An operator who tries to forward JWT_SECRET via envPassthrough succeeds — but that's
+    // a *deliberate* operator action via the explicit allowlist, not an accidental leak
+    // from undefined-env-default. The CRIT was the *implicit* inheritance; the explicit
+    // path is the operator's call (and code review's catch).
+    const spec = buildRemoteProcessSpec(
+      { mountPath: "x/", artifactPath: "/x/bin", envPassthrough: ["JWT_SECRET"] },
+      { JWT_SECRET: "operator-explicitly-allowed-this", PATH: "/usr/bin" },
+    );
+    expect(spec.env?.JWT_SECRET).toBe("operator-explicitly-allowed-this");
   });
 });
