@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { OpenBaoClient, OpenBaoError, OpenBaoKvEngine } from "../src/index";
+import {
+  OpenBaoClient,
+  OpenBaoError,
+  OpenBaoKvEngine,
+  OpenBaoPathError,
+} from "../src/index";
 import type { FetchInit } from "../src/index";
 
 function fakeFetch(handler: (url: string, init: FetchInit) => { status: number; body?: unknown }) {
@@ -84,5 +89,66 @@ describe("OpenBaoKvEngine", () => {
     });
     const kv = new OpenBaoKvEngine(new OpenBaoClient({ addr: "http://bao:8200", fetchFn }), "secret");
     expect(await kv.list("app")).toEqual(["config", "db/"]);
+  });
+});
+
+/**
+ * HIGH-A regression (untrusted-code audit): even though arc-server's CapabilityGuard +
+ * EnginesController reject traversal paths before they reach the adapter, this is the
+ * last-line defense — a future caller (CLI, leasing revoke, sidecar) must not be able
+ * to silently relay a path that `fetch` would collapse before sending to OpenBao.
+ */
+describe("OpenBaoClient — path traversal rejection (defense in depth)", () => {
+  const client = () =>
+    new OpenBaoClient({
+      addr: "http://bao:8200",
+      token: "root",
+      // The fetch never fires: rejection happens before the HTTP call. Detect that by
+      // failing the test if the stub is invoked.
+      fetchFn: vi.fn(async () => {
+        throw new Error("fetch should not be called when the path is rejected");
+      }),
+    });
+
+  it.each([
+    ["literal .. segment", "secret/data/../../sys/seal-status"],
+    ["literal . segment", "secret/./data/x"],
+    ["empty segment (//)", "secret//data/x"],
+    ["empty path", ""],
+    ["only slashes", "///"],
+    ["percent-encoded .. (lowercase)", "secret/data/%2e%2e/sys/seal-status"],
+    ["percent-encoded .. (uppercase)", "secret/data/%2E%2E/sys/seal-status"],
+    ["mixed encoded .. (.%2e)", "secret/.%2e/sys/seal-status"],
+    ["malformed percent-encoding", "secret/%ZZ/foo"],
+  ] as const)("rejects %s with OpenBaoPathError before issuing fetch", async (_label, badPath) => {
+    await expect(client().read(badPath)).rejects.toBeInstanceOf(OpenBaoPathError);
+    await expect(client().write(badPath, {})).rejects.toBeInstanceOf(OpenBaoPathError);
+    await expect(client().delete(badPath)).rejects.toBeInstanceOf(OpenBaoPathError);
+  });
+
+  it("allows legitimate KV v2 paths (trailing slash for metadata list)", async () => {
+    const ok = new OpenBaoClient({
+      addr: "http://bao:8200",
+      token: "root",
+      fetchFn: vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => "{}",
+      })),
+    });
+    await expect(ok.read("secret/data/app/db")).resolves.toEqual({});
+    await expect(ok.read("secret/metadata/app/")).resolves.toEqual({});
+  });
+
+  it("preserves segments that legitimately contain dots (cert names, etc.)", async () => {
+    const ok = new OpenBaoClient({
+      addr: "http://bao:8200",
+      token: "root",
+      fetchFn: vi.fn(async (url: string) => {
+        expect(url).toBe("http://bao:8200/v1/pki/cert/3f.crt");
+        return { ok: true, status: 200, text: async () => "{}" };
+      }),
+    });
+    await expect(ok.read("pki/cert/3f.crt")).resolves.toEqual({});
   });
 });

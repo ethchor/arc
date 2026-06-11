@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import type { Capability } from "@arc/grants";
 import { MetricsService } from "../observability/metrics.service";
+import { canonicalizeEnginePath } from "../engines/path-canon";
 import { GrantsService } from "./grants.service";
 
 interface AuthedRequest {
@@ -51,7 +52,14 @@ export class CapabilityGuard implements CanActivate {
     const user = req.user;
     if (!user) throw new ForbiddenException({ errors: ["authentication required"] });
 
-    const path = stripV1Prefix(req.url);
+    // SECURITY: canonicalize before the ACL match — `..` / `.` / empty / `%2e%2e`
+    // segments must be rejected here so the policy decision and the dispatched OpenBao
+    // URL agree on what "the path" is. If they disagree, a caller authorized for
+    // `secret/` could reach `sys/seal-status` by sending `/v1/secret/data/../../sys/...`
+    // (the `startsWith` match below allowed it, fetch collapsed the `..`). The
+    // canonicalizer throws `EnginePathError` (400 invalid_engine_path), which Nest
+    // surfaces verbatim — no 403, since the request is malformed, not unauthorized.
+    const path = canonicalizeEnginePath(req.url);
     const capability = pickCapability(req.method, path, req.query ?? {});
 
     const decision = await this.grants.decide(String(user.userId), path, capability);

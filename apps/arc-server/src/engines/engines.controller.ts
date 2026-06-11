@@ -14,6 +14,7 @@ import {
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CapabilityGuard } from "../grants/capability.guard";
 import { EnginesService } from "./engines.service";
+import { joinSplatStrict } from "./path-canon";
 
 /**
  * Engine-A surface. All paths live under `/v1/...` to match the wire shape OpenBao (and
@@ -161,10 +162,13 @@ export class EnginesController {
 }
 
 /**
- * Express 5 + path-to-regexp 8 give `*splat` as an array of path segments. Older versions
- * (or string fallbacks for plain captures) give a single string. Normalize to a flat path.
+ * Express 5 + path-to-regexp 8 give `*splat` as an array of path segments. The legacy
+ * `joinSplat` joined naively, which let `..` / `.` / empty segments through the controller —
+ * combined with the ACL guard's `startsWith` prefix match and `fetch`'s built-in `..`
+ * collapse, a `secret/`-authorized caller could reach `sys/seal-status` by sending
+ * `/v1/secret/data/../../sys/seal-status`. {@link joinSplatStrict} validates the segments
+ * and throws {@link EnginePathError} on any traversal marker.
  */
 function joinSplat(splat: string[] | string): string {
-  if (Array.isArray(splat)) return splat.join("/");
-  return splat.replace(/^\/+/, "");
+  return joinSplatStrict(splat);
 }

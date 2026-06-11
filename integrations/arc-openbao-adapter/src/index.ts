@@ -1,4 +1,4 @@
-export { OpenBaoClient, OpenBaoError } from "./client";
+export { OpenBaoClient, OpenBaoError, OpenBaoPathError } from "./client";
 export type {
   OpenBaoClientOptions,
   SealStatus,
