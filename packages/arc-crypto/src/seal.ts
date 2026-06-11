@@ -42,14 +42,28 @@ export function seal(recipientPub: Uint8Array, plaintext: Uint8Array, aad = ""):
   };
 }
 
-export function sealOpen(recipientPriv: Uint8Array, env: Envelope): Uint8Array {
+/**
+ * Open a `seal` envelope, refusing it unless the envelope's bound AAD matches the
+ * caller's `expectedAad`. Mirrors `aeadOpen`'s AAD discipline at the wrapper layer
+ * (HIGH-E): the recipient must declare the coordinates they're expecting, so a server
+ * can't substitute a valid envelope from a different slot for the same recipient.
+ *
+ * Backward-compatible: `expectedAad` defaults to `""`, which matches the legacy
+ * envelope shape (`seal(...)` with no AAD stores `aad: null`). A *coordinate-bound*
+ * envelope cannot be silently opened by a legacy callsite — it triggers the mismatch
+ * check below, surfacing the swap rather than masking it.
+ */
+export function sealOpen(recipientPriv: Uint8Array, env: Envelope, expectedAad = ""): Uint8Array {
   if (env.alg !== ALG.SEAL || !env.ep) throw new VaultCryptoError("not a seal envelope");
+  if (env.aad != null && env.aad !== expectedAad) {
+    throw new VaultCryptoError("seal AAD mismatch");
+  }
   const ephPub = fromB64u(env.ep);
   const recipientPub = x25519PubFromPriv(recipientPriv);
   const shared = x25519Shared(recipientPriv, ephPub);
   const key = sealKey(shared, ephPub, recipientPub);
   try {
-    return aeadDecrypt(key, fromB64u(env.n), fromB64u(env.ct), utf8(env.aad ?? ""));
+    return aeadDecrypt(key, fromB64u(env.n), fromB64u(env.ct), utf8(expectedAad));
   } catch {
     throw new VaultCryptoError("seal open failed (wrong recipient key or tampered)");
   }

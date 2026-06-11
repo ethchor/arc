@@ -126,9 +126,21 @@ export function pqSeal(recipient: HybridPub, plaintext: Uint8Array, aad = ""): E
   };
 }
 
-export function pqSealOpen(env: Envelope, recipient: HybridPriv): Uint8Array {
+/**
+ * Open a `pq-seal` envelope, refusing it unless the envelope's bound AAD matches the
+ * caller's `expectedAad`. Same wrapper-layer AAD discipline as {@link sealOpen} —
+ * HIGH-E from the crypto audit: a server cannot silently substitute a coordinate-A
+ * envelope into a coordinate-B slot for the same hybrid recipient.
+ *
+ * Backward-compatible: `expectedAad` defaults to `""`, matching legacy envelopes that
+ * were sealed without a binding (`pqSeal(...)` with no AAD stores `aad: null`).
+ */
+export function pqSealOpen(env: Envelope, recipient: HybridPriv, expectedAad = ""): Uint8Array {
   if (env.alg !== ALG.PQ_SEAL) throw new VaultCryptoError("not a pq-seal envelope");
   if (!env.ep || !env.kc) throw new VaultCryptoError("pq-seal envelope missing ep or kc");
+  if (env.aad != null && env.aad !== expectedAad) {
+    throw new VaultCryptoError("pq-seal AAD mismatch");
+  }
   if (recipient.x25519Priv.length !== PQ_HYBRID_LENGTHS.X25519_PRIV) {
     throw new VaultCryptoError("recipient x25519 private key is the wrong length");
   }
@@ -148,7 +160,7 @@ export function pqSealOpen(env: Envelope, recipient: HybridPriv): Uint8Array {
   const recipientMlkemPub = ml_kem768.getPublicKey(recipient.mlkemPriv);
   const key = deriveKey(ssEc, ssPq, ephPub, kemCt, recipientX25519Pub, recipientMlkemPub);
   try {
-    return aeadDecrypt(key, fromB64u(env.n), fromB64u(env.ct), utf8(env.aad ?? ""));
+    return aeadDecrypt(key, fromB64u(env.n), fromB64u(env.ct), utf8(expectedAad));
   } catch {
     throw new VaultCryptoError("pq-seal open failed (wrong recipient key or tampered)");
   }
