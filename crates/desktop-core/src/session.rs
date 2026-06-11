@@ -100,8 +100,11 @@ impl Session {
         now: u64,
         ciphertext: &Envelope,
         wrapped_item_key: &Envelope,
-    ) -> Result<Vec<u8>, SessionError> {
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>, SessionError> {
         let (vek, _) = self.vek(vault_id, now)?;
+        // HIGH-F: forward the `Zeroizing<Vec<u8>>` to the caller (the Tauri command),
+        // so the decrypted item plaintext wipes on drop instead of sitting in the
+        // WebView's heap until the next allocation reuses the bytes.
         decrypt_item(vek, vault_id, item_id, version, key_version, ciphertext, wrapped_item_key)
             .map_err(|_| SessionError::Crypto)
     }
@@ -129,7 +132,14 @@ pub fn open_vek_from_device(
     device_pub: &[u8; 32],
     env: &Envelope,
 ) -> Result<[u8; 32], SessionError> {
+    // HIGH-E + HIGH-F threading: seal_open_envelope now takes `expected_aad` and returns
+    // `Zeroizing<Vec<u8>>`. Device-grant envelopes were sealed without AAD binding (legacy
+    // shape), so `""` is the correct expected. The deref-into-[u8;32] runs against the
+    // Zeroizing buffer, then it drops + wipes — the 32-byte VEK array we return is
+    // immediately moved into the caller's `Session.add_vault_key(... Zeroizing::new(vek))`
+    // so the secret never sits on a bare stack frame.
     let v = seal_open_envelope(device_priv, device_pub, env, "")
         .map_err(|_| SessionError::Crypto)?;
-    v.try_into().map_err(|_| SessionError::Crypto)
+    let arr: [u8; 32] = (*v).as_slice().try_into().map_err(|_| SessionError::Crypto)?;
+    Ok(arr)
 }
