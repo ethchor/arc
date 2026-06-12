@@ -4,11 +4,25 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  SetMetadata,
 } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
 import type { Capability } from "@arc/grants";
 import { MetricsService } from "../observability/metrics.service";
 import { canonicalizeEnginePath } from "../engines/path-canon";
 import { GrantsService } from "./grants.service";
+
+/**
+ * LOW-E (audit): `@RequireCapability("sudo")` overrides the default method→capability
+ * mapping for a controller or handler. ADR-009 §2 said the plugin-admin endpoints under
+ * `sys/plugins/` required `sudo`, but the implementation derived `create`/`delete` from
+ * the HTTP verb — convention only. Putting an explicit cap in metadata makes the check
+ * declarative: a misconfigured policy that grants `create` on `sys/plugins/` no longer
+ * accidentally satisfies "I have plugin admin rights".
+ */
+export const REQUIRE_CAPABILITY_KEY = "arc:require-capability";
+export const RequireCapability = (cap: Capability): MethodDecorator & ClassDecorator =>
+  SetMetadata(REQUIRE_CAPABILITY_KEY, cap);
 
 interface AuthedRequest {
   user?: { userId: number; email: string };
@@ -43,6 +57,7 @@ export class CapabilityGuard implements CanActivate {
   constructor(
     private readonly grants: GrantsService,
     private readonly metrics: MetricsService,
+    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -60,7 +75,15 @@ export class CapabilityGuard implements CanActivate {
     // canonicalizer throws `EnginePathError` (400 invalid_engine_path), which Nest
     // surfaces verbatim — no 403, since the request is malformed, not unauthorized.
     const path = canonicalizeEnginePath(req.url);
-    const capability = pickCapability(req.method, path, req.query ?? {});
+    // LOW-E: a controller or handler can pin a stricter capability via
+    // `@RequireCapability("sudo")`. Method-only metadata wins over class metadata; both
+    // override the default HTTP verb → capability mapping.
+    const overrideCap =
+      this.reflector.getAllAndOverride<Capability | undefined>(REQUIRE_CAPABILITY_KEY, [
+        ctx.getHandler(),
+        ctx.getClass(),
+      ]);
+    const capability = overrideCap ?? pickCapability(req.method, path, req.query ?? {});
 
     const decision = await this.grants.decide(String(user.userId), path, capability);
     this.metrics.aclDecisions.labels(decision.decision, decision.reason).inc();

@@ -4,6 +4,7 @@
  * narrow on the guard's own logic so a regression here points at the right line.
  */
 import { BadRequestException, ExecutionContext, ForbiddenException } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
 import { InMemoryPolicyStore, scope } from "@arc/grants";
 import { MetricsService } from "../observability/metrics.service";
 import { CapabilityGuard, pickCapability, stripV1Prefix } from "./capability.guard";
@@ -21,6 +22,12 @@ function fakeCtx(req: {
       getResponse: () => ({}) as unknown as object,
       getNext: () => ({}) as unknown as object,
     }),
+    // LOW-E: the guard calls `reflector.getAllAndOverride(...)` against handler+class
+    // metadata to honour `@RequireCapability()`. The Reflector accepts arbitrary keys
+    // on either reference, so empty stubs reproduce "no override declared" → falls
+    // through to the HTTP method → capability mapping (the legacy behaviour).
+    getHandler: () => (() => undefined),
+    getClass: () => (class EmptyContext {}),
   } as unknown as ExecutionContext;
 }
 
@@ -60,7 +67,12 @@ describe("CapabilityGuard", () => {
     const store = new InMemoryPolicyStore();
     const grants = new GrantsService(store, defaultMode);
     const metrics = new MetricsService();
-    const guard = new CapabilityGuard(grants, metrics);
+    // LOW-E: the guard now reads `@RequireCapability()` metadata via Reflector. The spec
+    // exercises ExecutionContext stubs that don't carry that metadata, so a vanilla
+    // Reflector — which returns undefined for unset keys — preserves the legacy
+    // method→capability behaviour for these test fixtures.
+    const reflector = new Reflector();
+    const guard = new CapabilityGuard(grants, metrics, reflector);
     return { grants, guard, store, metrics };
   }
 

@@ -207,6 +207,37 @@ describe("plugin admin e2e — runtime mount/unmount via /v1/sys/plugins/mounts"
       .expect((res) => expect(res.body.reason).toBe("mount_not_found"));
   });
 
+  /**
+   * LOW-E regression (audit, ADR-009 §2). Before this commit `@UseGuards(CapabilityGuard)`
+   * derived the policy capability from HTTP verb (POST → "create", DELETE → "delete"), so a
+   * subject granted `create`/`delete` on `sys/plugins/` accidentally satisfied "I have
+   * plugin admin rights" even though the ADR called out `sudo`. The new
+   * `@RequireCapability("sudo")` on the controller forces the gate to ask for `sudo`,
+   * regardless of method. This test seeds a subject with create+delete (but NOT sudo)
+   * and asserts both endpoints refuse the request as `no-matching-scope`.
+   */
+  it("LOW-E — sudo is required on sys/plugins/; create+delete-only policy is refused", async () => {
+    const a = await login(server, "low-e-non-sudo@example.com");
+    await grants.upsertPolicy({
+      name: "p-create-not-sudo",
+      scopes: [scope("sys/plugins/", ["create", "delete"])],
+    });
+    await grants.attach(String(a.userId), "p-create-not-sudo");
+
+    const post = await request(server)
+      .post("/v1/sys/plugins/mounts")
+      .set(auth(a.token))
+      .send({ mountPath: "test-low-e/", binPath: "/usr/bin/true" })
+      .expect(403);
+    expect(post.body.reason).toBe("no-matching-scope");
+
+    const del = await request(server)
+      .delete("/v1/sys/plugins/mounts/test-low-e%2F")
+      .set(auth(a.token))
+      .expect(403);
+    expect(del.body.reason).toBe("no-matching-scope");
+  });
+
   it("manifest refusal — wrong publisher pinned in ARC_PLUGIN_TRUST_ANCHORS → 400 with reason=untrusted_publisher", async () => {
     const r = await request(server)
       .post("/v1/sys/plugins/mounts")

@@ -38,11 +38,23 @@ export const KDF = { ARGON2ID: "argon2id-1" } as const;
 // constructors (aeadSeal / aeadOpen, etc.) below remain here in @arc/crypto.
 
 // Length-bucket padding to blunt ciphertext-size fingerprinting (docs/02 §2.5).
-const BUCKETS = [64, 256, 1024, 4096, 16384, 65536, 262144];
+//
+// LOW-F (audit): explicitly document the >256 KiB tail behavior. Below 256 KiB inputs
+// snap up to the nearest fixed bucket in `PAD_BUCKETS` (64 → 256 → 1k → 4k → 16k → 64k →
+// 256k). Above 256 KiB the bucket grows linearly in 256 KiB steps (i.e.
+// `ceil(len / 262144) * 262144`) so a 1.5 MiB attachment lands on a 1.75 MiB envelope,
+// a 4 MiB attachment lands on a 4 MiB envelope, etc. The boundary is intentional: with
+// sub-linear buckets above 256 KiB either the catalog explodes or the chosen bucket
+// telegraphs the actual length, so we accept the constant-size leak of "rounded up to
+// the next 256 KiB" in exchange for a fixed cost model attachments can budget against.
+// Down-stream implementations (Rust core, future SDKs) MUST replicate this same step
+// function so the on-wire `pad` value remains a deterministic function of input length.
+export const PAD_BUCKETS = [64, 256, 1024, 4096, 16384, 65536, 262144] as const;
+export const PAD_LARGE_STEP = 262144;
 
 export function padTarget(len: number): number {
-  for (const b of BUCKETS) if (len <= b) return b;
-  return Math.ceil(len / 262144) * 262144;
+  for (const b of PAD_BUCKETS) if (len <= b) return b;
+  return Math.ceil(len / PAD_LARGE_STEP) * PAD_LARGE_STEP;
 }
 
 function applyPad(pt: Uint8Array): { padded: Uint8Array; pad: number } {

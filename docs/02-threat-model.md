@@ -85,6 +85,18 @@ and are an easy footgun. Search stays client-side over decrypted items.
 because it is cheap and meaningfully blunts size fingerprinting. The envelope (doc 04)
 carries an explicit `pad` length so decryption can strip it deterministically.
 
+LOW-F (audit) — bucket boundary, explicit. Below 256 KiB inputs snap to the next fixed
+bucket in `{64, 256, 1024, 4096, 16384, 65536, 262144}`. **Above 256 KiB the bucket
+grows linearly in 256 KiB steps** (`ceil(len / 262144) * 262144`) — a 1.5 MiB attachment
+becomes a 1.75 MiB envelope, a 4 MiB attachment becomes a 4 MiB envelope, etc. The
+boundary is intentional: sub-linear buckets above 256 KiB either explode the catalog or
+telegraph the actual length via which bucket was chosen, so we accept the constant-size
+leak of "rounded up to the next 256 KiB" in exchange for a fixed storage-cost model that
+attachment quotas can plan against. The Rust core and any future SDK MUST replicate the
+exact same step function (the on-wire `pad` value is part of the deterministic envelope
+contract; see `packages/arc-crypto/src/envelope.ts::padTarget` + the regression test
+that pins the boundary in `packages/arc-crypto/test/crypto.test.ts`).
+
 ## 2.6 Expanded adversaries: machine identities, delegation, enterprise
 
 These extend the model for the developer/team surface (full design in doc 14).
