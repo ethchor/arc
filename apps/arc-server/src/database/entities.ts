@@ -666,6 +666,16 @@ export class VaultAgentEntity {
   @Column({ type: "text", default: "active" })
   status!: AgentStatusCol;
 
+  /**
+   * HIGH-C (audit): outstanding agent JWTs are bound to this counter at issuance. Any
+   * event that should revoke the agent's existing tokens (task closure today; suspend /
+   * delegation revoke later) bumps the counter, instantly invalidating every JWT minted
+   * before the bump — the JwtAuthGuard refuses with `agent_token_revoked`. Defaults to 0
+   * so existing rows + JWTs minted before this migration keep working until natural TTL.
+   */
+  @Column({ type: "int", default: 0 })
+  tokenEpoch!: number;
+
   @CreateDateColumn()
   createdAt!: Date;
 
