@@ -13,7 +13,7 @@ import {
 } from "@nestjs/common";
 import { IsOptional, IsString, Matches } from "class-validator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { CapabilityGuard } from "../grants/capability.guard";
+import { CapabilityGuard, RequireCapability } from "../grants/capability.guard";
 import { buildRemoteProcessSpec, resolveMountFiles, type PluginMountSpec } from "./plugin-mounts";
 import { PluginsService } from "./plugins.service";
 
@@ -62,7 +62,12 @@ class CreatePluginMountDto {
  * includes a copy-paste-ready `envSnippet` so the admin can add it to `ARC_PLUGIN_MOUNTS`
  * once a smoke-test confirms the mount is good.
  */
+// LOW-E (audit): ADR-009 §2 specified `sudo` on `sys/plugins/`; before this the guard
+// derived `create`/`delete` from the HTTP verb. Pinning it declaratively closes the gap
+// between the doc and the policy decision (a subject granted `create` on `sys/plugins/`
+// no longer accidentally satisfies "I have plugin admin rights").
 @UseGuards(JwtAuthGuard, CapabilityGuard)
+@RequireCapability("sudo")
 @Controller("v1/sys/plugins/mounts")
 export class PluginsAdminController {
   constructor(private readonly plugins: PluginsService) {}

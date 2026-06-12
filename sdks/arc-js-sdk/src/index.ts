@@ -5,6 +5,7 @@ import {
   decryptItem,
   decryptItemWithIK,
   decryptVaultName,
+  deviceSas,
   edPubFromPriv,
   encryptFolderName,
   encryptItem,
@@ -1202,10 +1203,11 @@ export class VaultClient {
       publicKeyMlkem: toB64u(kp.mlkem.publicKey),
       name,
     });
-    // Verification code is over the X25519 pub for back-compat with existing devices'
-    // out-of-band code displays; the ML-KEM pub joins the same trust anchor by construction
-    // (it's registered in the same atomic call).
-    return { deviceId: r.id, verificationCode: fingerprint(kp.x25519.pub, 3) };
+    // LOW-D (audit): SAS now binds BOTH halves of the hybrid pair (docs/06 §6.3.1). A
+    // MITM that swapped only the ML-KEM pub would no longer slip past the human compare.
+    // Legacy X25519-only devices fall through to the old `fingerprint(x25519, 3)` shape
+    // (see `deviceSas` in @arc/crypto), so display chrome doesn't need a version flag.
+    return { deviceId: r.id, verificationCode: deviceSas(kp.x25519.pub, kp.mlkem.publicKey) };
   }
 
   /** Trusted device: list devices awaiting approval (with their verification codes). */

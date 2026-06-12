@@ -1,5 +1,6 @@
 import { ed25519KeyPair, randomBytes, sha256, x25519KeyPair } from "./primitives";
 import { generateHybridIdentityKeyPair, type HybridKeyPair } from "./pq-hybrid";
+import { utf8 } from "./bytes";
 import { VaultCryptoError } from "./types";
 
 export interface KeyPair {
@@ -78,5 +79,37 @@ export function decodeRecoveryKey(encoded: string): Uint8Array {
 /** Stable short fingerprint of a public key for out-of-band verification (docs/06 §6.5). */
 export function fingerprint(pub: Uint8Array, groups = 8): string {
   const b32 = base32Encode(sha256(pub)).slice(0, groups * 4);
+  return (b32.match(/.{1,4}/g) ?? []).join("-");
+}
+
+/**
+ * LOW-D (audit): Short Authentication String for device approval (docs/06 §6.3.1).
+ *
+ * The old SAS was `fingerprint(x25519Pub, 3)` — a 12-char base32 over `SHA256(X25519)`
+ * only, with no binding to the ML-KEM half. A man-in-the-middle that swapped only the
+ * `publicKeyMlkem` field on the wire would NOT change the SAS, so the human-compared
+ * code couldn't surface the swap; the resulting device would have an attacker-controlled
+ * ML-KEM key for every future hybrid grant (ADR-003).
+ *
+ * The new SAS binds BOTH halves: `SHA256("arc/sas/v1\n" || X25519Pub || ML-KEM-Pub)` is
+ * encoded base32 and truncated to the same 12-char display the operator's UI already
+ * shows. Spec name + version are domain-separated so the bytes can't collide with a
+ * stand-alone `fingerprint()` call on a single key.
+ *
+ * Pre-ADR-003 (X25519-only) devices fall through to the legacy `fingerprint(x25519, 3)`
+ * — the SAS is still a function of the only key the device has, and the field carrier
+ * is still the same 12-char b32. The branch keeps the migration story zero-friction.
+ */
+export function deviceSas(
+  x25519Pub: Uint8Array,
+  mlkemPub?: Uint8Array | null,
+): string {
+  if (!mlkemPub) return fingerprint(x25519Pub, 3);
+  const prefix = utf8("arc/sas/v1\n");
+  const blob = new Uint8Array(prefix.length + x25519Pub.length + mlkemPub.length);
+  blob.set(prefix, 0);
+  blob.set(x25519Pub, prefix.length);
+  blob.set(mlkemPub, prefix.length + x25519Pub.length);
+  const b32 = base32Encode(sha256(blob)).slice(0, 12);
   return (b32.match(/.{1,4}/g) ?? []).join("-");
 }

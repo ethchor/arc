@@ -12,8 +12,9 @@ import {
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
 import { BLOB_STORE, type BlobStore, newAttachmentKey, BlobNotFoundError } from "../blob/blob-store";
 import { DataSource, In, MoreThan, Repository } from "typeorm";
-import { ctEqual, fingerprint, fromB64u, randomBytes, serverHashAuth, toB64u } from "@arc/crypto";
+import { ctEqual, deviceSas, fingerprint, fromB64u, randomBytes, serverHashAuth, toB64u } from "@arc/crypto";
 import { isVaultColor, isVaultIcon } from "@arc/types";
+import { assertArgonParamsAboveFloor } from "./argon-floor";
 import {
   type MemberRole,
   UserEntity,
@@ -119,6 +120,10 @@ export class VaultService {
       // Anti-takeover: a valid JWT alone must not overwrite an existing keyset (docs/06 §6.7).
       throw new ConflictException("vault already enrolled for this account");
     }
+    // LOW-B (audit): refuse enrollment with KDF parameters below the floor — see
+    // `argon-floor.ts`. Production rejects anything weaker than the `mobile` profile;
+    // dev/test stays permissive so the existing test profile (m=256) keeps working.
+    assertArgonParamsAboveFloor(dto.argonParams);
     const serverSalt = toB64u(randomBytes(16));
     await this.userKeys.save(
       this.userKeys.create({
@@ -215,6 +220,11 @@ export class VaultService {
       // Pinned identity: recovery re-wraps the *same* keys, it never rotates the identity.
       throw new BadRequestException({ error: "identity_pubkey_mismatch" });
     }
+    // LOW-B (audit): recovery re-establishes the WK-wrap layer, so the same KDF-floor
+    // check that gates enrollment must gate recovery — otherwise an attacker who
+    // compromised the recovery key could re-enrol with weak params and degrade the
+    // password-side defenses for future unlocks.
+    assertArgonParamsAboveFloor(dto.argonParams);
 
     const serverSalt = toB64u(randomBytes(16));
     k.saltMk = dto.saltMk;
@@ -575,7 +585,13 @@ export class VaultService {
       // Exposed so the trusted approver knows whether to wrap with `pqSeal` (ADR-003) vs
       // the classical `seal` envelope. `null` for legacy X25519-only devices.
       publicKeyMlkem: d.publicKeyMlkem,
-      verificationCode: fingerprint(fromB64u(d.publicKey), 3),
+      // LOW-D (audit): SAS binds both halves of the hybrid pair so a MITM swapping the
+      // ML-KEM pub can't slip past the human compare. Legacy X25519-only devices
+      // (`publicKeyMlkem == null`) use the old fingerprint shape under the hood.
+      verificationCode: deviceSas(
+        fromB64u(d.publicKey),
+        d.publicKeyMlkem ? fromB64u(d.publicKeyMlkem) : null,
+      ),
     }));
   }
 
@@ -614,6 +630,19 @@ export class VaultService {
   async approveDevice(userId: number, deviceId: string, dto: ApproveDeviceDto) {
     const dev = await this.devices.findOne({ where: { id: deviceId, userId } });
     if (!dev) throw new NotFoundException("device not found");
+    // LOW-C (audit): require an active membership in EVERY vault for which the user is
+    // wrapping a VK. The server can't decrypt the wrap (it's E2E), but accepting a grant
+    // for a vault the user isn't a member of would let a malicious session add their
+    // device as a "viewer of vault X" without ever joining vault X — bypassing the
+    // membership table that every other authorization decision keys on.
+    //
+    // `requireRole(..., "viewer")` is the lowest tier: every active member can issue
+    // grants for their own additional devices (the same right they exercise during
+    // their own enroll). If a future ACL change tightens this to "self-grant only when
+    // role >= editor", flipping the floor here is the one place to change.
+    for (const g of dto.grants) {
+      await this.requireRole(g.vaultId, userId, "viewer");
+    }
     for (const g of dto.grants) {
       await this.grants.save(
         this.grants.create({ vaultId: g.vaultId, keyVersion: g.keyVersion, granteeDeviceId: dev.id, wrappedVaultKey: g.wrappedVaultKey, wrappedByUserId: userId }),
