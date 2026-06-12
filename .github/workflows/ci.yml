@@ -44,6 +44,13 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # MED-H (supply-chain audit): the `@arc/crypto` test suite includes a Rust→TS
+      # pqSeal parity check that spawns `cargo run --example gen_pq_vector`. Without
+      # cargo on PATH the test skips silently — which exactly recreates the coverage
+      # gap MED-H was about. Installing the stable toolchain here keeps the contract
+      # exercised on every push (one-time ~15s `cargo build` is amortised across the
+      # Argon2id + ML-KEM crypto tests downstream).
+      - uses: dtolnay/rust-toolchain@stable
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm typecheck
@@ -64,7 +71,14 @@ jobs:
       - name: Kernel OOM forensics
         if: always()
         run: sudo dmesg | grep -iE "out of memory|oom|killed process" | tail -20 || echo "no OOM events in dmesg"
-      - name: Dependency audit (non-blocking)
+      # MED-I (supply-chain audit): critical-severity advisories now block CI.
+      # `pnpm audit --audit-level=critical` exits non-zero only when a critical-tier
+      # advisory hits the lockfile — high/moderate stay warnings so transient registry
+      # blips or "high" advisories without a confirmed fix-path don't paper-cut every
+      # PR. The follow-up "high warning" step is informational only.
+      - name: Dependency audit (CRITICAL — blocking)
+        run: pnpm audit --audit-level=critical
+      - name: Dependency audit (high — informational)
         run: pnpm audit --audit-level=high
         continue-on-error: true
 
@@ -93,11 +107,19 @@ jobs:
         run: cargo test --manifest-path crates/desktop-core/Cargo.toml
       - name: arc-agent tests
         run: cargo test --manifest-path crates/arc-agent/Cargo.toml
-      - name: cargo audit (non-blocking)
+      # MED-I (supply-chain audit): symmetric with the node side — `cargo audit` runs in
+      # default mode (which exits non-zero on any advisory) so an unfixed crypto CVE in a
+      # crate we depend on (e.g. an ed25519-dalek bump) blocks merge. The install step is
+      # best-effort tolerant because cargo-install can fail on transient registry; if the
+      # binary isn't there the audit step skips (so install hiccups don't false-block CI).
+      - name: cargo audit (blocking when binary present)
         run: |
           cargo install cargo-audit --locked || true
-          cargo audit --file crates/vault-crypto-rs/Cargo.lock
-        continue-on-error: true
+          if command -v cargo-audit >/dev/null 2>&1; then
+            cargo audit --file crates/vault-crypto-rs/Cargo.lock
+          else
+            echo "::warning::cargo-audit binary unavailable — audit skipped this run"
+          fi
 
   # Smoke-tests the OpenBao adapter against a real OpenBao instance. The Node smoke
   # suite already skips when BAO_ADDR is unset, so we only need to give it one.
@@ -105,7 +127,12 @@ jobs:
     runs-on: ubuntu-latest
     services:
       openbao:
-        image: quay.io/openbao/openbao:latest
+        # MED-I (supply-chain audit): pin to a concrete tag, never the mutable `latest` —
+        # matches `infra/arc-helm-charts/arc/values.yaml::openbao.image.tag`. A re-pulled
+        # `latest` between merge and a release could swap the integration-tested binary
+        # out from under us; the helm chart already tests this version, the adapter
+        # smoke job should run against the same one.
+        image: quay.io/openbao/openbao:2.3.1
         # Match `integrations/arc-openbao-adapter/docker-compose.yml`.
         env:
           BAO_DEV_ROOT_TOKEN_ID: root
