@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   BadRequestException,
   ForbiddenException,
@@ -12,6 +13,24 @@ import { PasskeyService } from "../vault/passkey.service";
 
 /** How long a push-consent request stays actionable before it must be re-requested. */
 const APPROVAL_TTL_MS = 5 * 60_000;
+
+/**
+ * MED-F (supply-chain audit): derive the WebAuthn challenge from the approved intent's
+ * digest so the authenticator's signature is bound to "I approve **this exact intent**".
+ * Previously the challenge was server-random and stored alongside the approval — a
+ * malicious server could theoretically issue the challenge for intent A, wait for the
+ * user's authenticator to sign it, then redirect that assertion to satisfy approval B
+ * with the same challenge bytes. Pinning the challenge to `sha256("arc-approval/v1\n" +
+ * intentDigest)` makes redirection cryptographically impossible: the assertion only
+ * verifies against the exact intent it was signed for. The base64url encoding mirrors
+ * @simplewebauthn's challenge format. Domain-separation prefix matches the convention in
+ * `docs/04` (every signable string starts with `arc-<purpose>/<v>`).
+ */
+export function approvalChallengeForIntent(intentDigest: string): string {
+  return createHash("sha256")
+    .update(`arc-approval/v1\n${intentDigest}`, "utf8")
+    .digest("base64url");
+}
 
 /**
  * Push-consent (CIBA) for `elevated` agent actions (ADR-005 Phase 4). An elevated intent
@@ -103,20 +122,39 @@ export class ApprovalsService {
       }));
   }
 
-  /** Begin the WebAuthn ceremony — issue a challenge bound to this approval. */
+  /**
+   * Begin the WebAuthn ceremony — issue a challenge bound to this approval.
+   *
+   * MED-F: the challenge is now deterministically derived from the approval's
+   * `intentDigest`, not server-random. The previous "begin first, then approve" handshake
+   * stored the random challenge in `a.challenge`; this is no longer necessary because
+   * `approve` can recompute the same value from the persisted `intentDigest`. We still
+   * persist the challenge for backwards-compatible inspection by the assertion-finish
+   * step but verification recomputes it from the intent — a tampered DB row can't widen
+   * what the user actually authorized.
+   */
   async beginApproval(ownerUserId: number, approvalId: string) {
     const a = await this.requirePending(ownerUserId, approvalId);
-    const options = await this.passkeys.beginAssertionChallenge(ownerUserId);
+    const challenge = approvalChallengeForIntent(a.intentDigest);
+    const options = await this.passkeys.beginAssertionChallenge(ownerUserId, challenge);
     a.challenge = options.challenge;
     await this.approvals.save(a);
     return options;
   }
 
-  /** Grant the approval by verifying a WebAuthn assertion against the issued challenge. */
+  /**
+   * Grant the approval by verifying a WebAuthn assertion against the **intent-derived**
+   * challenge. The expected challenge is recomputed from `a.intentDigest` — *not* read
+   * from `a.challenge` — so a malicious server that swapped `a.challenge` to the bytes
+   * for some other intent cannot turn the user's signed assertion into approval for the
+   * substituted intent. The `no_challenge_begin_first` guard remains so the controller
+   * still flags the case where the user skipped the `/challenge` step (UI hint).
+   */
   async approve(ownerUserId: number, approvalId: string, assertion: AuthenticationResponseJSON) {
     const a = await this.requirePending(ownerUserId, approvalId);
     if (!a.challenge) throw new BadRequestException({ error: "no_challenge_begin_first" });
-    await this.passkeys.verifyAssertionWithChallenge(ownerUserId, assertion, a.challenge);
+    const expectedChallenge = approvalChallengeForIntent(a.intentDigest);
+    await this.passkeys.verifyAssertionWithChallenge(ownerUserId, assertion, expectedChallenge);
     a.status = "approved";
     a.challenge = null;
     a.resolvedAt = new Date();

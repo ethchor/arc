@@ -748,7 +748,21 @@ export class VaultClient {
   async submitIntent(
     agentId: string,
     agentSigningPriv: Uint8Array,
-    input: { taskId: string; op: string; path: string; args?: JsonValue; delegationId?: string | null },
+    input: {
+      taskId: string;
+      op: string;
+      path: string;
+      args?: JsonValue;
+      delegationId?: string | null;
+      /**
+       * MED-E: the chain head the agent observed for this task *before* signing — pass
+       * `ZERO_CHAIN` for the very first intent on a fresh task, or the `chainHead` from
+       * the prior `submitIntent` response. The signature binds this value so the server
+       * cannot accept an intent at any other chain position; mismatch → 409
+       * `intent_chain_mismatch`.
+       */
+      prevChainHead: string;
+    },
   ): Promise<{
     decision: "allow" | "deny";
     reason: string;
@@ -771,6 +785,7 @@ export class VaultClient {
       argsDigest: intentArgsDigest(args),
       ts: new Date().toISOString(),
       nonce: toB64u(randomBytes(16)),
+      prevChainHead: input.prevChainHead,
     };
     const signature = signIntent(agentSigningPriv, claims);
     return this.http("POST", `/vault/agents/${agentId}/intents`, { claims, signature, args });

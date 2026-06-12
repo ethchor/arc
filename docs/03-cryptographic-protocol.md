@@ -99,7 +99,18 @@ its logical position, preventing copy/replace/rollback attacks:
   canonical concatenation in doc 04 §4.3). A ciphertext moved to another item/version fails
   to open.
 - **Wrapped IK (IK under VK):** `AAD = vaultId | itemId | "ik" | keyVersion`.
-- **Wrapped private keys (identity/signing under WK):** `AAD = userId | keyName | keyVersion`.
+- **Wrapped private keys (identity/signing under WK):** `AAD = keyName | keyVersion`
+  (with `wrap = "recovery"` mixed in when the wrap is under the recovery key — see
+  `packages/arc-crypto/src/vault.ts::privAad`). MED-G (supply-chain audit): an earlier
+  draft of this section listed `userId` as the first field, but `userId` is server-
+  assigned and not available to the client at enroll time (the keyset is uploaded
+  *before* the user row is created), so no client implementation can bind to it without
+  a multi-round-trip enrol+rewrap dance. Binding `userId` is therefore a non-goal in v1;
+  the practical threat — server-side substitution of one user's `encIdentityPriv` into
+  another user's slot — is already mitigated by the per-user WK (the substituting
+  ciphertext would not decrypt under the recipient's WK). Future work: bind a
+  client-chosen, stable `accountFingerprint` (e.g. SHA-256 of the identity public key)
+  via a Phase-2 rotation that re-wraps under the new AAD; the field is reserved.
 - **Folder name (under VK):** `AAD = vaultId | folderId | "name" | keyVersion`.
 
 Nonces are 24 B random per encryption; with XChaCha20 the random-nonce collision risk is

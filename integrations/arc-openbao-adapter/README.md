@@ -25,9 +25,9 @@ await kv.put("app/config", { apiKey: "xyz" });
 ### Local dev
 
 ```sh
-# One-off:
+# One-off (pinned to the same tag CI + the Helm chart use — MED-I):
 docker run --rm -p 8200:8200 -e BAO_DEV_ROOT_TOKEN_ID=root \
-  quay.io/openbao/openbao:latest server -dev
+  quay.io/openbao/openbao:2.3.1 server -dev
 
 # Or use the included compose file:
 docker compose -f integrations/arc-openbao-adapter/docker-compose.yml up -d

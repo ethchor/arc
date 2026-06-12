@@ -10,7 +10,10 @@
 # `pnpm test` from any working tree stays green without Docker.
 services:
   openbao:
-    image: quay.io/openbao/openbao:latest
+    # MED-I (supply-chain audit): pin to a concrete tag rather than the mutable `latest`.
+    # Matches `infra/arc-helm-charts/arc/values.yaml::openbao.image.tag` and the CI
+    # `openbao-adapter` job — same binary on every machine that exercises the adapter.
+    image: quay.io/openbao/openbao:2.3.1
     command: server -dev
     ports:
       - "8200:8200"

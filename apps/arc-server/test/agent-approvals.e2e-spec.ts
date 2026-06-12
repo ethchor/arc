@@ -13,6 +13,7 @@ import {
   signIntent,
   toB64u,
   wrapVaultKeyFor,
+  ZERO_CHAIN,
 } from "@arc/crypto";
 import { scope } from "@arc/grants";
 import { agentSubject, userSubject, type DelegationClaims, type IntentClaims } from "@arc/types";
@@ -125,10 +126,14 @@ describe("Engine-C push-consent for elevated ops (ADR-005 Phase 4)", () => {
     const task = await request(server).post(`/vault/agents/${agentId}/tasks`).set(auth(a.token)).send({ delegationId: del.body.id }).expect(201);
 
     // One reusable signed intent (identical on resubmit so its digest matches the approval).
+    // MED-E: signed against ZERO_CHAIN — every test here submits this as the first intent
+    // on a fresh task. The elevated/approval-required branch returns early WITHOUT
+    // recording, so the chain stays at ZERO_CHAIN until an approval lets the resubmit land.
     const iclaims: IntentClaims = {
       v: 1, agent: agentSubject(agentId), delegation: del.body.id, taskId: task.body.taskId,
       op: "kv.read", path: "secret/data/app/db", argsDigest: intentArgsDigest({ k: "DB" } as never),
       ts: new Date().toISOString(), nonce: toB64u(randomBytes(16)),
+      prevChainHead: ZERO_CHAIN,
     };
     const intent = { claims: iclaims, signature: signIntent(signing.priv, iclaims), args: { k: "DB" } };
     return { token: a.token, agentId, taskId: task.body.taskId as string, authn, intent, agentSigning: signing };
@@ -170,10 +175,14 @@ describe("Engine-C push-consent for elevated ops (ADR-005 Phase 4)", () => {
     //    (HIGH-D — `intent_replay` regression in agent-tasks.e2e-spec). The
     //    single-use property is the security claim under test, not the wire shape; we
     //    sign a fresh intent (new nonce + ts) so the digest differs.
+    // MED-E: step 4 advanced the chain, so freshClaims must bind to the new head; spreading
+    // from `intent.claims` (still ZERO_CHAIN) would 409 on intent_chain_mismatch instead
+    // of testing the approval-required path.
     const freshClaims: IntentClaims = {
       ...(intent.claims as IntentClaims),
       ts: new Date(Date.now() + 1000).toISOString(),
       nonce: toB64u(randomBytes(16)),
+      prevChainHead: r.body.chainHead as string,
     };
     const freshIntent = {
       claims: freshClaims,
