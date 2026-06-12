@@ -75,11 +75,16 @@ export class AgentAuthService {
     agent.lastSeenAt = new Date();
     await this.agents.save(agent);
 
+    // HIGH-C (audit): pin the JWT to the agent's current `tokenEpoch`. Any subsequent
+    // event that bumps the counter (task closure today; suspend / delegation revoke
+    // later) makes this JWT fail with `agent_token_revoked` on the JwtAuthGuard, so
+    // "close task" actually stops the agent inside the 10-minute TTL window.
     const accessToken = await this.jwt.signAsync(
       {
         sub: agent.ownerUserId,
         email: `agent:${agentId}`,
         agentId,
+        agentTokenEpoch: agent.tokenEpoch,
         act: { sub: agentSubject(agentId) }, // RFC 8693 token-exchange actor claim
       },
       { expiresIn: AGENT_TOKEN_TTL },

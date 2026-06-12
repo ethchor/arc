@@ -296,7 +296,8 @@ export class AgentTasksService {
     await this.agentsService.get(ownerUserId, agentId);
     const task = await this.tasks.findOne({ where: { taskId, agentId } });
     if (!task) throw new NotFoundException("task not found");
-    if (task.status === "open") {
+    const transitioned = task.status === "open";
+    if (transitioned) {
       task.status = "closed";
       task.closedAt = new Date();
       await this.tasks.save(task);
@@ -309,6 +310,18 @@ export class AgentTasksService {
       await this.delegations.save(d);
     }
     const revokedLeases = this.engines.leases.revokeByTaskId(taskId);
+
+    // HIGH-C (audit): bump the agent's tokenEpoch so every outstanding agent JWT —
+    // including the one currently driving this call from a side process — fails on the
+    // next request with `agent_token_revoked`. The atomic UPDATE avoids a load-then-save
+    // race with concurrent token issuance: an in-flight `auth/token` exchange completes
+    // and mints a JWT at the OLD epoch, this UPDATE bumps to OLD+1, and the next
+    // submitIntent on that JWT fails. Idempotent: re-closing a closed task still bumps,
+    // which is fine — the closed-task `submitIntent` check already refuses anyway, but
+    // bumping also kills the JWT against any other still-open task the agent has.
+    if (transitioned) {
+      await this.agents.increment({ id: agentId }, "tokenEpoch", 1);
+    }
 
     await this.writeAudit({
       actorUserId: ownerUserId,

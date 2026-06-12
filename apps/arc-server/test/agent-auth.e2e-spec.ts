@@ -227,4 +227,68 @@ describe("Engine-C agent self-authentication (ADR-005)", () => {
       expect(r.status).not.toBe(403);
     });
   });
+
+  /**
+   * HIGH-C regression (audit: human→agent→action trust chain). ADR-005 §3.5 calls
+   * `closeTask` the agent's revocation primitive, but agent JWTs lived for their full
+   * 10-minute TTL regardless of what happened to the task. An owner clicking "close"
+   * expected the agent to stop immediately; in practice it could keep submitting
+   * intents under the still-valid token (against another open task — or, post-fix,
+   * against a re-opened task with the OLD JWT). Binding every JWT to the agent's
+   * `tokenEpoch` makes "close task" cascade into "every outstanding JWT for this
+   * agent fails with `agent_token_revoked` until the agent re-authenticates".
+   */
+  it("HIGH-C — closing a task bumps tokenEpoch and revokes outstanding agent JWTs", async () => {
+    const E = enroll(PW, { profile });
+    const a = await login("highc-revoke@example.com");
+    await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
+    const { agentId, signing } = await registerAgent(a.token, "revoke-bot");
+
+    await grants.upsertPolicy({ name: "hc-d", scopes: [scope("secret/data/app", ["read"])] });
+    await grants.attach(userSubject(a.userId), "hc-d");
+    await grants.upsertPolicy({ name: "hc-a", scopes: [scope("secret/data/app", ["read"])] });
+    await grants.attach(agentSubject(agentId), "hc-a");
+
+    // Open a task + mint an agent token bound to the pre-close epoch.
+    const dclaims: DelegationClaims = {
+      v: 1, delegator: userSubject(a.userId), agent: agentSubject(agentId),
+      scopes: [{ pathPrefix: "secret/data/app", capabilities: ["read"] }], taskId: randomUUID(),
+      notBefore: new Date(Date.now() - 1000).toISOString(), notAfter: new Date(Date.now() + 3_600_000).toISOString(),
+      maxCalls: null, elevated: false, nonce: toB64u(randomBytes(16)),
+    };
+    const del = await request(server).post(`/vault/agents/${agentId}/delegations`).set(auth(a.token))
+      .send({ claims: dclaims, signature: signDelegation(E.session.signingPriv, dclaims) }).expect(201);
+    const task = await request(server).post(`/vault/agents/${agentId}/tasks`).set(auth(a.token)).send({ delegationId: del.body.id }).expect(201);
+    const agentJwt = await agentToken(agentId, signing.priv);
+
+    // Sanity: the JWT works for submitIntent BEFORE closure (status != 403 — the
+    // handler may reject malformed claims with 400, but the guard lets it through).
+    const before = await request(server)
+      .post(`/vault/agents/${agentId}/intents`)
+      .set(auth(agentJwt))
+      .send({ claims: { v: 99 }, signature: { alg: "Ed25519", sig: "AA" } });
+    expect(before.status).not.toBe(401);
+    expect(before.status).not.toBe(403);
+
+    // Owner closes the task → agent.tokenEpoch += 1.
+    await request(server).post(`/vault/agents/${agentId}/tasks/${task.body.taskId}/close`)
+      .set(auth(a.token)).expect(201);
+
+    // Same JWT now fails at the auth layer with the documented error.
+    const after = await request(server)
+      .post(`/vault/agents/${agentId}/intents`)
+      .set(auth(agentJwt))
+      .send({ claims: { v: 99 }, signature: { alg: "Ed25519", sig: "AA" } });
+    expect(after.status).toBe(401);
+    expect(after.body.error).toBe("agent_token_revoked");
+
+    // Re-authenticating mints a fresh JWT at the new epoch — that one works again.
+    const newJwt = await agentToken(agentId, signing.priv);
+    const afterReauth = await request(server)
+      .post(`/vault/agents/${agentId}/intents`)
+      .set(auth(newJwt))
+      .send({ claims: { v: 99 }, signature: { alg: "Ed25519", sig: "AA" } });
+    expect(afterReauth.status).not.toBe(401);
+    expect(afterReauth.status).not.toBe(403);
+  });
 });
