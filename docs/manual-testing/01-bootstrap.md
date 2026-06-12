@@ -9,22 +9,28 @@ End state of this section: `arc-server` running on `:3001`, the web UI on `:3000
 git clone https://github.com/ethchor/arc.git
 cd arc
 pnpm install
-pnpm -r build         # turbo handles the dep graph; ~30s clean, ~5s incremental
+pnpm build            # turbo handles the dep graph; ~90s clean, ~10s incremental
 ```
 
-If `pnpm -r build` fails, run `pnpm -r typecheck` to isolate the failing package.
+If `pnpm build` fails, run `pnpm typecheck` to isolate the failing package.
 
 ## 2. Start arc-server
 
 Terminal A:
 
 ```bash
-pnpm --filter @arc/server start
+ARC_ENABLE_DEV_LOGIN=true pnpm --filter @arc/server start
 ```
 
-Defaults: sql.js in-memory DB (data lives only as long as the process), `ARC_DEFAULT_POLICY=allow`,
-JWT secret freshly random per boot, Engine-A disabled (no `BAO_ADDR`). Logs come out in
+Defaults (when `NODE_ENV` is not `production`): sql.js in-memory DB (data lives only as
+long as the process), `ARC_DEFAULT_POLICY=allow`, JWT secret freshly random per boot,
+plugin manifests optional, Engine-A disabled (no `BAO_ADDR`). Logs come out in
 pretty-printed pino format.
+
+`ARC_ENABLE_DEV_LOGIN=true` is the MED-C opt-in that lets `/auth/dev-login` work in dev;
+without it the endpoint 403s even in non-production so deploys that forgot `NODE_ENV`
+can't accidentally ship a "log in as anyone" RPC. Every manual-test scenario below uses
+dev-login, so this is the one env var you reliably need.
 
 Verify it's up:
 

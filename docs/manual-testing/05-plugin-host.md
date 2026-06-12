@@ -1,5 +1,9 @@
 # 05 — Plugin host (AWS / GCP / GitHub)
 
+> **Set `ARC_ENABLE_DEV_LOGIN=true` once in your shell** before booting the server (MED-C).
+> Production-style flows below also set `ARC_PLUGIN_MANIFEST=required` and
+> `ARC_PLUGIN_TRUST_ANCHORS` to match the prod defaults the MED-D remediation set.
+
 `PluginsService` in arc-server hosts secrets plugins. Each plugin claims a mount path and
 answers `GET /v1/<mount>/creds/<role>` like a native engine. There are **three ways to
 mount one**, and this guide uses all of them:

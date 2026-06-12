@@ -22,6 +22,14 @@ crypto agility is handled by the envelope (doc 04), not by changing this hierarc
 > selected at enrollment and recorded in `argonParams`. The param-versioning machinery
 > (doc 05 §5.3) lets us raise weak profiles later via re-wrap. Never silently downgrade an
 > existing account's params.
+>
+> **Server-side floor (audit LOW-B).** The server refuses any `argonParams` below a
+> configured floor on both enrollment and recovery. Production default is the `mobile`
+> profile (`m ≥ 64 MiB`, `t ≥ 2`); non-production drops to `m ≥ 128 KiB`, `t ≥ 1` so the
+> `test` profile (`m = 256 KiB, t = 1`) still works for jest/vitest. Override per
+> environment with `ARC_ARGON_MIN_M` / `ARC_ARGON_MIN_T`. A misconfigured release that
+> tried to push the `test` profile into production now fails closed with `400
+> argon_below_floor` instead of silently degrading the WK-wrap KDF cost forever.
 
 ## 3.2 Canonical key hierarchy
 

@@ -46,7 +46,35 @@ reserved for the explicit OpenBao proxies (`/v1/sys/seal-status`, `/v1/sys/healt
 
 ## "401 (no session)" on `/v1/*`
 
-JWT missing / expired. Re-run `/auth/dev-login`. In dev the token has a 24h lifetime.
+JWT missing / expired. Re-run `/auth/dev-login` — and make sure
+`ARC_ENABLE_DEV_LOGIN=true` is exported in the server's environment, otherwise the
+endpoint itself returns `403 dev_login_disabled` (MED-C). In dev the token has a 24h
+lifetime.
+
+## "403 dev_login_disabled" on `/auth/dev-login`
+
+The MED-C audit remediation made the endpoint opt-in even in dev. Restart `arc-server`
+with `ARC_ENABLE_DEV_LOGIN=true` set. The endpoint is always force-disabled when
+`NODE_ENV=production`, regardless of the env var — use a real OAuth IdP there.
+
+## "401 agent_token_revoked" on `POST /vault/agents/:id/intents`
+
+The agent's JWT was minted before a `closeTask()` bumped the agent's `tokenEpoch`
+(HIGH-C). Re-run the challenge-response on `POST /vault/agents/:id/auth/token` to mint
+a fresh JWT at the new epoch.
+
+## "409 intent_chain_mismatch" on `POST /vault/agents/:id/intents`
+
+The agent signed `claims.prevChainHead` against a stale view of the chain (MED-E). The
+response body carries `expected` (server's current head) and `observed` (the value the
+agent signed). Fix the agent's local chain tracker and re-sign.
+
+## "400 argon_below_floor" on `/vault/enroll` or `/vault/keyset/recover`
+
+The client uploaded `argonParams` weaker than the server's floor (LOW-B). Production
+default floor is the mobile profile (`m ≥ 64 MiB, t ≥ 2`); non-prod drops to `m ≥ 128
+KiB, t ≥ 1` so the test profile works. Either upgrade the client's argon profile, or
+override via `ARC_ARGON_MIN_M` / `ARC_ARGON_MIN_T` on the server side.
 
 ## "403 access denied: read on sys/mounts" under `ARC_DEFAULT_POLICY=deny`
 
@@ -54,7 +82,8 @@ The user has no policies attached. Either:
 
 - Use `ARC_ROOT_USERS` to bootstrap a sudo subject (see
   [`06-grants-acl.md`](06-grants-acl.md) §B), then attach policies via the admin API.
-- Or set `ARC_DEFAULT_POLICY=allow` for dev.
+- Or set `ARC_DEFAULT_POLICY=allow` for dev. (Reminder: the prod default is `deny`
+  under `NODE_ENV=production` — CRIT-B.)
 
 ## Passkey register returns "authenticator did not return a PRF output"
 

@@ -1,5 +1,8 @@
 # 04 — Engine-A (OpenBao-backed infra secrets)
 
+> **Set `ARC_ENABLE_DEV_LOGIN=true` once in your shell** before booting the server —
+> the MED-C opt-in is required for the dev-login curl below.
+
 Engine-A is the OpenBao surface mounted under `/v1/*`. The wire shape is Vault-compatible
 so existing Vault CLIs / SDKs hit arc-server unchanged.
 
@@ -16,9 +19,10 @@ export TOKEN=$(curl -s -X POST http://localhost:3001/auth/dev-login \
   -d '{"email":"engine-a@example.com"}' | jq -r .accessToken)
 ```
 
-(With `ARC_DEFAULT_POLICY=deny` this user would get 403 on every `/v1/*` request — see
-[`06-grants-acl.md`](06-grants-acl.md) for the bootstrap. The default `allow` mode is fine
-for first-pass manual testing.)
+(With `ARC_DEFAULT_POLICY=deny` — the env-aware default in `NODE_ENV=production` — this
+user would get 403 on every `/v1/*` request. See [`06-grants-acl.md`](06-grants-acl.md)
+for the fail-closed bootstrap. The dev default `allow` mode is fine for first-pass
+manual testing.)
 
 ## A. List mounts
 

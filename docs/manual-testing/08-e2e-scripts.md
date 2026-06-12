@@ -1,5 +1,8 @@
 # 08 — Cross-engine end-to-end flows
 
+> **Set `ARC_ENABLE_DEV_LOGIN=true` once in your shell** before starting `arc-server`
+> — the MED-C opt-in gates every dev-login curl in the scripts below.
+
 The whole point of arc is **one platform** for infra-secrets *and* the consumer vault.
 These scripts walk through scenarios that touch both engines — the kind of thing a real
 team would do on day one.

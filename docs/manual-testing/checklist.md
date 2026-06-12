@@ -101,5 +101,25 @@ See [`08-e2e-scripts.md`](08-e2e-scripts.md).
 - [ ] Pino logs every request once with the correlation id (`x-request-id`)
 - [ ] No ciphertext or plaintext appears in audit metadata (e2e asserts this)
 - [ ] Pretty-print in dev / JSON in prod
-- [ ] Migrations: `pnpm --filter @arc/server migration:show` lists all three (init,
-      grants, passkey)
+- [ ] Migrations: `pnpm --filter @arc/server migration:show` lists every migration up
+      to and including `1718600000000-agent-token-epoch`
+
+## Audit remediation regression (24/24 findings)
+
+The June 2026 audit + remediation arc landed 24 changes; the full list lives in
+`docs/STATUS.md`'s "Security audit remediation" section. Per-release sanity:
+
+- [ ] `/auth/dev-login` 403s without `ARC_ENABLE_DEV_LOGIN=true` (MED-C)
+- [ ] `ARC_DEFAULT_POLICY` defaults to `deny` under `NODE_ENV=production` (CRIT-B)
+- [ ] `ARC_PLUGIN_MANIFEST` defaults to `required` under `NODE_ENV=production` (MED-D)
+- [ ] `/vault/enroll` 400s on argonParams below the floor (LOW-B)
+- [ ] `/v1/*` rejects `..` and double-encoded traversal with `invalid_engine_path` (HIGH-A)
+- [ ] Agent JWT can ONLY reach `submitIntent` (CRIT-1)
+- [ ] Closing a task bumps `tokenEpoch` and outstanding agent JWTs 401 with `agent_token_revoked` (HIGH-C)
+- [ ] Re-submitting the same signed intent 409s `intent_replay` (HIGH-D)
+- [ ] An intent with stale `prevChainHead` 409s `intent_chain_mismatch` (MED-E)
+- [ ] Approval challenge is `SHA-256("arc-approval/v1\n" || intentDigest)` (MED-F)
+- [ ] Device verification code binds both halves of the hybrid pair (LOW-D)
+- [ ] `sys/plugins/` admin endpoints refuse `create+delete`-only policies (LOW-E)
+- [ ] Helm chart refuses to render without `arcServer.secret.jwtSecret` set (MED-B)
+- [ ] OpenBao pinned to `2.3.1` everywhere (CI, compose, helm chart) (MED-I)

@@ -1,5 +1,8 @@
 # 07 — CLI
 
+> **Set `ARC_ENABLE_DEV_LOGIN=true` on the running `arc-server`** — the CLI's
+> `arc-vault login --email <e>` hits `/auth/dev-login`, which needs the MED-C opt-in.
+
 The `arc-vault` CLI is the command-line surface over the same SDK the web UI uses.
 Handy for scripted setup, headless tests, and "I just want to grep a value" workflows.
 
