@@ -125,8 +125,9 @@ Components: `arc-secrets-engine`, `arc-leasing`, `arc-openbao-adapter`, `arc-ope
 Local dev: run OpenBao in dev mode (Docker) and point the adapter at it.
 
 ```
+# Pinned to the same tag CI, the Helm chart, and docker-compose.yml use (MED-I).
 docker run --rm -p 8200:8200 -e BAO_DEV_ROOT_TOKEN_ID=root \
-  quay.io/openbao/openbao:latest server -dev
+  quay.io/openbao/openbao:2.3.1 server -dev
 export BAO_ADDR="http://127.0.0.1:8200"
 export BAO_TOKEN="root"
 ```

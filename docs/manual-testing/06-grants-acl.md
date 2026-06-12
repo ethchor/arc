@@ -5,17 +5,22 @@ the JWT guard, maps HTTP method → capability, asks the engine, and 403s on den
 guide walks through bootstrapping a fail-closed deployment and managing policies via the
 admin HTTP API.
 
+> **Set `ARC_ENABLE_DEV_LOGIN=true` once in your shell before walking through this
+> scenario** — every `curl /auth/dev-login` in the recipes below depends on it.
+
 ## A. Default mode
 
-Two env-controlled defaults:
+The default is **env-aware** (CRIT-B from the supply-chain audit). When
+`ARC_DEFAULT_POLICY` is unset:
 
-| Mode | Behavior when subject has zero policies |
+| `NODE_ENV` | Behavior when subject has zero policies |
 |---|---|
-| `ARC_DEFAULT_POLICY=allow` (default) | Allow — dev/test posture |
-| `ARC_DEFAULT_POLICY=deny` | Deny — production posture |
+| any non-production value (or unset) | **Allow** — dev/test posture |
+| `production` | **Deny** — fail-closed |
 
-In both modes, *any* attached policy switches that subject to strict enforcement: the
-default never overrides explicit policies.
+`ARC_DEFAULT_POLICY=allow` / `ARC_DEFAULT_POLICY=deny` (case-insensitive) always wins
+over the env-aware default. In both modes, *any* attached policy switches that subject
+to strict enforcement: the default never overrides explicit policies.
 
 ## B. Fail-closed bootstrap (the production-realistic flow)
 
@@ -27,6 +32,7 @@ list of user ids that get a sudo policy on first boot.
 # Stop arc-server, then:
 export ARC_DEFAULT_POLICY=deny
 export ARC_ROOT_USERS=1            # the first user id created via /auth/dev-login
+export ARC_ENABLE_DEV_LOGIN=true   # MED-C: required to use /auth/dev-login at all
 pnpm --filter @arc/server start
 ```
 

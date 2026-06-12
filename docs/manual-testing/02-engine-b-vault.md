@@ -1,5 +1,9 @@
 # 02 — Engine-B (E2E vault) — full flow
 
+> **Set `ARC_ENABLE_DEV_LOGIN=true` once in your shell** — every dev-login step below
+> depends on the MED-C opt-in (`export ARC_ENABLE_DEV_LOGIN=true && pnpm --filter
+> @arc/server start`).
+
 The consumer-vault path: enroll → unlock → items → folders → sharing → rotation →
 device approval → recovery → audit log. Server is blind throughout — verify with the
 "server-side check" boxes.

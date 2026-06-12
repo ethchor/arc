@@ -76,15 +76,69 @@ signatures — never plaintext. DTOs are validated by a global
 | POST | `/vaults/:id/delegations` | admin | time-boxed grant `{ granteeUserId, role, expiresAt, wrappedVaultKey }` (doc 14 §14.4) |
 | GET | `/vaults/:id/audit?since=<seq>` | admin | metadata-only audit feed (doc 11) |
 
+### 9.6.1 Engine-C agent surface (ADR-005)
+
+Engine-C exposes a parallel `/vault/agents/*` surface for AI agents. The JWT issued by
+`/vault/agents/:id/auth/token` carries `agentId` and the RFC 8693 `act` claim and is
+gated by `@AgentTokenAllowed()` — it can ONLY reach `submitIntent`, never the human API
+(audit CRIT-1).
+
+| Method | Path | Auth | Body / notes |
+| ------ | ---- | ---- | ------------ |
+| POST | `/vault/agents` | owner | register an agent (`displayName`, public keys, optional attestation) |
+| GET | `/vault/agents` | owner | list agents the caller owns |
+| PATCH | `/vault/agents/:id` | owner | toggle autonomy / suspend / retire |
+| POST | `/vault/agents/:id/delegations` | owner | record a signed delegation (decision = intersection of delegated ∩ delegator-policy ∩ agent-policy) |
+| POST | `/vault/agents/:id/auth/challenge` | open | mint a nonce the agent signs with its Ed25519 key |
+| POST | `/vault/agents/:id/auth/token` | open | exchange the signed challenge for a 10-minute JWT carrying `agentTokenEpoch` (HIGH-C) |
+| POST | `/vault/agents/:id/tasks` | owner | open a task (`delegationId`, optional budget) |
+| POST | `/vault/agents/:id/intents` | **agent token only** | submit a signed `SignedIntent` — see §9.6.2 |
+| GET  | `/vault/agents/:id/tasks/:taskId?verify=true` | owner | recompute the per-task chain head |
+| POST | `/vault/agents/:id/tasks/:taskId/close` | owner | cascades revoke (delegations + leases) **and bumps the agent's `tokenEpoch`, invalidating every outstanding agent JWT** (HIGH-C) |
+| GET  | `/vault/approvals` | owner | list pending CIBA approvals |
+| POST | `/vault/approvals/:id/challenge` | owner | begin the WebAuthn ceremony — the challenge is `base64url(SHA-256("arc-approval/v1\n" \|\| intentDigest))` so the assertion can't be redirected to a different intent (MED-F) |
+| POST | `/vault/approvals/:id/approve` | owner | grant the approval by submitting a WebAuthn assertion |
+| POST | `/vault/approvals/:id/deny` | owner | deny outright |
+
+### 9.6.2 `IntentClaims` wire shape (`/vault/agents/:id/intents`)
+
+The agent signs a flat JSON `IntentClaims` object whose fields the server canonicalises
+via RFC 8785 JCS before hashing / verifying. Every field is required.
+
+| Field | Type | Notes |
+| ----- | ---- | ----- |
+| `v` | `1` | wire version |
+| `agent` | string | `agent:<id>` subject |
+| `delegation` | string \| null | delegation id this intent is exercised under; `null` for autonomous mode |
+| `taskId` | string | the task being acted on |
+| `op` | string | logical operation, e.g. `kv.put`, `transit.encrypt` |
+| `path` | string | engine path |
+| `argsDigest` | string | `sha256(JCS(args))` hex — binds the request body |
+| `ts` | string | ISO-8601 timestamp |
+| `nonce` | string | b64url, ≥16 bytes |
+| `prevChainHead` | string | hex sha-256, `ZERO_CHAIN` for the first intent on a task (audit MED-E — binds the signature to a specific chain position so the server can't accept the intent at a different position) |
+
+The server's rejection order is: signature → `argsDigest` recheck → capability map →
+task open / expired / budget → **intent_replay** (same digest already on the task) →
+**intent_chain_mismatch** (`claims.prevChainHead !== task.chainHead`) → authorize →
+elevated/approval-required.
+
 ## 9.7 Error & status model
 
 | Status | When | Body |
 | ------ | ---- | ---- |
 | `400` | DTO validation failure (whitelist/transform) | `{ error, details }` |
+| `400` | malformed Engine-A path (`..` segments, double-encoded traversal) | `{ error:"invalid_engine_path" }` (audit HIGH-A) |
+| `400` | argonParams below the configured floor on enroll/recover | `{ error:"argon_below_floor", floor, observed }` (audit LOW-B) |
 | `401` | missing/invalid JWT | — |
+| `401` | agent token presents an `agentTokenEpoch` that no longer matches the agent's row | `{ error:"agent_token_revoked", reason:"epoch_mismatch" \| "agent_inactive" }` (audit HIGH-C) |
 | `403` | role check failed on the target vault | `{ error:"forbidden", requiredRole }` |
+| `403` | agent token off the intent path | `{ error:"agent_token_off_intent_path" }` (audit CRIT-1) |
+| `403` | `/auth/dev-login` invoked without `ARC_ENABLE_DEV_LOGIN=true` | `{ error:"dev_login_disabled" }` (audit MED-C) |
 | `404` | resource not found / not visible to caller | — (404 not 403 for resources the caller can't see, to avoid leaking existence) |
 | `409` | optimistic-concurrency conflict on item write | `{ error:"conflict", current:{ ciphertext, nonce, wrappedItemKey, version, seq } }` (doc 10 §10.3) |
+| `409` | the same signed intent submitted twice | `{ error:"intent_replay" }` (audit HIGH-D) |
+| `409` | agent's `claims.prevChainHead` doesn't match the task's current head | `{ error:"intent_chain_mismatch", expected, observed }` (audit MED-E) |
 | `423` | vault/account locked out (too many unlock failures) | `{ error:"locked", retryAfter }` |
 | `429` | rate-limited (unlock, directory lookups) | `{ retryAfter }` |
 | `410` | client envelope version below minimum supported (doc 04 §4.8) | `{ error:"upgrade_required", minVersion }` |

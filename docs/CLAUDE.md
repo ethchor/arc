@@ -126,8 +126,10 @@ interface; `integrations/arc-openbao-adapter` implements it against a colocated 
 ### Local dev — run OpenBao in dev mode
 
 ```
+# Pinned tag — matches the CI matrix, the Helm chart, and docker-compose.yml (MED-I).
+# Never use `openbao:latest` — a mutable tag can swap the engine binary under us.
 docker run --rm -p 8200:8200 -e BAO_DEV_ROOT_TOKEN_ID=root \
-  quay.io/openbao/openbao:latest server -dev
+  quay.io/openbao/openbao:2.3.1 server -dev
 export BAO_ADDR="http://127.0.0.1:8200"
 export BAO_TOKEN="root"
 # arc-openbao-adapter points here in dev

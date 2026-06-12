@@ -68,22 +68,33 @@ it — the real gate is WK successfully unwrapping the private keys.
    standalone unlock and to access the identity key.)
 ```
 
-### 6.3.1 SAS (Short Authentication String) — not raw `SHA256(pubkey)`
+### 6.3.1 SAS (Short Authentication String) — binds both halves of the hybrid pair
 
 Earlier drafts derived the verification code from `SHA256(pubkey)` of the new device only.
-That authenticates the *new* device's key to a viewer but does not bind the *pair*, so it is
-weaker against a server that swaps keys in a multi-step exchange. arc-vault binds **both**
-sides:
+That authenticates the *new* device's key to a viewer but does not bind the *pair* — and
+once devices became hybrid (X25519 + ML-KEM-768 per ADR-003), it also missed the second
+half entirely. arc-vault now binds **both halves** of the hybrid pair (audit LOW-D):
 
 ```
-sas = base10_6( HKDF-SHA256( sort(newDevicePub, approverContextPub),
-                             info="arc/sas/v1", L=4 )[:20 bits] )   // 6 decimal digits
+# packages/arc-crypto/src/keys.ts::deviceSas
+sas_bytes = SHA-256( "arc/sas/v1\n" || x25519Pub || mlkemPub )
+sas       = base32(sas_bytes)[:12] grouped as "AAAA-BBBB-CCCC"
 ```
 
-The SAS is a function of both the new device's public key and a value the approving device
-contributes, so a man-in-the-middle that substitutes either key changes the SAS the human
-compares. Six digits (~20 bits) is the standard usability/security tradeoff for a
-human-compared code on a rate-limited, one-shot approval.
+Legacy X25519-only devices (pre-ADR-003 rows where `publicKeyMlkem == NULL`) fall through
+to the older `fingerprint(x25519Pub, 3)` shape so existing display chrome doesn't need a
+version flag. New hybrid devices use the both-halves SAS. The domain-separation prefix
+`arc/sas/v1\n` prevents bytes from colliding with any raw `fingerprint()` call.
+
+The SAS is a function of both public keys, so a man-in-the-middle that substitutes
+either half — including just the ML-KEM half on the wire — changes the SAS the human
+compares. Twelve base32 characters in three groups of four (~60 bits of entropy) keeps
+the displayed code legible while staying well above the rate-limit / one-shot ceiling
+that constrains human-compared codes.
+
+> The earlier spec sketched `HKDF + 6-decimal-digit` output. Reality landed as the
+> SHA-256/base32 shape above; if/when we revisit the SAS encoding (e.g. for a desktop
+> dialog that benefits from numeric-only entry), it will land as its own ADR.
 
 ## 6.4 Recovery entry point
 

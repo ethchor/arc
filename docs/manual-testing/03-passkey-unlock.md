@@ -1,5 +1,8 @@
 # 03 — Passkey unlock
 
+> **Set `ARC_ENABLE_DEV_LOGIN=true` once in your shell** — every `devLogin()` call
+> below depends on the MED-C opt-in.
+
 The server flow + SDK are shipped end-to-end (real WebAuthn verification via
 `@simplewebauthn/server`, real ES256 signatures, anti-clone counter check). The web UI
 button is the next commit; until then, the SDK is the way to exercise the live path

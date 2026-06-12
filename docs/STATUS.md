@@ -160,6 +160,40 @@ Anything that ships *between* the phases gets folded into the closest one.
   the encrypted payload, never as a server-visible column. Bitwarden-shape default
   matches what the existing `NoteDialog` already produces.
 
+### Security audit remediation (24/24 findings closed)
+
+The June 2026 multi-track security audit (cryptosystem + ZK boundary; human→agent→action
+trust chain; untrusted-code + supply chain) produced 24 ranked findings. All have landed
+on develop except HIGH-C which was deferred at audit time and shipped in its own PR. The
+complete arc:
+
+| Tier | Finding | Where it lives |
+| ---- | ------- | -------------- |
+| CRIT-A | Process plugin env-leak | `packages/arc-plugin-sdk/src/remote.ts` — `envPassthrough` allowlist, no default `process.env` inheritance |
+| CRIT-B | `@arc/grants` default mode silently allow-in-prod | `grants/grants.module.ts::buildDefaultMode` — env-aware deny-in-prod |
+| CRIT-C | Agent JWT off the intent path | `auth/jwt-auth.guard.ts` + `@AgentTokenAllowed()` decorator |
+| HIGH-A | `/v1/*` path-traversal pre-canonicalisation | `engines/path-canon.ts::canonicalizeEnginePath` + `OpenBaoClient::assertSafePath` |
+| HIGH-B | Helm chart shipped dev-mode OpenBao defaults | `infra/arc-helm-charts/arc/values.yaml` + the `{{ fail }}` guard |
+| HIGH-C | Agent JWT non-revocable on task close | `vault_agents.tokenEpoch` + `JwtStrategy.validate()` epoch check + `closeTask()` increment |
+| HIGH-D | Same signed intent could be replayed | `vault_agent_intents.intentDigest` UNIQUE INDEX + `submitIntent` pre-check |
+| HIGH-E | `sealOpen` / `pqSealOpen` didn't enforce expected AAD | `packages/arc-crypto/src/seal.ts` + `pq-hybrid.ts` `expectedAad` arg |
+| HIGH-F | `vault-crypto-rs` declared `zeroize` but didn't use it | Every secret-returning signature now returns `Zeroizing<…>` |
+| MED-A | `release.yml` shell injection via `github.ref_name` | All adversary-controlled inputs forwarded via `env:` blocks |
+| MED-B | Helm `jwtSecret: ""` default | `required` guard in the chart template |
+| MED-C | `/auth/dev-login` only gated by exact-string `NODE_ENV` | `ARC_ENABLE_DEV_LOGIN=true` opt-in PLUS non-production NODE_ENV |
+| MED-D | Plugin manifest mode default `"optional"` | env-aware `resolveManifestRequired()` — `required` in prod |
+| MED-E | Intent chain head not agent-signed | `IntentClaims.prevChainHead` + `intent_chain_mismatch` server check |
+| MED-F | CIBA challenge server-random, not bound to intent | `approvalChallengeForIntent(intentDigest)` derives challenge from digest |
+| MED-G | `privAad` docs-vs-code drift | docs/03 §3.4 corrected; `privAad` exported with literal-string regression test |
+| MED-H | No Rust→TS pqSeal parity vector | `crates/vault-crypto-rs/examples/gen_pq_vector.rs` + spawned-from-TS regression |
+| MED-I | CI didn't block on critical CVEs; `openbao:latest` | `pnpm audit --audit-level=critical` blocking + OpenBao pinned to 2.3.1 |
+| LOW-A | JCS Unicode parity uncovered | `vectors/kat.json` JCS cases expanded from 3 to 11 (Latin-1, CJK, supra-BMP surrogate pairs) |
+| LOW-B | No server-side Argon2id floor | `apps/arc-server/src/vault/argon-floor.ts` — env-aware floor on enroll + recover |
+| LOW-C | `approveDevice` didn't `requireRole` per grant vault | Viewer-role check on every grant before save |
+| LOW-D | Device SAS over X25519 only | `deviceSas(x25519, mlkem?)` binds both halves; legacy fallback preserved |
+| LOW-E | ADR-009 sudo claim convention only | `@RequireCapability("sudo")` decorator + `Reflector`-driven guard override |
+| LOW-F | Pad-bucket >256 KiB undocumented | docs/02 §2.5 + `envelope.ts` doc comment + regression test |
+
 ----
 
 ## In progress (this branch)
@@ -769,8 +803,10 @@ already shipped (Engine-A creds, Engine-B vault, `@arc/grants` policy); reuses
   `CapabilityGuard` is a per-controller guard (`@UseGuards(JwtAuthGuard, CapabilityGuard)`
   on `EnginesController` + `PluginsController`) that maps HTTP method → capability
   (GET=read, GET?list=true=list, POST=create, PUT=update, DELETE=delete) and asks the
-  engine. `ARC_DEFAULT_POLICY=allow|deny` (default `allow`) controls the "subject has no
-  policies" fallback so dev/test stay frictionless and prod can flip to fail-closed.
+  engine. `ARC_DEFAULT_POLICY=allow|deny` controls the "subject has no policies" fallback
+  — historically the default was `allow` everywhere; audit CRIT-B made it **env-aware**,
+  so unset + `NODE_ENV=production` now defaults to `deny` (fail-closed) and unset in
+  dev/test still defaults to `allow` (frictionless).
   9 capability-guard unit-specs + 7 grants e2e tests boot the real app with
   `ARC_DEFAULT_POLICY=deny`, verify default-deny on `/v1/*` for a fresh user, attach a
   scoped policy and confirm only the covered path+capability passes, confirm `list`
