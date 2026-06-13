@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#3b0764" />
+    <title>arc — offline</title>
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; padding: 0; height: 100%; }
+      body {
+        background: linear-gradient(160deg, #0f0a1a 0%, #1a0f2e 100%);
+        color: #e8e3f4;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        display: grid; place-items: center;
+        min-height: 100dvh;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        text-align: center;
+      }
+      main { max-width: 32rem; padding: 2rem 1.5rem; }
+      img { width: 96px; height: 96px; margin-bottom: 1.5rem; }
+      h1 { font-size: 1.5rem; margin: 0 0 0.75rem; font-weight: 700; }
+      p { color: #b8aed1; line-height: 1.55; margin: 0 0 1.5rem; }
+      button {
+        appearance: none; border: 0; cursor: pointer;
+        background: #7c3aed; color: white;
+        font: inherit; font-weight: 600;
+        padding: 0.75rem 1.5rem; border-radius: 0.625rem;
+      }
+      button:hover { background: #6d28d9; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icon.svg" alt="arc" />
+      <h1>You're offline</h1>
+      <p>
+        arc needs a network connection to reach your vault. Your encrypted
+        data is safe — we just can't sync right now.
+      </p>
+      <button onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>
