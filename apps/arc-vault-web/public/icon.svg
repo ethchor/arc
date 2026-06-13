@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  arc PWA app icon — the single source of truth. The build script
+  `scripts/generate-icons.mjs` rasterises this SVG into the 192/512/maskable/
+  apple-touch PNG variants the manifest references.
+
+  The mark: rounded square in the primary brand violet, a stylised padlock
+  shackle with the "a" wordmark living in the lock body. Drawn on a 512x512
+  canvas so every output size halves cleanly.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5b21b6"/>
+      <stop offset="100%" stop-color="#3b0764"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" ry="96" fill="url(#bg)"/>
+  <!-- Padlock shackle: open U-shape on top, white. -->
+  <path
+    d="M 168 232
+       L 168 176
+       a 88 88 0 0 1 176 0
+       L 344 232"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="36"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- Lock body — rounded rect — beneath the shackle. -->
+  <rect x="120" y="232" width="272" height="200" rx="36" ry="36" fill="#ffffff"/>
+  <!-- Wordmark 'a' centred in the lock body — kept compact so it survives
+       being scaled down to 48 / 32 px favicons. -->
+  <text
+    x="256" y="356"
+    text-anchor="middle"
+    font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+    font-size="156"
+    font-weight="700"
+    fill="#3b0764"
+  >a</text>
+</svg>
