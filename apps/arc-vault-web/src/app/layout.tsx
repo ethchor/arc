@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { cn } from "@/lib/utils";
 
-// PWA metadata. `manifest` links the install spec (`public/manifest.json`).
-// Apple-specific tags survive iOS Safari's "Add to Home Screen": they pin
-// the status-bar style and force standalone launch.
 export const metadata: Metadata = {
   title: "arc — secrets vault",
   description: "Zero-knowledge end-to-end-encrypted vault. Passwords, passkeys, TOTP, notes, sharing — all client-encrypted; the server stores ciphertext only.",
@@ -29,10 +29,6 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false, email: false, address: false },
 };
 
-// `viewport-fit=cover` lets the layout extend under the iOS notch / Android
-// gesture bar so the page can paint a true full-bleed PWA experience.
-// Theme colour matched per-scheme so the iOS status bar tint stays sensible
-// in either appearance.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -43,9 +39,6 @@ export const viewport: Viewport = {
   ],
 };
 
-// Service-worker bootstrap. Lives inline (the CSP already allows
-// 'unsafe-inline' for scripts) so the worker registers without an extra
-// network round-trip. `load` defer keeps it off the critical path.
 const SW_REGISTER = `
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
@@ -56,7 +49,11 @@ if ('serviceWorker' in navigator) {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={cn(GeistSans.variable, GeistMono.variable)}
+    >
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}

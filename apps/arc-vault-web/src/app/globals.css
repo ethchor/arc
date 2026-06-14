@@ -2,53 +2,104 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens
+ *
+ * We keep the existing shadcn HSL ramp so the swappable theme presets keep working,
+ * and layer motion + spacing + typography tokens on top. Every easing and duration
+ * here is curated per Emil Kowalski's framework: ease-out for entering/exiting UI,
+ * ease-in-out for on-screen movement, durations short enough that interaction never
+ * feels delayed.
+ */
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    /* shadcn base — refined off-white instead of pure #fff so depth reads cleanly */
+    --background: 270 25% 99%;
+    --foreground: 263 35% 8%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 263 35% 8%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 10% 3.9%;
-    --radius: 0.5rem;
+    --popover-foreground: 263 35% 8%;
+    /* default accent = brand violet (the manifest + icon already commit to it). The
+       LILA override applies: arc *is* violet, so we embrace it rather than fight it. */
+    --primary: 263 84% 22%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 263 30% 96%;
+    --secondary-foreground: 263 35% 16%;
+    --muted: 263 20% 96%;
+    --muted-foreground: 263 12% 42%;
+    --accent: 263 30% 96%;
+    --accent-foreground: 263 35% 16%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 263 25% 92%;
+    --input: 263 25% 92%;
+    --ring: 263 84% 50%;
+    --radius: 0.625rem;
+
+    /* Motion tokens — easings from Emil Kowalski's animation framework.
+       Use these instead of CSS built-ins; the built-ins are too weak to feel intentional. */
+    --ease-out-quart: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-in-out-quart: cubic-bezier(0.77, 0, 0.175, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+    --dur-instant: 80ms;
+    --dur-fast: 160ms;
+    --dur-base: 220ms;
+    --dur-slow: 320ms;
+    --dur-drawer: 440ms;
+
+    /* Semantic z-index scale — no more arbitrary 9999s. */
+    --z-base: 1;
+    --z-dropdown: 30;
+    --z-sticky: 40;
+    --z-overlay: 50;
+    --z-modal: 60;
+    --z-toast: 70;
+    --z-tooltip: 80;
+    --z-grain: 90;
+
+    /* Tinted surface elevations — for cards that need real depth */
+    --shadow-xs: 0 1px 2px hsl(263 20% 12% / 0.04);
+    --shadow-sm: 0 2px 4px -1px hsl(263 20% 12% / 0.05), 0 1px 2px hsl(263 20% 12% / 0.04);
+    --shadow-md: 0 8px 24px -6px hsl(263 30% 14% / 0.10), 0 2px 6px hsl(263 25% 14% / 0.05);
+    --shadow-lg: 0 20px 48px -12px hsl(263 35% 14% / 0.18), 0 4px 12px hsl(263 30% 14% / 0.06);
+    --shadow-inset: inset 0 1px 0 hsl(0 0% 100% / 0.06);
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    /* Off-black, tinted toward violet so the dark surface feels of-a-piece with the brand */
+    --background: 263 28% 6%;
+    --foreground: 263 12% 96%;
+    --card: 263 22% 9%;
+    --card-foreground: 263 12% 96%;
+    --popover: 263 22% 9%;
+    --popover-foreground: 263 12% 96%;
+    --primary: 263 90% 70%;
+    --primary-foreground: 263 40% 12%;
+    --secondary: 263 18% 14%;
+    --secondary-foreground: 263 12% 96%;
+    --muted: 263 18% 14%;
+    --muted-foreground: 263 10% 64%;
+    --accent: 263 18% 14%;
+    --accent-foreground: 263 12% 96%;
+    --destructive: 0 62% 44%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 263 16% 18%;
+    --input: 263 16% 18%;
+    --ring: 263 90% 72%;
+
+    --shadow-xs: 0 1px 2px hsl(0 0% 0% / 0.50);
+    --shadow-sm: 0 2px 4px hsl(0 0% 0% / 0.40), 0 1px 2px hsl(0 0% 0% / 0.30);
+    --shadow-md: 0 8px 24px hsl(0 0% 0% / 0.50), 0 2px 6px hsl(0 0% 0% / 0.40);
+    --shadow-lg: 0 20px 48px hsl(0 0% 0% / 0.60), 0 4px 12px hsl(0 0% 0% / 0.40);
+    --shadow-inset: inset 0 1px 0 hsl(0 0% 100% / 0.06);
   }
 
-  /* --- theme presets: override the accent color family (docs: customizable theming) --- */
+  /* --- theme presets: alternate accent families. Default (above) is violet. --- */
 
   [data-theme="slate"] {
     --primary: 222.2 47.4% 11.2%;
@@ -111,14 +162,14 @@
   }
 
   [data-theme="violet"] {
-    --primary: 262.1 83.3% 57.8%;
+    --primary: 263.4 70% 50%;
     --primary-foreground: 210 20% 98%;
-    --ring: 262.1 83.3% 57.8%;
+    --ring: 263.4 70% 50%;
   }
   [data-theme="violet"].dark {
-    --primary: 263.4 70% 50.4%;
+    --primary: 263.4 70% 60%;
     --primary-foreground: 210 20% 98%;
-    --ring: 263.4 70% 50.4%;
+    --ring: 263.4 70% 60%;
   }
 
   [data-theme="amber"] {
@@ -137,7 +188,85 @@
   * {
     @apply border-border;
   }
+
+  /* Typography — Geist via next/font (CSS vars set in layout.tsx) with sensible defaults.
+     `font-feature-settings` enables stylistic alternates (`ss01` cleans up the 'a'); tabular
+     numbers ride on every monospaced element so secrets and codes align. */
+  html {
+    font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-feature-settings: "ss01", "cv11";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+  }
+  code,
+  pre,
+  kbd,
+  samp,
+  .font-mono {
+    font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Headlines should sit balanced, prose should look pretty. `text-wrap` is supported in
+     all the browsers our PWA targets. */
+  h1, h2, h3, h4 {
+    text-wrap: balance;
+    letter-spacing: -0.018em;
+  }
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer utilities {
+  /* Composable easing utilities — pair with `transition-transform`, `transition-colors`, etc. */
+  .ease-out-quart { transition-timing-function: var(--ease-out-quart); }
+  .ease-out-expo  { transition-timing-function: var(--ease-out-expo); }
+  .ease-out-back  { transition-timing-function: var(--ease-out-back); }
+  .ease-drawer    { transition-timing-function: var(--ease-drawer); }
+
+  /* Press feedback — apply to any tappable element. `transform-gpu` keeps it on the GPU
+     so the press never causes a layout/paint cycle. */
+  .pressable {
+    transition: transform var(--dur-fast) var(--ease-out-quart);
+  }
+  .pressable:active {
+    transform: scale(0.97);
+  }
+
+  /* Hairline border that respects the current theme's accent — for focused/active states */
+  .ring-brand {
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.35);
+  }
+
+  /* Mesh background — used sparingly as a subtle behind-hero glow. Brand violet with a
+     radial gradient sitting at low opacity. Never as a foreground or as the AI-purple slop. */
+  .bg-arc-mesh {
+    background:
+      radial-gradient(ellipse 80% 50% at 50% 0%, hsl(var(--primary) / 0.10), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 30%, hsl(var(--ring) / 0.06), transparent 60%),
+      hsl(var(--background));
+  }
+  .dark .bg-arc-mesh {
+    background:
+      radial-gradient(ellipse 80% 50% at 50% 0%, hsl(var(--primary) / 0.16), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 20% 80%, hsl(var(--ring) / 0.10), transparent 60%),
+      hsl(var(--background));
+  }
+}
+
+/* Respect prefers-reduced-motion — keep meaningful opacity/color changes, drop transforms. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

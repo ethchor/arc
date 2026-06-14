@@ -24,3 +24,9 @@ apps/arc-vault-desktop/src-tauri/gen/
 .terraform.lock.hcl
 crash.log
 crash.*.log
+
+# impeccable design-skill scripts — vendored on install via `npx impeccable skills install`.
+# The markdown guidance under .github/skills/impeccable/{SKILL.md,reference/} is committed;
+# the detector + live-browser scripts are not, because they're 2MB of machinery that any
+# contributor can regenerate with the install command.
+.github/skills/impeccable/scripts/
