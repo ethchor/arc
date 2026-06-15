@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
+import { motion, type HTMLMotionProps } from "motion/react";
 import { DUR, EASE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -22,11 +22,12 @@ interface RevealProps extends Omit<HTMLMotionProps<"div">, "initial" | "whileInV
 
 /**
  * Fade-in / fade-up wrapper that triggers when the element enters the viewport.
- * Honours `prefers-reduced-motion` automatically.
  *
- * Use this around any block that benefits from "appearing" rather than "being there":
- * a hero block, a card grid, a docs page header. Don't wrap every list item — that's
- * what `Stagger` is for, with one shared parent driving the timing.
+ * `initial` is deterministic (no `useReducedMotion()` in render) so the server HTML and
+ * the first client render are byte-identical — that hook reads the media query in its
+ * initializer and would otherwise diverge between server and client and trip a hydration
+ * mismatch. Reduced-motion is honoured app-wide via `<MotionConfig reducedMotion="user">`
+ * in the root layout, which framer applies post-mount without touching the SSR structure.
  */
 export function Reveal({
   offset = 12,
@@ -39,8 +40,6 @@ export function Reveal({
   children,
   ...rest
 }: RevealProps) {
-  const reduce = useReducedMotion();
-
   const initial =
     variant === "fade-up"
       ? { opacity: 0, y: offset }
@@ -56,7 +55,7 @@ export function Reveal({
 
   return (
     <motion.div
-      initial={reduce ? false : initial}
+      initial={initial}
       whileInView={visible}
       viewport={{ once, amount }}
       transition={{ duration, delay, ease: EASE.outQuart }}

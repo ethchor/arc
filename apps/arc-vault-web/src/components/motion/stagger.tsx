@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
+import { motion, type HTMLMotionProps } from "motion/react";
 import { DUR, EASE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -39,15 +39,12 @@ const StaggerImpl: React.FC<StaggerProps> = ({
   children,
   ...rest
 }) => {
-  const reduce = useReducedMotion();
-
+  // No `useReducedMotion()` in render — `<MotionConfig reducedMotion="user">` (root layout)
+  // handles it post-mount, keeping the SSR + first client render identical.
   const containerVariants = {
     hidden: {},
     visible: {
-      transition: {
-        staggerChildren: reduce ? 0 : stagger,
-        delayChildren: reduce ? 0 : delayChildren,
-      },
+      transition: { staggerChildren: stagger, delayChildren },
     },
   };
 

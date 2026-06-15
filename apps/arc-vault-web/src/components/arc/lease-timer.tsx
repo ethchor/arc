@@ -38,18 +38,21 @@ export function LeaseTimer({
   showBar?: boolean;
   className?: string;
 }) {
-  const initial = expiresAt ? Math.max(0, Math.round((expiresAt - Date.now()) / 1000)) : (seconds ?? 0);
-  const [left, setLeft] = React.useState(initial);
+  // Deterministic SSR seed (no Date.now() in the initializer → no hydration mismatch). For
+  // an `expiresAt` countdown the real remaining is computed in the effect, which runs on
+  // mount; until then we seed with `seconds` (or 0).
+  const [left, setLeft] = React.useState(seconds ?? 0);
 
   React.useEffect(() => {
-    const id = setInterval(() => {
+    const tick = () =>
       setLeft((n) => (expiresAt ? Math.max(0, Math.round((expiresAt - Date.now()) / 1000)) : Math.max(0, n - 1)));
-    }, 1000);
+    tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [expiresAt]);
 
   const state = left <= 0 ? "expired" : left <= warnAt ? "expiring" : "healthy";
-  const total = ttl || initial || 1;
+  const total = ttl || seconds || left || 1;
   const pct = Math.max(0, Math.min(100, (left / total) * 100));
 
   return (
