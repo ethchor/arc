@@ -14,29 +14,32 @@
 
 @layer base {
   :root {
-    /* shadcn base — refined off-white instead of pure #fff so depth reads cleanly */
-    --background: 270 25% 99%;
-    --foreground: 263 35% 8%;
-    --card: 0 0% 100%;
-    --card-foreground: 263 35% 8%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 263 35% 8%;
-    /* default accent = brand violet (the manifest + icon already commit to it). The
-       LILA override applies: arc *is* violet, so we embrace it rather than fight it. */
-    --primary: 263 84% 22%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 263 30% 96%;
-    --secondary-foreground: 263 35% 16%;
-    --muted: 263 20% 96%;
-    --muted-foreground: 263 12% 42%;
-    --accent: 263 30% 96%;
-    --accent-foreground: 263 35% 16%;
-    --destructive: 0 72% 51%;
+    /* arc design system — LIGHT ("warm paper"). DS hex values converted to the HSL
+       channel triplets the shadcn slots consume via hsl(var(--x)). Brand pole = arc
+       cyan; ember is carried by status/warning + the mesh, not the base surface. */
+    --background: 220 14% 97%;          /* surface-base  #F6F7F9 */
+    --foreground: 223 25% 10%;          /* content-primary #141821 */
+    --card: 0 0% 100%;                  /* surface-raised */
+    --card-foreground: 223 25% 10%;
+    --popover: 0 0% 100%;               /* surface-overlay */
+    --popover-foreground: 223 25% 10%;
+    --primary: 172 79% 38%;             /* arc-500  #14AE9B */
+    --primary-foreground: 172 79% 8%;   /* accent-contrast — dark teal ink on cyan */
+    --secondary: 220 18% 95%;           /* surface-sunken #EEF1F5 */
+    --secondary-foreground: 223 25% 16%;
+    --muted: 220 18% 95%;
+    --muted-foreground: 216 12% 56%;    /* content-muted #828D9D */
+    --accent: 220 19% 95%;              /* surface-hover #EFF2F6 */
+    --accent-foreground: 223 25% 16%;
+    --destructive: 0 66% 58%;           /* danger #DC4C4C */
     --destructive-foreground: 0 0% 100%;
-    --border: 263 25% 92%;
-    --input: 263 25% 92%;
-    --ring: 263 84% 50%;
-    --radius: 0.625rem;
+    --border: 218 17% 88%;              /* border-default #DCE0E7 */
+    --input: 218 17% 88%;
+    --ring: 172 79% 38%;
+    --radius: 0.5rem;                   /* DS radius-md (8px) */
+
+    /* ember accent (warm pole) — for the mesh + any explicit warm moment. */
+    --ember: 33 84% 55%;                /* ember-400 #EC9B2E */
 
     /* Motion tokens — easings from Emil Kowalski's animation framework.
        Use these instead of CSS built-ins; the built-ins are too weak to feel intentional. */
@@ -62,41 +65,45 @@
     --z-tooltip: 80;
     --z-grain: 90;
 
-    /* Tinted surface elevations — for cards that need real depth */
-    --shadow-xs: 0 1px 2px hsl(263 20% 12% / 0.04);
-    --shadow-sm: 0 2px 4px -1px hsl(263 20% 12% / 0.05), 0 1px 2px hsl(263 20% 12% / 0.04);
-    --shadow-md: 0 8px 24px -6px hsl(263 30% 14% / 0.10), 0 2px 6px hsl(263 25% 14% / 0.05);
-    --shadow-lg: 0 20px 48px -12px hsl(263 35% 14% / 0.18), 0 4px 12px hsl(263 30% 14% / 0.06);
-    --shadow-inset: inset 0 1px 0 hsl(0 0% 100% / 0.06);
+    /* Elevation — DS light: soft, low, neutral (paper). Ink-tinted (#141821). */
+    --shadow-xs: 0 1px 2px rgba(20, 24, 33, 0.05);
+    --shadow-sm: 0 1px 3px rgba(20, 24, 33, 0.07), 0 1px 2px rgba(20, 24, 33, 0.04);
+    --shadow-md: 0 4px 12px rgba(20, 24, 33, 0.08), 0 1px 3px rgba(20, 24, 33, 0.05);
+    --shadow-lg: 0 12px 28px rgba(20, 24, 33, 0.12), 0 4px 8px rgba(20, 24, 33, 0.06);
+    --shadow-inset: inset 0 1px 2px rgba(20, 24, 33, 0.06);
   }
 
   .dark {
-    /* Off-black, tinted toward violet so the dark surface feels of-a-piece with the brand */
-    --background: 263 28% 6%;
-    --foreground: 263 12% 96%;
-    --card: 263 22% 9%;
-    --card-foreground: 263 12% 96%;
-    --popover: 263 22% 9%;
-    --popover-foreground: 263 12% 96%;
-    --primary: 263 90% 70%;
-    --primary-foreground: 263 40% 12%;
-    --secondary: 263 18% 14%;
-    --secondary-foreground: 263 12% 96%;
-    --muted: 263 18% 14%;
-    --muted-foreground: 263 10% 64%;
-    --accent: 263 18% 14%;
-    --accent-foreground: 263 12% 96%;
-    --destructive: 0 62% 44%;
+    /* arc design system — DARK ("control room", the hero theme). #0C0F16 near-black,
+       cyan brightened (arc-400) so the accent glows against the dark surface. */
+    --background: 222 29% 7%;           /* surface-base  #0C0F16 */
+    --foreground: 218 22% 93%;          /* content-primary #E9ECF1 */
+    --card: 223 25% 10%;                /* surface-raised #141821 */
+    --card-foreground: 218 22% 93%;
+    --popover: 220 22% 14%;             /* surface-overlay #1B202A */
+    --popover-foreground: 218 22% 93%;
+    --primary: 172 63% 48%;             /* arc-400 #2DC6B1 */
+    --primary-foreground: 172 79% 8%;   /* dark teal ink on cyan */
+    --secondary: 220 22% 14%;           /* #1B202A */
+    --secondary-foreground: 218 22% 93%;
+    --muted: 220 22% 14%;
+    --muted-foreground: 218 12% 47%;    /* content-muted #697485 */
+    --accent: 221 24% 13%;              /* surface-hover #1A1F2A */
+    --accent-foreground: 218 22% 93%;
+    --destructive: 0 62% 52%;           /* readable red fill, white text */
     --destructive-foreground: 0 0% 100%;
-    --border: 263 16% 18%;
-    --input: 263 16% 18%;
-    --ring: 263 90% 72%;
+    --border: 219 20% 20%;              /* border-default #29303D */
+    --input: 219 20% 20%;
+    --ring: 172 63% 48%;
 
-    --shadow-xs: 0 1px 2px hsl(0 0% 0% / 0.50);
-    --shadow-sm: 0 2px 4px hsl(0 0% 0% / 0.40), 0 1px 2px hsl(0 0% 0% / 0.30);
-    --shadow-md: 0 8px 24px hsl(0 0% 0% / 0.50), 0 2px 6px hsl(0 0% 0% / 0.40);
-    --shadow-lg: 0 20px 48px hsl(0 0% 0% / 0.60), 0 4px 12px hsl(0 0% 0% / 0.40);
-    --shadow-inset: inset 0 1px 0 hsl(0 0% 100% / 0.06);
+    --ember: 33 84% 55%;
+
+    /* Elevation — DS dark: deeper shadows + a faint top hairline. */
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.40);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.02);
+    --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.50), 0 0 0 1px rgba(255, 255, 255, 0.025);
+    --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.03);
+    --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.40);
   }
 
   /* --- theme presets: alternate accent families. Default (above) is violet. --- */
@@ -189,33 +196,38 @@
     @apply border-border;
   }
 
-  /* Typography — Geist via next/font (CSS vars set in layout.tsx) with sensible defaults.
-     `font-feature-settings` enables stylistic alternates (`ss01` cleans up the 'a'); tabular
-     numbers ride on every monospaced element so secrets and codes align. */
+  /*
+   * arc design system type roles (CSS vars set by next/font in layout.tsx):
+   *   --font-sans       IBM Plex Sans   (UI / body)
+   *   --font-display    Space Grotesk   (brand, headings, big numerals)
+   *   --font-geist-mono Geist Mono      (secrets, paths, tokens, counters)
+   * Each var carries a concrete fallback INSIDE the var() so the declaration can never
+   * become invalid-at-computed-value (which would drop font-family entirely and let the
+   * UA serif default leak through the whole app).
+   */
   html {
-    font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-feature-settings: "ss01", "cv11";
+    font-family: var(--font-sans, ui-sans-serif), system-ui, -apple-system, "Segoe UI", sans-serif;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "ss01", "cv11";
+    font-feature-settings: "cv05" 1, "ss02" 1;
   }
   code,
   pre,
   kbd,
   samp,
   .font-mono {
-    font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+    font-family: var(--font-geist-mono, ui-monospace), "SF Mono", Menlo, monospace;
     font-variant-numeric: tabular-nums;
   }
 
-  /* Headlines should sit balanced, prose should look pretty. `text-wrap` is supported in
-     all the browsers our PWA targets. */
+  /* Brand display face on headings (Space Grotesk). Balanced wrapping + tight tracking. */
   h1, h2, h3, h4 {
+    font-family: var(--font-display, var(--font-sans, ui-sans-serif)), system-ui, sans-serif;
     text-wrap: balance;
-    letter-spacing: -0.018em;
+    letter-spacing: -0.015em;
   }
   p {
     text-wrap: pretty;
@@ -243,20 +255,190 @@
     box-shadow: 0 0 0 2px hsl(var(--ring) / 0.35);
   }
 
-  /* Mesh background — used sparingly as a subtle behind-hero glow. Brand violet with a
-     radial gradient sitting at low opacity. Never as a foreground or as the AI-purple slop. */
+  /* Mesh background — the "arc gradient" brand moment: ember (warm/human) bleeding into
+     arc cyan (machine/secure), as a faint behind-hero glow. Never a loud foreground. */
   .bg-arc-mesh {
     background:
-      radial-gradient(ellipse 80% 50% at 50% 0%, hsl(var(--primary) / 0.10), transparent 60%),
-      radial-gradient(ellipse 60% 40% at 80% 30%, hsl(var(--ring) / 0.06), transparent 60%),
+      radial-gradient(ellipse 70% 50% at 78% 12%, hsl(var(--ember) / 0.08), transparent 60%),
+      radial-gradient(ellipse 80% 50% at 30% 0%, hsl(var(--primary) / 0.10), transparent 60%),
       hsl(var(--background));
   }
   .dark .bg-arc-mesh {
     background:
-      radial-gradient(ellipse 80% 50% at 50% 0%, hsl(var(--primary) / 0.16), transparent 60%),
-      radial-gradient(ellipse 60% 40% at 20% 80%, hsl(var(--ring) / 0.10), transparent 60%),
+      radial-gradient(ellipse 70% 50% at 80% 10%, hsl(var(--ember) / 0.10), transparent 60%),
+      radial-gradient(ellipse 80% 55% at 25% 0%, hsl(var(--primary) / 0.14), transparent 62%),
       hsl(var(--background));
   }
+
+  /* Faint security-grid texture (DS .arc-grid-bg) — opt-in on a container, never loud. */
+  .arc-grid-bg {
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.6) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.6) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-position: -1px -1px;
+  }
+}
+
+/*
+ * arc design system — semantic status + security tokens (full color values, referenced
+ * directly as var(--x), separate from the shadcn HSL slots above). These back the ported
+ * DS security components. Values lifted verbatim from the design system's colors.css.
+ */
+@layer base {
+  :root {
+    --content-primary: #141821;
+    --content-secondary: #4E5868;
+    --content-muted: #828D9D;
+    --content-faint: #A9B2BF;
+
+    --surface-sunken: #EEF1F5;
+    --surface-inset: #F3F5F8;
+    --surface-raised: #FFFFFF;
+
+    --success: #1F9D57;  --success-fg: #155F36;  --success-subtle: #E7F8EE;
+    --warning: #DD8214;  --warning-fg: #934E12;  --warning-subtle: #FDF3E7;
+    --danger:  #DC4C4C;  --danger-fg:  #C0392F;  --danger-subtle:  #FDECEC;
+    --info:    #5468E0;  --info-fg:    #3F4FC0;  --info-subtle:    #DDE4FF;
+
+    --ds-accent: #14AE9B;
+    --ds-accent-subtle: #E6FBF7;
+    --ds-accent-subtle-fg: #0E7167;
+
+    --sec-trusted: #0E8E80;        --sec-trusted-subtle: #E6FBF7;
+    --sec-allowed: #1F9D57;        --sec-allowed-subtle: #E7F8EE;
+    --sec-denied:  #DC4C4C;        --sec-denied-subtle:  #FDECEC;
+    --sec-expiring:#DD8214;        --sec-expiring-subtle:#FDF3E7;
+    --sec-healthy: #1F9D57;
+    --sec-revealed-bg: #FDF6EC;    --sec-revealed-edge: #F0B25A;
+    --sec-masked: #B4BCC8;
+    --sec-zk: #0E7167;
+
+    /* control sizing (comfortable) */
+    --control-height: 40px;
+    --control-height-sm: 32px;
+    --control-px: 14px;
+  }
+
+  .dark {
+    --content-primary: #E9ECF1;
+    --content-secondary: #9AA4B4;
+    --content-muted: #697485;
+    --content-faint: #4C5666;
+
+    --surface-sunken: #080B11;
+    --surface-inset: #0F131B;
+    --surface-raised: #141821;
+
+    --success: #36C97B;  --success-fg: #6FD39B;  --success-subtle: rgba(54, 201, 123, 0.13);
+    --warning: #EC9B2E;  --warning-fg: #F0B25A;  --warning-subtle: rgba(236, 155, 46, 0.14);
+    --danger:  #F26464;  --danger-fg:  #F08A8A;  --danger-subtle:  rgba(242, 100, 100, 0.14);
+    --info:    #6E83F5;  --info-fg:    #9CABFF;  --info-subtle:    rgba(110, 131, 245, 0.16);
+
+    --ds-accent: #2DC6B1;
+    --ds-accent-subtle: rgba(45, 198, 177, 0.13);
+    --ds-accent-subtle-fg: #93EBDC;
+
+    --sec-trusted: #2DC6B1;        --sec-trusted-subtle: rgba(45, 198, 177, 0.14);
+    --sec-allowed: #36C97B;        --sec-allowed-subtle: rgba(54, 201, 123, 0.14);
+    --sec-denied:  #F26464;        --sec-denied-subtle:  rgba(242, 100, 100, 0.14);
+    --sec-expiring:#EC9B2E;        --sec-expiring-subtle:rgba(236, 155, 46, 0.15);
+    --sec-healthy: #36C97B;
+    --sec-revealed-bg: rgba(236, 155, 46, 0.10);  --sec-revealed-edge: #DD8214;
+    --sec-masked: #59647480;
+    --sec-zk: #57DBC7;
+  }
+}
+
+/*
+ * Ported DS security-component styles. Faithful to the design system's scoped CSS, moved
+ * into the global sheet so they render server-side (no inject-on-document FOUC). React
+ * wrappers live in components/arc/*.
+ */
+@layer components {
+  /* CopyButton — copy → confirm → clipboard auto-clear countdown */
+  .arc-copy { display:inline-flex; align-items:center; gap:6px; height:var(--control-height-sm); padding:0 10px;
+    border-radius:var(--radius-sm,6px); border:1px solid hsl(var(--border)); background:var(--surface-raised);
+    color:var(--content-secondary); font:500 12px var(--font-sans); cursor:pointer; white-space:nowrap;
+    transition:color var(--dur-fast), border-color var(--dur-fast), background var(--dur-fast); }
+  .arc-copy:hover { color:var(--content-primary); border-color:hsl(var(--border)); }
+  .arc-copy--done { color:var(--success-fg); background:var(--success-subtle); border-color:color-mix(in oklab, var(--success) 40%, hsl(var(--border))); }
+  .arc-copy--icon { width:var(--control-height-sm); padding:0; justify-content:center; }
+  .arc-copy__count { font-variant-numeric:tabular-nums; color:var(--content-muted); }
+
+  /* MaskedField — reveal/conceal + copy, with a "revealed" warm plate */
+  .arc-masked-wrap { display:flex; flex-direction:column; }
+  .arc-masked { display:flex; align-items:center; gap:8px; min-height:var(--control-height); padding:0 6px 0 var(--control-px);
+    background:var(--surface-inset); border:1px solid hsl(var(--border)); border-radius:var(--radius-md,8px); min-width:0;
+    transition:background var(--dur-base) var(--ease-out-quart), border-color var(--dur-base) var(--ease-out-quart); }
+  .arc-masked--revealed { background:var(--sec-revealed-bg); border-color:var(--sec-revealed-edge); }
+  .arc-masked__val { flex:1; min-width:0; font:500 14px var(--font-geist-mono); color:var(--content-primary);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.02em; padding:7px 0; }
+  .arc-masked__dots { color:var(--sec-masked); letter-spacing:.18em; font-size:17px; line-height:1; }
+  .arc-masked__actions { display:flex; align-items:center; gap:2px; flex-shrink:0; }
+  .arc-masked__tag { display:inline-flex; align-items:center; gap:4px; font:400 12px var(--font-sans); color:var(--sec-zk); margin-top:5px; }
+
+  /* RoleBadge */
+  .arc-role { display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 9px 0 7px; border-radius:999px;
+    font:500 12px var(--font-sans); letter-spacing:.01em; border:1px solid transparent; text-transform:capitalize; }
+  .arc-role--owner { background:color-mix(in oklab, var(--ds-accent) 16%, transparent); color:var(--ds-accent-subtle-fg); border-color:color-mix(in oklab, var(--ds-accent) 26%, transparent); }
+  .arc-role--admin { background:var(--info-subtle); color:var(--info-fg); }
+  .arc-role--editor { background:var(--success-subtle); color:var(--success-fg); }
+  .arc-role--viewer { background:var(--surface-sunken); color:var(--content-secondary); border-color:hsl(var(--border)); }
+  .arc-role--agent { background:var(--warning-subtle); color:var(--warning-fg); }
+
+  /* CapabilityChip */
+  .arc-cap { display:inline-flex; align-items:center; gap:4px; height:22px; padding:0 8px; border-radius:var(--radius-sm,6px);
+    font:500 12px var(--font-geist-mono); letter-spacing:-0.01em; border:1px solid transparent; text-transform:lowercase; }
+  .arc-cap--read, .arc-cap--list { background:var(--info-subtle); color:var(--info-fg); }
+  .arc-cap--create { background:var(--success-subtle); color:var(--success-fg); }
+  .arc-cap--update { background:var(--warning-subtle); color:var(--warning-fg); }
+  .arc-cap--delete { background:var(--danger-subtle); color:var(--danger-fg); }
+  .arc-cap--sudo { background:var(--danger); color:#fff; }
+  .arc-cap--deny { background:var(--surface-sunken); color:var(--content-muted); text-decoration:line-through; text-decoration-color:var(--content-faint); }
+  .arc-cap--inactive { opacity:.4; }
+
+  /* LeaseTimer */
+  .arc-lease { display:inline-flex; align-items:center; gap:7px; font-variant-numeric:tabular-nums; }
+  .arc-lease__icon { display:flex; color:var(--sec-healthy); }
+  .arc-lease__time { font:500 13px var(--font-geist-mono); color:var(--content-primary); letter-spacing:-0.01em; }
+  .arc-lease--expiring .arc-lease__icon, .arc-lease--expiring .arc-lease__time { color:var(--sec-expiring); }
+  .arc-lease--expired .arc-lease__icon, .arc-lease--expired .arc-lease__time { color:var(--danger); }
+  .arc-lease__label { font:400 12px var(--font-sans); color:var(--content-muted); }
+  .arc-lease--block { flex-direction:column; align-items:flex-start; gap:3px; }
+  .arc-lease--block .arc-lease__time { font-family:var(--font-display); font-size:32px; font-weight:500; line-height:1; }
+  .arc-lease__bar { height:4px; border-radius:999px; background:var(--surface-sunken); overflow:hidden; width:100%; margin-top:6px; }
+  .arc-lease__fill { height:100%; background:var(--sec-healthy); border-radius:999px; transition:width 1s linear, background var(--dur-base); }
+  .arc-lease--expiring .arc-lease__fill { background:var(--sec-expiring); }
+  .arc-lease--expired .arc-lease__fill { background:var(--danger); }
+
+  /* TotpRing */
+  .arc-totp { display:inline-flex; align-items:center; gap:12px; }
+  .arc-totp__ring { position:relative; flex-shrink:0; }
+  .arc-totp__ring svg { display:block; transform:rotate(-90deg); }
+  .arc-totp__track { stroke:var(--surface-sunken); }
+  .arc-totp__bar { stroke:hsl(var(--primary)); transition:stroke-dashoffset 1s linear, stroke var(--dur-base); stroke-linecap:round; }
+  .arc-totp--warn .arc-totp__bar { stroke:var(--sec-expiring); }
+  .arc-totp__num { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font:500 12px var(--font-geist-mono); color:var(--content-secondary); font-variant-numeric:tabular-nums; }
+  .arc-totp--warn .arc-totp__num { color:var(--sec-expiring); }
+  .arc-totp__code { font:500 25px var(--font-geist-mono); color:var(--content-primary); letter-spacing:.12em; font-variant-numeric:tabular-nums; }
+
+  /* TrustIndicator */
+  .arc-trust { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px;
+    font:500 11px var(--font-sans); letter-spacing:.02em; background:var(--sec-trusted-subtle); color:var(--sec-zk);
+    border:1px solid color-mix(in oklab, var(--sec-trusted) 22%, transparent); }
+  .arc-trust--plain { background:transparent; border-color:transparent; color:var(--content-muted); padding-left:0; }
+  .arc-trust--solid { background:var(--sec-zk); color:var(--surface-raised); border-color:transparent; }
+  .arc-trust--lg { font-size:12px; padding:6px 12px; }
+
+  /* PasswordStrength */
+  .arc-pwstr { display:flex; flex-direction:column; gap:6px; width:100%; }
+  .arc-pwstr__bars { display:flex; gap:4px; }
+  .arc-pwstr__seg { flex:1; height:5px; border-radius:999px; background:var(--surface-sunken); transition:background var(--dur-base) var(--ease-out-quart); }
+  .arc-pwstr__meta { display:flex; justify-content:space-between; align-items:center; }
+  .arc-pwstr__label { font:500 12px var(--font-sans); }
+  .arc-pwstr__crack { font:400 12px var(--font-geist-mono); color:var(--content-muted); font-variant-numeric:tabular-nums; }
 }
 
 /* Respect prefers-reduced-motion — keep meaningful opacity/color changes, drop transforms. */

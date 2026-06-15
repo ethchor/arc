@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Bot, Clock, FileClock, KeyRound, Lock, ScrollText, Users, Workflow, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeCustomizer } from "@/components/theme-customizer";
+import { ArcMark } from "@/components/brand/arc-mark";
 import { cn } from "@/lib/utils";
 
 export type ConsoleSection =
@@ -56,12 +57,12 @@ export function ConsoleShell({
     <div className="flex min-h-[100dvh] bg-muted/30">
       <aside className="sticky top-0 flex h-[100dvh] w-14 shrink-0 flex-col border-r border-zinc-900/60 bg-zinc-950 text-zinc-400 md:w-56">
         <div className="flex h-14 items-center gap-2.5 px-3">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#FFEC6E] text-sm font-black tracking-tight text-zinc-950 shadow-[inset_0_-1px_0_rgba(0,0,0,0.18)]">
-            A
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary ring-1 ring-primary/25">
+            <ArcMark className="h-4 w-4" />
           </span>
-          <span className="hidden text-[15px] font-semibold tracking-tight text-zinc-50 md:inline">
+          <span className="hidden font-display text-[15px] font-medium tracking-tight text-zinc-50 md:inline">
             arc
-            <span className="ml-1 text-zinc-400">vault</span>
+            <span className="ml-1 font-sans text-zinc-400">vault</span>
           </span>
         </div>
         <nav className="flex-1 space-y-0.5 px-2 py-2">
@@ -77,7 +78,7 @@ export function ConsoleShell({
                   "transition-[background-color,color,border-color,transform] [transition-duration:var(--dur-fast)] ease-out-quart",
                   "active:scale-[0.99]",
                   "hover:bg-zinc-900/80 hover:text-zinc-100",
-                  active && "border-[#FFEC6E] bg-zinc-900 text-zinc-50",
+                  active && "border-primary bg-zinc-900 text-zinc-50",
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
