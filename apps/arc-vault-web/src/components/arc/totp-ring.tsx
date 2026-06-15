@@ -26,10 +26,15 @@ export function TotpRing({
   showCode?: boolean;
   className?: string;
 }) {
-  const [remaining, setRemaining] = React.useState(period - (Math.floor(Date.now() / 1000) % period));
+  // Deterministic SSR seed (full period) — reading Date.now() in the useState initializer
+  // would differ between server and client and trip a hydration mismatch. The real value
+  // is computed in the effect, which runs immediately on mount.
+  const [remaining, setRemaining] = React.useState(period);
 
   React.useEffect(() => {
-    const id = setInterval(() => setRemaining(period - (Math.floor(Date.now() / 1000) % period)), 1000);
+    const tick = () => setRemaining(period - (Math.floor(Date.now() / 1000) % period));
+    tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [period]);
 
