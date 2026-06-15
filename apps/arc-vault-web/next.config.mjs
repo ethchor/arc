@@ -19,7 +19,7 @@ const csp = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@arc/sdk", "@arc/crypto"],
+  transpilePackages: ["@arc/sdk", "@arc/crypto", "@arc/workflows"],
   // Desktop: static export; CSP is served by the Tauri shell (tauri.conf.json app.security.csp).
   // Standalone web: SSR with the CSP/security response headers below.
   ...(isExport
