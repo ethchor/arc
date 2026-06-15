@@ -6,6 +6,7 @@ import { Fingerprint } from "lucide-react";
 import type { VaultMember } from "@arc/sdk";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RoleBadge } from "@/components/arc/role-badge";
 
 export function AccessView({
   vaultId,
@@ -57,9 +58,7 @@ export function AccessView({
                   <Fingerprint className="h-4 w-4 text-muted-foreground" /> User #{m.userId}
                 </span>
                 <span className="flex items-center gap-2">
-                  <Badge variant="secondary" className="capitalize">
-                    {m.role}
-                  </Badge>
+                  <RoleBadge role={m.role} />
                   <Badge variant="outline" className="capitalize">
                     {m.status}
                   </Badge>

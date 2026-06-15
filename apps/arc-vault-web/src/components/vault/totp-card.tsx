@@ -1,11 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Copy } from "lucide-react";
 import { totpCode } from "@arc/crypto";
 import type { TotpAlgorithm } from "@arc/types";
-import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { CopyButton } from "@/components/arc/copy-button";
+import { TotpRing } from "@/components/arc/totp-ring";
 
 interface Props {
   secret: string;
@@ -49,50 +48,23 @@ export function TotpCard({ secret, period, digits, algorithm, issuer, account }:
     );
   }
 
-  const grouped = safe.code.replace(/^(\d{3})(\d{3,5})$/, "$1 $2");
   const periodSec = period ?? 30;
-  const pct = (safe.secondsRemaining / periodSec) * 100;
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(safe.code);
-    toast.success("Code copied");
-  };
 
   return (
     <div className="space-y-3">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <div
-            className="font-mono text-3xl tabular-nums tracking-wider"
-            aria-label={`TOTP code ${safe.code}`}
-          >
-            {grouped}
-          </div>
-          {(issuer ?? account) && (
-            <div className="mt-1 text-xs text-muted-foreground">
-              {issuer}
-              {issuer && account ? " · " : ""}
-              {account}
-            </div>
-          )}
-        </div>
-        <Button variant="outline" size="icon" onClick={copy} aria-label="Copy code">
-          <Copy className="h-4 w-4" />
-        </Button>
+      <div className="flex items-center justify-between gap-3">
+        {/* TotpRing derives its own wall-clock countdown; the displayed code stays the
+            locally-generated `safe.code` so nothing about TOTP derivation changes. */}
+        <TotpRing code={safe.code} period={periodSec} size={44} />
+        <CopyButton value={safe.code} label="Copy code" />
       </div>
-
-      <div
-        className="flex items-center gap-2 text-xs text-muted-foreground"
-        aria-label={`${safe.secondsRemaining} seconds until refresh`}
-      >
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full bg-primary transition-[width] duration-700 ease-linear"
-            style={{ width: `${pct}%` }}
-          />
+      {(issuer ?? account) && (
+        <div className="text-xs text-muted-foreground">
+          {issuer}
+          {issuer && account ? " · " : ""}
+          {account}
         </div>
-        <span className="w-8 text-right tabular-nums">{safe.secondsRemaining}s</span>
-      </div>
+      )}
     </div>
   );
 }
