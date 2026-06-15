@@ -2,7 +2,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { Bot, Clock, FileClock, KeyRound, Lock, ScrollText, Users, Wrench } from "lucide-react";
+import { Bot, Clock, FileClock, KeyRound, Lock, ScrollText, Users, Workflow, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeCustomizer } from "@/components/theme-customizer";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ export type ConsoleSection =
   | "access"
   | "identities"
   | "policies"
+  | "workflows"
   | "leases"
   | "audit"
   | "tools";
@@ -21,6 +22,7 @@ const NAV: { id: ConsoleSection; label: string; icon: LucideIcon }[] = [
   { id: "access", label: "Access", icon: Users },
   { id: "identities", label: "Identities", icon: Bot },
   { id: "policies", label: "Policies", icon: ScrollText },
+  { id: "workflows", label: "Workflows", icon: Workflow },
   { id: "leases", label: "Leases", icon: Clock },
   { id: "audit", label: "Audit", icon: FileClock },
   { id: "tools", label: "Tools", icon: Wrench },

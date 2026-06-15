@@ -12,6 +12,7 @@ import {
 import { AuthModule } from "../auth/auth.module";
 import { EnginesModule } from "../engines/engines.module";
 import { VaultModule } from "../vault/vault.module";
+import { WorkflowsModule } from "../workflows/workflows.module";
 import { AgentAuthController, AgentsController, ApprovalsController } from "./agents.controller";
 import { AgentsService } from "./agents.service";
 import { AgentTasksService } from "./agent-tasks.service";
@@ -40,6 +41,7 @@ import { AttestationService } from "./attestation";
     EnginesModule,
     VaultModule,
     AuthModule,
+    WorkflowsModule,
   ],
   controllers: [AgentsController, ApprovalsController, AgentAuthController],
   providers: [AgentsService, AgentTasksService, ApprovalsService, AttestationService, AgentAuthService],

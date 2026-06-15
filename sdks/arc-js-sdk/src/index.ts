@@ -228,6 +228,29 @@ export interface AuditEvent {
   ts: string;
 }
 
+/** A configured workflow row. `definition` is the canonical workflow JSON. */
+export interface WorkflowRow {
+  id: string;
+  vaultId: string;
+  name: string;
+  /** Canonical `WorkflowDefinition` JSON. Cast through `@arc/workflows` to the typed shape. */
+  definition: Record<string, unknown>;
+  enabled: boolean;
+  /** Optimistic-concurrency token. Pass back in `expectedVersion` on update. */
+  version: number;
+  createdByUserId: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertWorkflowBody {
+  name: string;
+  definition: Record<string, unknown>;
+  enabled?: boolean;
+  /** Required on update; ignored on create. */
+  expectedVersion?: number;
+}
+
 // -- Passkey unlock types ---------------------------------------------------------------
 
 export interface PasskeySummary {
@@ -855,6 +878,67 @@ export class VaultClient {
 
   async listMembers(vaultId: string): Promise<VaultMember[]> {
     return this.http("GET", `/vaults/${vaultId}/members`);
+  }
+
+  // -- Workflows (Phase 1: JIT-access / approval workflows) -------------------
+
+  /** List workflows configured on a vault. Admin+ only on the server side. */
+  async listWorkflows(vaultId: string): Promise<WorkflowRow[]> {
+    return this.http("GET", `/vaults/${vaultId}/workflows`);
+  }
+
+  async getWorkflow(vaultId: string, id: string): Promise<WorkflowRow> {
+    return this.http("GET", `/vaults/${vaultId}/workflows/${id}`);
+  }
+
+  async createWorkflow(vaultId: string, body: UpsertWorkflowBody): Promise<WorkflowRow & {
+    validation: { ok: boolean; issues: ReadonlyArray<{ level: "error" | "warning"; code: string; message: string; nodeId?: string; edgeId?: string }> };
+  }> {
+    return this.http("POST", `/vaults/${vaultId}/workflows`, body);
+  }
+
+  async updateWorkflow(
+    vaultId: string,
+    id: string,
+    body: UpsertWorkflowBody,
+  ): Promise<WorkflowRow & {
+    validation: { ok: boolean; issues: ReadonlyArray<{ level: "error" | "warning"; code: string; message: string; nodeId?: string; edgeId?: string }> };
+  }> {
+    return this.http("PUT", `/vaults/${vaultId}/workflows/${id}`, body);
+  }
+
+  async deleteWorkflow(vaultId: string, id: string): Promise<{ ok: true }> {
+    return this.http("DELETE", `/vaults/${vaultId}/workflows/${id}`);
+  }
+
+  /** Validate a workflow definition without persisting. Useful for live editor feedback. */
+  async validateWorkflow(
+    vaultId: string,
+    definition: unknown,
+  ): Promise<{ ok: boolean; issues: ReadonlyArray<{ level: "error" | "warning"; code: string; message: string; nodeId?: string; edgeId?: string }> }> {
+    return this.http("POST", `/vaults/${vaultId}/workflows/validate`, { definition });
+  }
+
+  /** Simulate a saved workflow against a synthetic request context. */
+  async simulateWorkflow(
+    vaultId: string,
+    id: string,
+    ctx: {
+      mountPath: string;
+      capability?: string;
+      requesterRole?: "owner" | "admin" | "editor" | "viewer";
+      requesterGroups?: string[];
+      mfaAgeSeconds?: number | null;
+    },
+  ): Promise<{
+    decision: {
+      terminal: "auto_approve" | "require_approval" | "deny";
+      reason: string;
+      notifications: readonly string[];
+      trace: readonly string[];
+    };
+  }> {
+    return this.http("POST", `/vaults/${vaultId}/workflows/${id}/simulate`, ctx);
   }
 
   async getUserIdentityKey(userId: number): Promise<{

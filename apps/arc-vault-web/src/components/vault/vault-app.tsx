@@ -41,6 +41,7 @@ import { ShareDialog } from "@/components/vault/share-dialog";
 import { SiteHeader } from "@/components/vault/site-header";
 import { ToolsView } from "@/components/vault/tools-view";
 import { UnlockScreen } from "@/components/vault/unlock-screen";
+import { WorkflowsView } from "@/components/vault/workflows-view";
 import { getClient, initClient, lock } from "@/vault-store";
 import { cn } from "@/lib/utils";
 
@@ -818,6 +819,10 @@ export function VaultApp() {
           ))}
 
         {section === "policies" && <PoliciesView role={selectedVault?.role} />}
+
+        {section === "workflows" && (
+          <WorkflowsView vaultId={selected} canManage={canManage} getClient={getClient} />
+        )}
 
         {section === "leases" && (
           <InfoView

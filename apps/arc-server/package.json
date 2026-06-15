@@ -21,6 +21,7 @@
     "@arc/plugin-sdk": "workspace:*",
     "@arc/secrets-engine": "workspace:*",
     "@arc/types": "workspace:*",
+    "@arc/workflows": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/jwt": "^11.0.0",

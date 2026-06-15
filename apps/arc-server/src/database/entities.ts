@@ -984,6 +984,56 @@ export class VaultItemShareEntity {
   updatedAt!: Date;
 }
 
+/**
+ * A configured workflow attached to a vault (Phase 1: JIT-access / approval workflows).
+ *
+ * `definition` is the canonical workflow JSON (`WorkflowDefinition` from `@arc/workflows`),
+ * always re-validated server-side on save — see `WorkflowsService.upsert`. The validator
+ * refuses anything outside the fixed vocabulary, so a row in this table can only express
+ * actions the codebase already knows how to audit.
+ *
+ * `version` is an optimistic-concurrency token: every successful save increments it, and
+ * the next save MUST submit the version it read or it gets a 409. Stops two admins
+ * silently clobbering each other's edits in the editor.
+ *
+ * Audit + execution: `WorkflowExecutorService` reads enabled workflows scoped to a vault
+ * and runs them against incoming elevated agent intents. Disabled rows stay around but
+ * the executor skips them.
+ */
+@Entity("vault_workflows")
+@Index(["vaultId", "enabled"])
+export class VaultWorkflowEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  vaultId!: string;
+
+  @Column({ type: "text" })
+  name!: string;
+
+  /** Canonical workflow definition. Server validates it on every save. */
+  @Column({ type: "simple-json" })
+  definition!: Record<string, unknown>;
+
+  @Column({ type: "boolean", default: true })
+  enabled!: boolean;
+
+  /** Bumped on every save; clients pass it back so we can refuse stale writes (409). */
+  @Column({ type: "int", default: 1 })
+  version!: number;
+
+  @Column({ type: "int" })
+  createdByUserId!: number;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
+}
+
 export const entities = [
   UserEntity,
   VaultUserKeysEntity,
@@ -1007,4 +1057,5 @@ export const entities = [
   VaultAgentIntentEntity,
   VaultPendingApprovalEntity,
   VaultItemShareEntity,
+  VaultWorkflowEntity,
 ];
