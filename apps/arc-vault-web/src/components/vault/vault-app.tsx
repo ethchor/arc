@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, FileClock, FileText, Folder, KeyRound, KeySquare, Pencil, Plus, RotateCw, Search, Trash2, Vault, X } from "lucide-react";
+import { Clock, Cpu, FileClock, FileText, Folder, GitBranch, House, KeyRound, KeySquare, Pencil, Plus, RefreshCw, RotateCw, Search, Shield, ShieldCheck, Trash2, Vault, X } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import type { JsonValue, TotpAlgorithm } from "@arc/types";
 import { toast } from "sonner";
@@ -20,7 +20,13 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { AccessView } from "@/components/vault/access-view";
 import { AuditView } from "@/components/vault/audit-view";
-import { ConsoleShell, type ConsoleSection } from "@/components/vault/console-shell";
+import {
+  ConsoleShell,
+  type ConsoleSection,
+  type Density,
+  type Persona,
+} from "@/components/vault/console-shell";
+import { PreviewScreen } from "@/components/vault/preview-screen";
 import { IdentitiesView } from "@/components/vault/identities-view";
 import { CopyField } from "@/components/vault/copy-field";
 import { CreateVaultDialog } from "@/components/vault/create-vault-dialog";
@@ -120,7 +126,9 @@ export function VaultApp() {
   const [deviceCode, setDeviceCode] = React.useState("");
   const [folders, setFolders] = React.useState<VaultFolder[]>([]);
   const [folderFilter, setFolderFilter] = React.useState<string | null>(null);
-  const [section, setSection] = React.useState<ConsoleSection>("secrets");
+  const [section, setSection] = React.useState<ConsoleSection>("vault");
+  const [persona, setPersona] = React.useState<Persona>("person");
+  const [density, setDensity] = React.useState<Density>("comfortable");
 
   React.useEffect(() => {
     const stored = Number(localStorage.getItem("arc-vault-autolock"));
@@ -360,7 +368,8 @@ export function VaultApp() {
     setDeviceCode("");
     setFolders([]);
     setFolderFilter(null);
-    setSection("secrets");
+    setSection("vault");
+    setPersona("person");
   };
 
   // Poll for device approval while waiting (docs/06 §6.3).
@@ -499,8 +508,12 @@ export function VaultApp() {
   return (
     <>
       <ConsoleShell
+        persona={persona}
+        onPersona={setPersona}
         section={section}
         onSection={setSection}
+        density={density}
+        onDensity={setDensity}
         vaultName={selectedVault?.name ?? selectedVault?.type}
         statusLabel={deviceMode ? "Device session" : "Unlocked"}
         onLock={doLock}
@@ -523,7 +536,71 @@ export function VaultApp() {
           </>
         }
       >
-        {section === "secrets" && (
+        {section === "home" && (
+          <PreviewScreen
+            eyebrow="You · home"
+            title="Home"
+            description="Your security score, recent activity, devices, and the governed-agents teaser — one persona-aware landing."
+            icon={House}
+            engine="Engine B"
+          />
+        )}
+        {section === "security" && (
+          <PreviewScreen
+            eyebrow="You · security"
+            title="Security dashboard"
+            description="Weak, reused, old and exposed items, passkey coverage, and device hygiene — a motivating security score."
+            icon={ShieldCheck}
+            engine="Engine B"
+          />
+        )}
+        {section === "devices" && (
+          <PreviewScreen
+            eyebrow="You · devices"
+            title="My devices"
+            description="Every device that can unlock your vault, with last-seen, the trusted flag, and the inactivity auto-revoke nudge."
+            icon={Cpu}
+            engine="Engine B"
+          />
+        )}
+        {section === "kv" && (
+          <PreviewScreen
+            eyebrow="Engine A · infrastructure"
+            title="KV secrets"
+            description="The secret/app/prod/db path tree, version history, soft-delete/undelete, metadata, and a version diff."
+            icon={GitBranch}
+            engine="Engine A"
+          />
+        )}
+        {section === "creds" && (
+          <PreviewScreen
+            eyebrow="Engine A · infrastructure"
+            title="Dynamic credentials"
+            description="Per-mount roles (AWS STS, GCP, GitHub App, database…) with an issue-credential ceremony and live lease TTL."
+            icon={KeyRound}
+            engine="Engine A"
+          />
+        )}
+        {section === "transit" && (
+          <PreviewScreen
+            eyebrow="Engine A · infrastructure"
+            title="Transit"
+            description="Encryption-as-a-service: key list, encrypt/decrypt playground, rotate-key, and key versions."
+            icon={RefreshCw}
+            engine="Engine A"
+          />
+        )}
+        {section === "pki" && (
+          <PreviewScreen
+            eyebrow="Engine A · infrastructure"
+            title="PKI"
+            description="CA chain, roles, an issue-certificate flow, the issued-certs table, and revoke with serial/expiry."
+            icon={Shield}
+            engine="Engine A"
+          />
+        )}
+
+        {section === "vault" && (
           <div className="space-y-6">
             {recoveryKey && (
               <RecoveryKeyCard recoveryKey={recoveryKey} onDismiss={() => setRecoveryKey(null)} />
@@ -818,7 +895,7 @@ export function VaultApp() {
           </div>
         )}
 
-        {section === "access" &&
+        {section === "team" &&
           (selected ? (
             <AccessView
               vaultId={selected}
@@ -880,7 +957,7 @@ export function VaultApp() {
             </p>
           ))}
 
-        {section === "identities" && (
+        {section === "agents" && (
           <IdentitiesView
             load={() => getClient().listAgents()}
             update={(agentId, patch) => getClient().updateAgent(agentId, patch)}
