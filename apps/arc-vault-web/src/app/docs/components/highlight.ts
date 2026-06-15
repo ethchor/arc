@@ -5,8 +5,11 @@ import { codeToHtml } from "shiki";
  * is in the initial response — no client-side highlight flash, no shipped highlighter
  * (Shiki is a heavy dep we don't want in the client bundle).
  *
- * We pick a built-in theme that pairs well with both our light + dark Tailwind themes;
- * Shiki's "github-dark-dimmed" and "github-light" are tuned for that.
+ * Single dark theme on purpose: `CodeBlock` renders snippets in an always-dark terminal
+ * window (macOS chrome), so the code reads identically in light and dark page themes.
+ * `github-dark` is neutral near-black (#0d1117) — it sits cleanly under the orange brand
+ * and matches the card surface in `code-block.tsx`. Inline `color:` per token (no CSS-var
+ * switching needed), so colours are always correct without extra global CSS.
  */
 export async function highlightCode(
   code: string,
@@ -14,11 +17,7 @@ export async function highlightCode(
 ): Promise<string> {
   return codeToHtml(code.replace(/\n$/, ""), {
     lang: language,
-    themes: {
-      light: "github-light",
-      dark: "github-dark-dimmed",
-    },
-    defaultColor: false, // emit `--shiki-light` / `--shiki-dark` CSS vars
+    theme: "github-dark",
   });
 }
 

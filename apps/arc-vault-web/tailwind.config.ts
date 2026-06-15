@@ -8,6 +8,13 @@ const config: Config = {
   theme: {
     container: { center: true, padding: "2rem", screens: { "2xl": "1400px" } },
     extend: {
+      fontFamily: {
+        // arc design system type roles (CSS vars set on <html> by next/font in layout.tsx).
+        // Concrete fallback inside the var() keeps the utility valid if a font fails to load.
+        sans: ["var(--font-sans, ui-sans-serif)", "system-ui", "sans-serif"],
+        display: ["var(--font-display, var(--font-sans, ui-sans-serif))", "system-ui", "sans-serif"],
+        mono: ["var(--font-geist-mono, ui-monospace)", "SFMono-Regular", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

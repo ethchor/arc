@@ -4,12 +4,16 @@ import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Code block with a copy-to-clipboard button. Server-side syntax highlighting is done
- * by `shiki` in the page component (see `highlightCode()`), which hands us pre-rendered
- * HTML. We keep the client surface minimal: copy state + the button.
+ * Code block styled as a macOS-style terminal window: traffic-light dots, a filename /
+ * language label, and a copy button, over an always-dark surface so snippets read the
+ * same in light and dark page themes (the Shiki output is a single dark theme).
  *
- * The `raw` prop is the text the copy button writes to the clipboard — it's separate
- * from `html` so the user copies plain code, not coloured `<span>` markup.
+ * `not-prose` detaches the block from the docs `article.prose` typography — otherwise
+ * the inline-code `background` rule bleeds onto the highlighted `<code>` and fragments
+ * into a pill behind every wrapped line.
+ *
+ * The `raw` prop is what the copy button writes to the clipboard — separate from `html`
+ * so the user copies plain code, not coloured `<span>` markup.
  */
 export function CodeBlock({
   html,
@@ -39,37 +43,47 @@ export function CodeBlock({
     }
   };
 
+  const label = filename ?? language;
+
   return (
-    <div className="my-4 overflow-hidden rounded-lg border bg-muted/30">
-      {(filename || language) && (
-        <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-1.5 text-xs">
-          <span className="font-mono text-muted-foreground">
-            {filename ?? language}
-          </span>
-          {filename && language && (
-            <span className="font-mono text-muted-foreground/70">{language}</span>
-          )}
+    <div className="not-prose group my-5 overflow-hidden rounded-xl bg-[#0d1117] shadow-[var(--shadow-md)] ring-1 ring-white/10">
+      {/* Window chrome */}
+      <div className="flex items-center gap-3 border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+          <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+          <span className="h-3 w-3 rounded-full bg-[#28c840]" />
         </div>
-      )}
-      <div className="relative">
+        {label ? (
+          <span className="truncate font-mono text-xs text-white/45">{label}</span>
+        ) : null}
         <button
           type="button"
           aria-label="Copy to clipboard"
           onClick={copy}
           className={cn(
-            "absolute right-3 top-3 z-10 rounded-md border bg-background/80 p-1.5 backdrop-blur",
-            "text-muted-foreground transition-colors hover:bg-background hover:text-foreground",
-            copied && "text-emerald-500"
+            "ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs",
+            "text-white/45 transition-colors [transition-duration:var(--dur-fast)]",
+            "hover:bg-white/[0.06] hover:text-white/80",
+            copied && "text-emerald-400",
           )}
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
         </button>
-        <div
-          className="overflow-x-auto px-4 py-3 text-[13px] leading-6 [&_pre]:!bg-transparent"
-          // eslint-disable-next-line react/no-danger
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
       </div>
+
+      {/* Highlighted body — reset every prose remnant, force transparent so the card bg shows. */}
+      <div
+        className={cn(
+          "overflow-x-auto px-4 py-3.5 text-[13px] leading-[1.65]",
+          "[&_pre]:!m-0 [&_pre]:!bg-transparent [&_pre]:!p-0",
+          "[&_code]:!bg-transparent [&_code]:!p-0 [&_code]:![font-size:inherit]",
+          "[&_.line]:!bg-transparent",
+        )}
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </div>
   );
 }

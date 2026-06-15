@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Fingerprint, KeyRound, Loader2, LogIn, ShieldCheck } from "lucide-react";
+import { Fingerprint, KeyRound, Loader2, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Reveal } from "@/components/motion/reveal";
 import { Stagger } from "@/components/motion/stagger";
+import { ArcMark } from "@/components/brand/arc-mark";
 
 interface Props {
   phase: "login" | "account";
@@ -45,6 +46,23 @@ export function UnlockScreen({
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
 
+  // Which action is in flight. `busy` is a single shared flag from the parent's guard(),
+  // so without this every button would show its own spinner at once. We track the clicked
+  // action and only spin that one; all buttons still disable while busy.
+  type Action = "signin" | "unlock" | "passkey" | "enroll" | "newDevice";
+  const [pending, setPending] = React.useState<Action | null>(null);
+
+  // Reset once the parent finishes (busy → false), so the next click starts clean.
+  React.useEffect(() => {
+    if (!busy) setPending(null);
+  }, [busy]);
+
+  const run = (action: Action, fn: () => void) => {
+    setPending(action);
+    fn();
+  };
+  const spin = (action: Action) => busy && pending === action;
+
   const heading = phase === "login" ? "Sign in to arc" : "Unlock your vault";
   const lede =
     phase === "login"
@@ -56,8 +74,8 @@ export function UnlockScreen({
       <div className="mx-auto flex max-w-md flex-col gap-8 px-4 py-12 sm:py-16">
         <Stagger stagger={0.06} className="flex flex-col gap-6">
           <Stagger.Item>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/12 ring-1 ring-primary/15">
-              <ShieldCheck className="h-6 w-6 text-primary" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/20">
+              <ArcMark className="h-6 w-6" />
             </div>
           </Stagger.Item>
           <Stagger.Item className="flex flex-col gap-2">
@@ -71,8 +89,8 @@ export function UnlockScreen({
             className="flex flex-col gap-4"
             onSubmit={(e) => {
               e.preventDefault();
-              if (phase === "login" && email) onSignIn(baseUrl, email);
-              if (phase === "account" && password) onUnlock(password);
+              if (phase === "login" && email) run("signin", () => onSignIn(baseUrl, email));
+              if (phase === "account" && password) run("unlock", () => onUnlock(password));
             }}
           >
             {phase === "login" ? (
@@ -91,8 +109,8 @@ export function UnlockScreen({
                   />
                 </Field>
                 <Button size="lg" type="submit" className="mt-1 w-full" disabled={busy || !email}>
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-                  {busy ? "Signing in" : "Continue"}
+                  {spin("signin") ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+                  {spin("signin") ? "Signing in" : "Continue"}
                 </Button>
               </>
             ) : (
@@ -109,7 +127,7 @@ export function UnlockScreen({
 
                 <div className="mt-1 flex flex-col gap-2">
                   <Button size="lg" type="submit" className="w-full" disabled={busy || !password}>
-                    {busy ? (
+                    {spin("unlock") ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" /> Unlocking
                       </>
@@ -127,9 +145,9 @@ export function UnlockScreen({
                       size="lg"
                       className="w-full"
                       disabled={busy}
-                      onClick={onPasskeyUnlock}
+                      onClick={() => run("passkey", onPasskeyUnlock)}
                     >
-                      {busy ? (
+                      {spin("passkey") ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin" /> Waiting for passkey
                         </>
@@ -148,9 +166,9 @@ export function UnlockScreen({
                     variant="ghost"
                     className="h-auto justify-start px-2 py-1.5 text-muted-foreground hover:text-foreground"
                     disabled={busy || !password}
-                    onClick={() => onEnroll(password)}
+                    onClick={() => run("enroll", () => onEnroll(password))}
                   >
-                    {busy ? (
+                    {spin("enroll") ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" /> Creating vault
                       </>

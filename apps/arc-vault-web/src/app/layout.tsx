@@ -1,11 +1,28 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { GeistSans } from "geist/font/sans";
+import { Space_Grotesk, IBM_Plex_Sans } from "next/font/google";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
+
+// arc design system type system:
+//   display → Space Grotesk (brand, headings, big numerals)
+//   UI/body → IBM Plex Sans (humanist grotesk; flexes dense ↔ spacious)
+//   mono    → Geist Mono (secrets, paths, tokens, counters) — self-hosted via `geist`
+const ibmPlexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-sans",
+  display: "swap",
+});
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-display",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "arc — secrets vault",
@@ -34,8 +51,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#faf7ff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f0a1a" },
+    { media: "(prefers-color-scheme: light)", color: "#F6F7F9" },
+    { media: "(prefers-color-scheme: dark)", color: "#0C0F16" },
   ],
 };
 
@@ -52,7 +69,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn(GeistSans.variable, GeistMono.variable)}
+      className={cn(ibmPlexSans.variable, spaceGrotesk.variable, GeistMono.variable)}
     >
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
