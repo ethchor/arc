@@ -25,6 +25,7 @@ import { IdentitiesView } from "@/components/vault/identities-view";
 import { CopyField } from "@/components/vault/copy-field";
 import { CreateVaultDialog } from "@/components/vault/create-vault-dialog";
 import { DevicePendingView } from "@/components/vault/device-pending-view";
+import { EnrollScreen } from "@/components/vault/enroll-screen";
 import { DevicesDialog } from "@/components/vault/devices-dialog";
 import { InfoView } from "@/components/vault/info-view";
 import { ItemDialog, type LoginInput } from "@/components/vault/item-dialog";
@@ -70,7 +71,7 @@ interface SecretData {
   key: string;
   value: string;
 }
-type Phase = "login" | "account" | "device-pending" | "recover" | "unlocked";
+type Phase = "login" | "account" | "device-pending" | "recover" | "enroll" | "unlocked";
 
 // PulledItem.data is JsonValue | null. The strict union doesn't structurally overlap with
 // our concrete item shapes, so we cast through `unknown` after discriminating on `type`.
@@ -185,12 +186,23 @@ export function VaultApp() {
       toast.success("Vault unlocked with passkey");
     });
 
+  // Enrollment ceremony (design system `enroll.html`): create the vault + keys, then hold
+  // on the "enroll" phase so EnrollScreen can run the recovery-key ceremony BEFORE the
+  // vault opens. Same enroll() crypto + same recovery key — only the moment it's surfaced
+  // moves (forced acknowledge-before-proceed). `completeEnroll` then loads + unlocks.
   const enroll = (password: string) =>
     guard(async () => {
       const result = await getClient().enroll(password);
       setRecoveryKey(result.recoveryKey);
+      // stay on phase "enroll"; the ceremony advances once recoveryKey is set.
+    });
+
+  const completeEnroll = () =>
+    guard(async () => {
       await loadVaults();
+      setRecoveryKey(null); // already shown + acknowledged in the ceremony
       setPhase("unlocked");
+      toast.success("Vault created");
     });
 
   // ADR-006: recover with the recovery key + a new password. On success the client is
@@ -425,6 +437,24 @@ export function VaultApp() {
     );
   }
 
+  if (phase === "enroll") {
+    return (
+      <div className="min-h-screen">
+        <SiteHeader />
+        <EnrollScreen
+          busy={busy}
+          recoveryKey={recoveryKey}
+          onEnroll={enroll}
+          onComplete={completeEnroll}
+          onBack={() => {
+            setRecoveryKey(null);
+            setPhase("account");
+          }}
+        />
+      </div>
+    );
+  }
+
   if (phase !== "unlocked") {
     return (
       <div className="min-h-screen">
@@ -434,7 +464,7 @@ export function VaultApp() {
           busy={busy}
           onSignIn={signIn}
           onUnlock={unlock}
-          onEnroll={enroll}
+          onStartEnroll={() => setPhase("enroll")}
           onNewDevice={startNewDevice}
           onPasskeyUnlock={unlockWithPasskey}
           onForgotPassword={phase === "account" ? () => setPhase("recover") : undefined}

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Fingerprint, KeyRound, Loader2, LogIn, ShieldCheck, UserPlus } from "lucide-react";
+import { Fingerprint, KeyRound, Loader2, LogIn, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,8 @@ interface Props {
   busy: boolean;
   onSignIn: (baseUrl: string, email: string) => void;
   onUnlock: (password: string) => void;
-  onEnroll: (password: string) => void;
+  /** Navigate to the dedicated enrollment ceremony (EnrollScreen). */
+  onStartEnroll: () => void;
   onNewDevice?: () => void;
   /**
    * Optional. When present, the unlock view shows a "Use a passkey" button. Triggers a
@@ -45,7 +46,7 @@ export function UnlockScreen({
   busy,
   onSignIn,
   onUnlock,
-  onEnroll,
+  onStartEnroll,
   onNewDevice,
   onPasskeyUnlock,
   onForgotPassword,
@@ -53,9 +54,6 @@ export function UnlockScreen({
   const [baseUrl, setBaseUrl] = React.useState("http://localhost:3001");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
-
-  // After sign-in, which separate view is showing. Defaults to unlock (returning user).
-  const [mode, setMode] = React.useState<"unlock" | "enroll">("unlock");
 
   // Track the in-flight action so only the clicked button spins (busy is a shared flag).
   const [pending, setPending] = React.useState<Action | null>(null);
@@ -68,12 +66,11 @@ export function UnlockScreen({
   };
   const spin = (action: Action) => busy && pending === action;
 
-  const view: "signin" | "unlock" | "enroll" = phase === "login" ? "signin" : mode;
+  const view: "signin" | "unlock" = phase === "login" ? "signin" : "unlock";
 
   const COPY = {
     signin: { title: "Sign in to arc", lede: "Sign-in authorizes sync only. Your vault stays locked until you supply the master password on this device." },
     unlock: { title: "Welcome back", lede: "Your master password is processed on this device and never sent. The server only sees ciphertext." },
-    enroll: { title: "Create your arc vault", lede: "Set a master password. It's the one thing that protects everything — arc can't reset it, and never sees it." },
   }[view];
 
   return (
@@ -121,7 +118,7 @@ export function UnlockScreen({
                   {spin("signin") ? "Signing in" : "Continue"}
                 </Button>
               </form>
-            ) : view === "unlock" ? (
+            ) : (
               <form
                 className="flex flex-col gap-4"
                 onSubmit={(e) => {
@@ -205,55 +202,7 @@ export function UnlockScreen({
                   action="Create a vault"
                   icon={<UserPlus className="h-3.5 w-3.5" />}
                   disabled={busy}
-                  onClick={() => setMode("enroll")}
-                />
-              </form>
-            ) : (
-              <form
-                className="flex flex-col gap-4"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (password) run("enroll", () => onEnroll(password));
-                }}
-              >
-                <Field
-                  id="new-password"
-                  label="Master password"
-                  hint="Choose something long and unique. This is the only thing that protects your vault."
-                >
-                  <Input
-                    id="new-password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    suppressHydrationWarning
-                  />
-                </Field>
-
-                <Button size="lg" type="submit" className="mt-1 w-full" disabled={busy || !password}>
-                  {spin("enroll") ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" /> Creating vault
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="h-4 w-4" /> Create vault
-                    </>
-                  )}
-                </Button>
-
-                <p className="rounded-md border border-[var(--sec-revealed-edge)] bg-[var(--sec-revealed-bg)] px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-                  After this, arc shows your <strong className="text-foreground">recovery key</strong> once —
-                  the only way back in if you forget your master password.
-                </p>
-
-                <SwitchPrompt
-                  prompt="Already have a vault?"
-                  action="Unlock it"
-                  icon={<KeyRound className="h-3.5 w-3.5" />}
-                  disabled={busy}
-                  onClick={() => setMode("unlock")}
+                  onClick={onStartEnroll}
                 />
               </form>
             )}
