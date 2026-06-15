@@ -1,0 +1,30 @@
+{
+  "name": "@arc/workflows",
+  "version": "0.0.0",
+  "private": true,
+  "description": "arc workflow engine: declarative DAG of triggers, conditions, and actions, with a fixed vocabulary. Authored visually (React Flow) and evaluated server-side to gate access. Pure code, no infra deps.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.6"
+  }
+}

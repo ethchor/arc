@@ -17,6 +17,7 @@ import { SigningRecovery1718200000000 } from "./migrations/1718200000000-signing
 import { ItemShares1718300000000 } from "./migrations/1718300000000-item-shares";
 import { AgentIntentDigestUnique1718500000000 } from "./migrations/1718500000000-agent-intent-digest-unique";
 import { AgentTokenEpoch1718600000000 } from "./migrations/1718600000000-agent-token-epoch";
+import { WorkflowsSchema1718700000000 } from "./migrations/1718700000000-workflows-schema";
 import { AgentsModule } from "./agents/agents.module";
 import { AuthModule } from "./auth/auth.module";
 import { AuthMethodsModule } from "./auth-methods/auth-methods.module";
@@ -26,6 +27,7 @@ import { ObservabilityModule } from "./observability/observability.module";
 import { PluginsAdminModule } from "./plugins/plugins-admin.module";
 import { PluginsModule } from "./plugins/plugins.module";
 import { VaultModule } from "./vault/vault.module";
+import { WorkflowsModule } from "./workflows/workflows.module";
 
 const migrations = [
   InitSchema1717200000000,
@@ -42,6 +44,7 @@ const migrations = [
   ItemShares1718300000000,
   AgentIntentDigestUnique1718500000000,
   AgentTokenEpoch1718600000000,
+  WorkflowsSchema1718700000000,
 ];
 
 /**
@@ -156,6 +159,10 @@ export function buildDataSourceOptions(): TypeOrmModuleOptions {
     // EnginesModule dep stays in PluginsModule's slot below.
     PluginsAdminModule,
     EnginesModule,
+    // WorkflowsModule must register before AgentsModule so AgentsModule can inject
+    // WorkflowExecutorService into AgentTasksService. Controller routes (`/vaults/:id/workflows`)
+    // sit under their own path and don't conflict with the `/v1/*` catch-all.
+    WorkflowsModule,
     // AgentsModule imports EnginesModule (for the shared lease registry), so it must come
     // *after* EnginesModule here — otherwise EnginesModule resolves transitively at the
     // agents position and its `/v1/*` catch-all would register ahead of `/v1/auth/*`.

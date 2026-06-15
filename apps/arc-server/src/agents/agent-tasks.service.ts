@@ -27,6 +27,7 @@ import {
 import { ENGINES_CONFIG, type EnginesConfig } from "../engines/engines.service";
 import { AgentsService } from "./agents.service";
 import { ApprovalsService } from "./approvals.service";
+import { WorkflowExecutorService } from "../workflows/workflow-executor.service";
 import type { OpenTaskDto, SubmitIntentDto } from "./dto";
 
 /** Default task budget — deliberately conservative; the owner can widen per task. */
@@ -62,6 +63,7 @@ export class AgentTasksService {
     @Inject(ENGINES_CONFIG) private readonly engines: EnginesConfig,
     private readonly agentsService: AgentsService,
     private readonly approvals: ApprovalsService,
+    private readonly workflowExecutor: WorkflowExecutorService,
   ) {}
 
   /** Open a task. If bound to a delegation, the task id is the delegation's `taskId`. */
@@ -200,38 +202,100 @@ export class AgentTasksService {
 
       // Push-consent gate (ADR-005 Phase 4): an action the policy would allow but which runs
       // under an `elevated` delegation needs a fresh human approval bound to this exact
-      // intent. Without a granted approval we register a pending one and return *without*
-      // recording or metering the action — the agent re-submits the identical intent once
-      // the owner has approved out-of-band (a WebAuthn assertion).
+      // intent. Phase 1 workflows can short-circuit this: a configured workflow may
+      // auto-approve (skip CIBA entirely) or deny (refuse with the workflow's reason).
+      // Anything that doesn't match a workflow falls back to the historical behaviour —
+      // unconditional ensurePending — so existing flows keep working without configuration.
       if (decision.decision === "allow" && decision.elevated) {
         const approved = await this.approvals.tryConsume(agentId, task.taskId, digest);
         if (!approved) {
-          const approvalId = await this.approvals.ensurePending({
+          const wf = await this.workflowExecutor.run({
             agentId,
-            taskId: task.taskId,
             ownerUserId: agent.ownerUserId,
-            intentDigest: digest,
-            op: claims.op,
-            path: claims.path,
+            mountPath: claims.path,
+            capability,
           });
-          await this.writeAudit({
-            actorUserId: null,
-            action: "agent_intent_pending_approval",
-            agentId,
-            delegationId: claims.delegation ?? null,
-            taskId: task.taskId,
-            toolCall: { op: claims.op, path: claims.path, capability, decision: "approval-required" },
-          });
-          return {
-            decision: "deny" as const,
-            reason: "approval-required",
-            mode: decision.mode,
-            elevated: true,
-            approvalId,
-            seq: task.callsUsed,
-            chainHead: task.chainHead,
-            callsRemaining: Math.max(0, task.budget.maxCalls - task.callsUsed),
-          };
+          if (wf.terminal === "deny") {
+            await this.writeAudit({
+              actorUserId: null,
+              action: "agent_intent_workflow_denied",
+              agentId,
+              delegationId: claims.delegation ?? null,
+              taskId: task.taskId,
+              toolCall: {
+                op: claims.op,
+                path: claims.path,
+                capability,
+                workflowId: wf.matchedWorkflowId,
+                reason: wf.reason,
+                trace: wf.trace,
+              },
+            });
+            return {
+              decision: "deny" as const,
+              reason: `workflow:${wf.reason ?? "denied"}`,
+              mode: decision.mode,
+              elevated: true,
+              workflowId: wf.matchedWorkflowId,
+              seq: task.callsUsed,
+              chainHead: task.chainHead,
+              callsRemaining: Math.max(0, task.budget.maxCalls - task.callsUsed),
+            };
+          }
+          if (wf.terminal === "auto_approve") {
+            await this.writeAudit({
+              actorUserId: null,
+              action: "agent_intent_workflow_auto_approved",
+              agentId,
+              delegationId: claims.delegation ?? null,
+              taskId: task.taskId,
+              toolCall: {
+                op: claims.op,
+                path: claims.path,
+                capability,
+                workflowId: wf.matchedWorkflowId,
+                reason: wf.reason,
+                trace: wf.trace,
+              },
+            });
+            // Fall through to the unsealed metering + record-intent path below; the
+            // workflow has provided the consent that ApprovalsService would have.
+          } else {
+            // require_approval, or no matching workflow — go through the standard CIBA flow.
+            const approvalId = await this.approvals.ensurePending({
+              agentId,
+              taskId: task.taskId,
+              ownerUserId: agent.ownerUserId,
+              intentDigest: digest,
+              op: claims.op,
+              path: claims.path,
+            });
+            await this.writeAudit({
+              actorUserId: null,
+              action: "agent_intent_pending_approval",
+              agentId,
+              delegationId: claims.delegation ?? null,
+              taskId: task.taskId,
+              toolCall: {
+                op: claims.op,
+                path: claims.path,
+                capability,
+                decision: "approval-required",
+                workflowId: wf.matchedWorkflowId,
+              },
+            });
+            return {
+              decision: "deny" as const,
+              reason: "approval-required",
+              mode: decision.mode,
+              elevated: true,
+              approvalId,
+              workflowId: wf.matchedWorkflowId,
+              seq: task.callsUsed,
+              chainHead: task.chainHead,
+              callsRemaining: Math.max(0, task.budget.maxCalls - task.callsUsed),
+            };
+          }
         }
       }
 
