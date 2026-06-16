@@ -74,7 +74,7 @@ export function UnlockScreen({
   }[view];
 
   return (
-    <div className="grid min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[1.05fr_1fr]">
+    <div className="grid min-h-[calc(100dvh-3.5rem)] md:grid-cols-[1.05fr_1fr]">
       <BrandPanel />
       <div className="bg-arc-mesh relative flex items-center">
         <div className="mx-auto flex w-full max-w-md flex-col gap-8 px-6 py-12 sm:py-16">

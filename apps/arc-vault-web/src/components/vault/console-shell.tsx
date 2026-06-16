@@ -153,7 +153,7 @@ export function ConsoleShell({
         )}
       >
         <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border/60 px-4">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary ring-1 ring-primary/20">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary ring-1 ring-primary/25">
             <ArcMark className="h-4 w-4" />
           </span>
           {!collapsed ? <span className="font-display text-lg font-semibold tracking-tight">arc</span> : null}
@@ -233,7 +233,7 @@ export function ConsoleShell({
 
           <div className="ml-auto flex items-center gap-2">
             {actions}
-            <span className="hidden lg:inline">
+            <span className="hidden xl:inline">
               <TrustIndicator kind="zk" />
             </span>
             <SegmentedControl
@@ -251,7 +251,7 @@ export function ConsoleShell({
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="hidden h-8 w-8 lg:inline-flex"
               aria-label="Toggle density"
               title={density === "compact" ? "Comfortable" : "Compact"}
               onClick={() => onDensity(density === "compact" ? "comfortable" : "compact")}
@@ -307,7 +307,7 @@ function NavItem({
       )}
     >
       {active ? (
-        <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-primary" />
+        <span className="absolute -left-2.5 top-1.5 bottom-1.5 w-[3px] rounded-r bg-primary" />
       ) : null}
       <Icon className="h-[18px] w-[18px] shrink-0" />
       {!collapsed ? <span className="truncate">{label}</span> : null}

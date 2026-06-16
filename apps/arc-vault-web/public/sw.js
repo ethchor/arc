@@ -27,7 +27,9 @@
  *    users would be pinned to whatever HTML was cached the first time.
  */
 
-const CACHE_VERSION = "v1";
+// Bumped per release so the install step pulls a fresh shell and activate prunes old
+// buckets. Without the bump, users get pinned to whatever HTML was first cached.
+const CACHE_VERSION = "v2";
 const SHELL_CACHE = `arc-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `arc-static-${CACHE_VERSION}`;
 
