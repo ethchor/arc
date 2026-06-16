@@ -27,7 +27,7 @@ const HONEYCOMB_MASK = {
 
 export function BrandPanel({ variant = "enroll" }: { variant?: "enroll" | "unlock" }) {
   return (
-    <aside className="arc-grid-bg relative hidden flex-col justify-between overflow-hidden bg-[#0C0F16] p-10 text-[#E9ECF1] md:flex lg:p-14">
+    <aside className="arc-grid-bg relative hidden flex-col justify-center overflow-hidden bg-[#0C0F16] p-10 text-[#E9ECF1] md:flex lg:p-14">
       <div
         className="pointer-events-none absolute inset-0 opacity-90"
         style={{
@@ -35,11 +35,6 @@ export function BrandPanel({ variant = "enroll" }: { variant?: "enroll" | "unloc
             "radial-gradient(ellipse 60% 50% at 18% 8%, rgba(236,155,46,0.10), transparent 60%), radial-gradient(ellipse 80% 60% at 85% 100%, rgba(45,198,177,0.16), transparent 62%)",
         }}
       />
-
-      <div className="relative flex items-center gap-2.5">
-        <span aria-hidden className="h-7 w-7 bg-[#2DC6B1]" style={HONEYCOMB_MASK} />
-        <span className="font-display text-[17px] font-medium tracking-tight">arc</span>
-      </div>
 
       <div className="relative flex flex-col items-start gap-5">
         <span aria-hidden className="h-24 w-24 bg-[#2DC6B1] lg:h-28 lg:w-28" style={HONEYCOMB_MASK} />
@@ -80,7 +75,7 @@ export function BrandPanel({ variant = "enroll" }: { variant?: "enroll" | "unloc
         )}
       </div>
 
-      <div className="relative flex flex-wrap gap-2">
+      <div className="absolute inset-x-0 bottom-8 flex flex-wrap justify-center gap-2 px-10">
         <TrustIndicator kind="zk" />
         <TrustIndicator kind="pq" />
       </div>

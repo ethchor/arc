@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Reveal } from "@/components/motion/reveal";
-import { Stagger } from "@/components/motion/stagger";
-import { HoneycombMark } from "@/components/brand/honeycomb-mark";
 import { BrandPanel } from "@/components/brand/brand-panel";
 
 interface Props {
@@ -78,17 +76,10 @@ export function UnlockScreen({
       <BrandPanel />
       <div className="bg-arc-mesh relative flex items-center">
         <div className="mx-auto flex w-full max-w-md flex-col gap-8 px-6 py-12 sm:py-16">
-          <Stagger stagger={0.06} className="flex flex-col gap-6">
-            <Stagger.Item>
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/20">
-                <HoneycombMark className="h-7 w-7" />
-              </div>
-            </Stagger.Item>
-            <Stagger.Item className="flex flex-col gap-2">
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{COPY.title}</h1>
-              <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">{COPY.lede}</p>
-            </Stagger.Item>
-          </Stagger>
+          <Reveal variant="fade-up" offset={8} className="flex flex-col gap-2">
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{COPY.title}</h1>
+            <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">{COPY.lede}</p>
+          </Reveal>
 
           <Reveal variant="fade-up" offset={8} delay={0.18}>
             {view === "signin" ? (
