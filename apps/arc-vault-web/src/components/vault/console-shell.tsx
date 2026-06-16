@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeCustomizer } from "@/components/theme-customizer";
-import { ArcMark } from "@/components/brand/arc-mark";
+import { HoneycombMark } from "@/components/brand/honeycomb-mark";
 import { SegmentedControl } from "@/components/arc/segmented-control";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
 import { CommandPalette, type CommandItem } from "@/components/vault/command-palette";
@@ -154,7 +154,7 @@ export function ConsoleShell({
       >
         <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border/60 px-4">
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary ring-1 ring-primary/25">
-            <ArcMark className="h-4 w-4" />
+            <HoneycombMark className="h-[18px] w-[18px]" />
           </span>
           {!collapsed ? <span className="font-display text-lg font-semibold tracking-tight">arc</span> : null}
         </div>

@@ -1,12 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, Check, Download, Loader2, Lock, Printer, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, Copy, Download, Loader2, Lock, Printer, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BrandPanel } from "@/components/brand/brand-panel";
-import { CopyButton } from "@/components/arc/copy-button";
 import { PasswordStrength } from "@/components/arc/password-strength";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
 import { Reveal } from "@/components/motion/reveal";
@@ -40,6 +39,18 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
   const [password, setPassword] = React.useState("");
   const [saved, setSaved] = React.useState(false);
   const [submitted, setSubmitted] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  const copyKey = async () => {
+    if (!recoveryKey) return;
+    try {
+      await navigator.clipboard.writeText(recoveryKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard can fail in non-secure contexts; the visual stays at "Copy" */
+    }
+  };
 
   // When the parent hands back the generated recovery key, advance to the ceremony.
   React.useEffect(() => {
@@ -66,7 +77,7 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
   const stepIndex = step === "password" ? 0 : step === "recovery" ? 1 : 2;
 
   return (
-    <div className="grid min-h-[calc(100dvh-3.5rem)] md:grid-cols-[1.05fr_1fr]">
+    <div className="grid min-h-[100dvh] md:grid-cols-[1.05fr_1fr]">
       <BrandPanel variant="enroll" />
       <div className="bg-arc-mesh relative flex items-center">
         <div className="mx-auto flex w-full max-w-md flex-col gap-7 px-6 py-12 sm:py-16">
@@ -174,7 +185,10 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <CopyButton value={recoveryKey ?? ""} label="Copy" autoClearSeconds={0} />
+                  <Button variant="secondary" size="sm" onClick={copyKey}>
+                    {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
                   <Button variant="secondary" size="sm" onClick={() => window.print()}>
                     <Printer className="h-3.5 w-3.5" /> Print
                   </Button>
