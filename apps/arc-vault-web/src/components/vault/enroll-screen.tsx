@@ -66,7 +66,7 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
   const stepIndex = step === "password" ? 0 : step === "recovery" ? 1 : 2;
 
   return (
-    <div className="grid min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[1.05fr_1fr]">
+    <div className="grid min-h-[calc(100dvh-3.5rem)] md:grid-cols-[1.05fr_1fr]">
       <BrandPanel variant="enroll" />
       <div className="bg-arc-mesh relative flex items-center">
         <div className="mx-auto flex w-full max-w-md flex-col gap-7 px-6 py-12 sm:py-16">

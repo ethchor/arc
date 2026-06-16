@@ -10,7 +10,9 @@ import { TrustIndicator } from "@/components/arc/trust-indicator";
  *   - "unlock"  — "A vault you actually enjoy using." (calmer, no feature list).
  *
  * The honeycomb (`/arc-honeycomb.svg`) renders via CSS `mask` so it tints to arc cyan and
- * the 35 KB SVG stays out of the JS bundle. Hidden below `lg` by the caller.
+ * the 35 KB SVG stays out of the JS bundle. Hidden below `md` (768px) by the caller —
+ * matches the design system's 820px collapse point so anything wider than a phone shows
+ * the split layout.
  */
 const FEATURES: { icon: ComponentType<{ className?: string }>; title: string; desc: string }[] = [
   { icon: ShieldCheck, title: "Zero-knowledge", desc: "The server only ever holds ciphertext — your keys never leave this device." },
@@ -25,7 +27,7 @@ const HONEYCOMB_MASK = {
 
 export function BrandPanel({ variant = "enroll" }: { variant?: "enroll" | "unlock" }) {
   return (
-    <aside className="arc-grid-bg relative hidden flex-col justify-between overflow-hidden bg-[#0C0F16] p-10 text-[#E9ECF1] lg:flex xl:p-14">
+    <aside className="arc-grid-bg relative hidden flex-col justify-between overflow-hidden bg-[#0C0F16] p-10 text-[#E9ECF1] md:flex lg:p-14">
       <div
         className="pointer-events-none absolute inset-0 opacity-90"
         style={{
@@ -40,10 +42,10 @@ export function BrandPanel({ variant = "enroll" }: { variant?: "enroll" | "unloc
       </div>
 
       <div className="relative flex flex-col items-start gap-5">
-        <span aria-hidden className="h-24 w-24 bg-[#2DC6B1] xl:h-28 xl:w-28" style={HONEYCOMB_MASK} />
+        <span aria-hidden className="h-24 w-24 bg-[#2DC6B1] lg:h-28 lg:w-28" style={HONEYCOMB_MASK} />
         {variant === "enroll" ? (
           <>
-            <h2 className="font-display text-3xl font-medium leading-[1.1] tracking-tight xl:text-[34px]">
+            <h2 className="font-display text-3xl font-medium leading-[1.1] tracking-tight lg:text-[34px]">
               One account.
               <br />
               Two worlds of secrets.
@@ -68,7 +70,7 @@ export function BrandPanel({ variant = "enroll" }: { variant?: "enroll" | "unloc
           </>
         ) : (
           <>
-            <h2 className="max-w-[16ch] font-display text-3xl font-medium leading-[1.1] tracking-tight xl:text-4xl">
+            <h2 className="max-w-[16ch] font-display text-3xl font-medium leading-[1.1] tracking-tight lg:text-4xl">
               A vault you actually enjoy using.
             </h2>
             <p className="max-w-[40ch] text-sm leading-relaxed text-[#9AA4B4]">
