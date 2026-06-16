@@ -60,7 +60,10 @@ export function UnlockScreen({
   }, [busy]);
   const run = (action: Action, fn: () => void) => {
     setPending(action);
-    fn();
+    // Defer one frame so the spinner paints BEFORE Argon2id starts blocking the main
+    // thread. Without this, the button updates state but never re-renders to its loading
+    // variant because the heavy WASM work runs in the same microtask as the state update.
+    requestAnimationFrame(() => fn());
   };
   const spin = (action: Action) => busy && pending === action;
 

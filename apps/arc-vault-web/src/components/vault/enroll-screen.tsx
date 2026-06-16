@@ -102,7 +102,11 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
                   e.preventDefault();
                   if (!password) return;
                   setSubmitted(true);
-                  onEnroll(password);
+                  // Defer one frame so React commits the "submitted" + parent's `busy`
+                  // states before Argon2id starts blocking the main thread. Without this,
+                  // the heavy WASM work runs in the same microtask as the state updates
+                  // and the button never repaints to its loading variant — looks frozen.
+                  requestAnimationFrame(() => onEnroll(password));
                 }}
               >
                 <div className="flex flex-col gap-1.5">
