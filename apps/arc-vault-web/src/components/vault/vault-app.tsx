@@ -388,45 +388,30 @@ export function VaultApp() {
   }, [phase, autolock]);
 
   if (phase === "device-pending") {
-    return (
-      <div className="min-h-screen">
-        <SiteHeader />
-        <DevicePendingView code={deviceCode} onCheck={() => pollApproval(true)} onCancel={doLock} />
-      </div>
-    );
+    return <DevicePendingView code={deviceCode} onCheck={() => pollApproval(true)} onCancel={doLock} />;
   }
 
   if (phase === "recover") {
-    return (
-      <div className="min-h-screen">
-        <SiteHeader />
-        <RecoverScreen busy={busy} onRecover={recoverWithKey} onBack={() => setPhase("account")} />
-      </div>
-    );
+    return <RecoverScreen busy={busy} onRecover={recoverWithKey} onBack={() => setPhase("account")} />;
   }
 
   if (phase === "enroll") {
     return (
-      <div className="min-h-screen">
-        <SiteHeader />
-        <EnrollScreen
-          busy={busy}
-          recoveryKey={recoveryKey}
-          onEnroll={enroll}
-          onComplete={completeEnroll}
-          onBack={() => {
-            setRecoveryKey(null);
-            setPhase("account");
-          }}
-        />
-      </div>
+      <EnrollScreen
+        busy={busy}
+        recoveryKey={recoveryKey}
+        onEnroll={enroll}
+        onComplete={completeEnroll}
+        onBack={() => {
+          setRecoveryKey(null);
+          setPhase("account");
+        }}
+      />
     );
   }
 
   if (phase !== "unlocked") {
     return (
-      <div className="min-h-screen">
-        <SiteHeader />
         <UnlockScreen
           phase={phase}
           busy={busy}
@@ -437,7 +422,6 @@ export function VaultApp() {
           onPasskeyUnlock={unlockWithPasskey}
           onForgotPassword={phase === "account" ? () => setPhase("recover") : undefined}
         />
-      </div>
     );
   }
 

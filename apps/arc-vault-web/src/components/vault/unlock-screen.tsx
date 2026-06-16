@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Reveal } from "@/components/motion/reveal";
 import { Stagger } from "@/components/motion/stagger";
-import { ArcMark } from "@/components/brand/arc-mark";
+import { HoneycombMark } from "@/components/brand/honeycomb-mark";
 import { BrandPanel } from "@/components/brand/brand-panel";
 
 interface Props {
@@ -74,14 +74,14 @@ export function UnlockScreen({
   }[view];
 
   return (
-    <div className="grid min-h-[calc(100dvh-3.5rem)] md:grid-cols-[1.05fr_1fr]">
+    <div className="grid min-h-[100dvh] md:grid-cols-[1.05fr_1fr]">
       <BrandPanel />
       <div className="bg-arc-mesh relative flex items-center">
         <div className="mx-auto flex w-full max-w-md flex-col gap-8 px-6 py-12 sm:py-16">
           <Stagger stagger={0.06} className="flex flex-col gap-6">
             <Stagger.Item>
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/20">
-                <ArcMark className="h-6 w-6" />
+                <HoneycombMark className="h-7 w-7" />
               </div>
             </Stagger.Item>
             <Stagger.Item className="flex flex-col gap-2">

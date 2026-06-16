@@ -29,7 +29,7 @@
 
 // Bumped per release so the install step pulls a fresh shell and activate prunes old
 // buckets. Without the bump, users get pinned to whatever HTML was first cached.
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const SHELL_CACHE = `arc-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `arc-static-${CACHE_VERSION}`;
 
