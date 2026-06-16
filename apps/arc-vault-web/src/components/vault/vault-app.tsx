@@ -70,6 +70,25 @@ import {
 
 type Phase = "login" | "account" | "device-pending" | "recover" | "enroll" | "unlocked";
 
+/**
+ * Turn a thrown value into a human-facing toast string. The SDK's `VaultApiError` carries
+ * the parsed server body but its `.message` is the generic "arc-vault API error 404"; the
+ * real, useful text (e.g. "no passkeys registered") lives on `body.message`, so we surface
+ * that when present. Presentation only — never logs or sends anything.
+ */
+function errorMessage(e: unknown): string {
+  const body = (e as { body?: unknown } | null | undefined)?.body;
+  let raw: string | null = null;
+  if (body && typeof body === "object") {
+    const m = (body as { message?: unknown }).message;
+    if (typeof m === "string" && m.trim()) raw = m.trim();
+  }
+  if (!raw) raw = e instanceof Error && e.message ? e.message : "Something went wrong";
+  // Server messages are lowercase fragments; a toast reads better capitalized. The text is
+  // otherwise unchanged.
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
 export function VaultApp() {
   const [phase, setPhase] = React.useState<Phase>("login");
   const [busy, setBusy] = React.useState(false);
@@ -105,7 +124,7 @@ export function VaultApp() {
     try {
       await fn();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -207,7 +226,7 @@ export function VaultApp() {
         toast("Not approved yet");
       }
     } catch (e) {
-      if (announce) toast.error((e as Error).message);
+      if (announce) toast.error(errorMessage(e));
     }
   };
 
