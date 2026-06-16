@@ -261,31 +261,29 @@ describe("passkey unlock e2e", () => {
   let token: string;
   const authenticator = new FakeAuthenticator();
 
+  // Pin the passkey env for the whole suite — origins()/rpId() read it live per-request, so
+  // restoring it before the it() blocks (as a beforeAll `finally` would) makes them fall back
+  // to the production defaults. Capture here, restore in afterAll. Mirrors passkey-discover.
+  const savedEnv = { RP_ID: process.env.ARC_PASSKEY_RP_ID, ORIGIN: process.env.ARC_PASSKEY_ORIGIN };
+
   beforeAll(async () => {
-    const saved = {
-      RP_ID: process.env.ARC_PASSKEY_RP_ID,
-      ORIGIN: process.env.ARC_PASSKEY_ORIGIN,
-    };
     process.env.ARC_PASSKEY_RP_ID = RP_ID;
     process.env.ARC_PASSKEY_ORIGIN = ORIGIN;
-    try {
-      const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
-      app = mod.createNestApplication();
-      app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-      await app.init();
-      server = app.getHttpServer();
-      token = await login(server, "passkey-e2e@example.com");
-      await request(server).post("/vault/enroll").set(auth(token)).send(enrollDto()).expect(201);
-    } finally {
-      if (saved.RP_ID === undefined) delete process.env.ARC_PASSKEY_RP_ID;
-      else process.env.ARC_PASSKEY_RP_ID = saved.RP_ID;
-      if (saved.ORIGIN === undefined) delete process.env.ARC_PASSKEY_ORIGIN;
-      else process.env.ARC_PASSKEY_ORIGIN = saved.ORIGIN;
-    }
+    const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = mod.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    await app.init();
+    server = app.getHttpServer();
+    token = await login(server, "passkey-e2e@example.com");
+    await request(server).post("/vault/enroll").set(auth(token)).send(enrollDto()).expect(201);
   });
 
   afterAll(async () => {
     await app.close();
+    if (savedEnv.RP_ID === undefined) delete process.env.ARC_PASSKEY_RP_ID;
+    else process.env.ARC_PASSKEY_RP_ID = savedEnv.RP_ID;
+    if (savedEnv.ORIGIN === undefined) delete process.env.ARC_PASSKEY_ORIGIN;
+    else process.env.ARC_PASSKEY_ORIGIN = savedEnv.ORIGIN;
   });
 
   it("register → list shows the new credential with its label", async () => {
