@@ -73,11 +73,14 @@ export function BrandPanel({ variant = "enroll" }: { variant?: "enroll" | "unloc
             </p>
           </>
         )}
-      </div>
 
-      <div className="absolute inset-x-0 bottom-8 flex flex-wrap justify-center gap-2 px-10">
-        <TrustIndicator kind="zk" />
-        <TrustIndicator kind="pq" />
+        {/* Trust badges flow naturally beneath the content (same left edge as the
+            features), with a generous gap above. Beats absolute-positioning, which
+            on a tall viewport leaves a yawning empty band between content + badges. */}
+        <div className="mt-2 flex flex-wrap gap-2">
+          <TrustIndicator kind="zk" />
+          <TrustIndicator kind="pq" />
+        </div>
       </div>
     </aside>
   );
