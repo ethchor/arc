@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, Cpu, FileClock, FileText, Folder, GitBranch, KeyRound, KeySquare, Pencil, Plus, RefreshCw, RotateCw, Search, Shield, Trash2, Vault, X } from "lucide-react";
+import { Clock, FileClock, FileText, Folder, GitBranch, KeyRound, KeySquare, Pencil, Plus, RefreshCw, RotateCw, Search, Shield, Trash2, Vault, X } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import type { JsonValue, TotpAlgorithm } from "@arc/types";
 import { toast } from "sonner";
@@ -27,6 +27,7 @@ import {
   type Persona,
 } from "@/components/vault/console-shell";
 import { PreviewScreen } from "@/components/vault/preview-screen";
+import { DevicesView } from "@/components/vault/devices-view";
 import { HomeView } from "@/components/vault/home-view";
 import { SecurityView } from "@/components/vault/security-view";
 import { IdentitiesView } from "@/components/vault/identities-view";
@@ -496,15 +497,7 @@ export function VaultApp() {
             }}
           />
         )}
-        {section === "devices" && (
-          <PreviewScreen
-            eyebrow="You · devices"
-            title="My devices"
-            description="Every device that can unlock your vault, with last-seen, the trusted flag, and the inactivity auto-revoke nudge."
-            icon={Cpu}
-            engine="Engine B"
-          />
-        )}
+        {section === "devices" && <DevicesView getClient={getClient} />}
         {section === "kv" && (
           <PreviewScreen
             eyebrow="Engine A · infrastructure"
