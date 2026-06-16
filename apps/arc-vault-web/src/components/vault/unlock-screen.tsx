@@ -54,18 +54,24 @@ export function UnlockScreen({
   const [password, setPassword] = React.useState("");
 
   // Track the in-flight action so only the clicked button spins (busy is a shared flag).
+  // The spinner keys off `pending` — set synchronously on click — not the parent's `busy`,
+  // which only flips inside the async handler. That makes loading visible the instant you
+  // click, even for fast-failing requests (e.g. an un-enrolled account 404). `pending` is
+  // cleared when the action settles (busy → false).
   const [pending, setPending] = React.useState<Action | null>(null);
   React.useEffect(() => {
     if (!busy) setPending(null);
   }, [busy]);
   const run = (action: Action, fn: () => void) => {
+    if (pending) return; // one action at a time; ignore re-entry within the defer window
     setPending(action);
-    // Defer one frame so the spinner paints BEFORE Argon2id starts blocking the main
-    // thread. Without this, the button updates state but never re-renders to its loading
-    // variant because the heavy WASM work runs in the same microtask as the state update.
-    requestAnimationFrame(() => fn());
+    // Two frames: the first lets React paint the spinner (driven by `pending`), the second
+    // runs the work. A single frame isn't enough — `enroll()`/`unlock()` can hit Argon2id
+    // synchronously, and that block would swallow the spinner's first paint.
+    requestAnimationFrame(() => requestAnimationFrame(() => fn()));
   };
-  const spin = (action: Action) => busy && pending === action;
+  const spin = (action: Action) => pending === action;
+  const inFlight = busy || pending !== null;
 
   const view: "signin" | "unlock" = phase === "login" ? "signin" : "unlock";
 
@@ -107,7 +113,7 @@ export function UnlockScreen({
                     suppressHydrationWarning
                   />
                 </Field>
-                <Button size="lg" type="submit" className="mt-1 w-full" disabled={busy || !email}>
+                <Button size="lg" type="submit" className="mt-1 w-full" disabled={inFlight || !email}>
                   {spin("signin") ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
                   {spin("signin") ? "Signing in" : "Continue"}
                 </Button>
@@ -132,7 +138,7 @@ export function UnlockScreen({
                 </Field>
 
                 <div className="mt-1 flex flex-col gap-2">
-                  <Button size="lg" type="submit" className="w-full" disabled={busy || !password}>
+                  <Button size="lg" type="submit" className="w-full" disabled={inFlight || !password}>
                     {spin("unlock") ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" /> Unlocking
@@ -150,7 +156,7 @@ export function UnlockScreen({
                       variant="outline"
                       size="lg"
                       className="w-full"
-                      disabled={busy}
+                      disabled={inFlight}
                       onClick={() => run("passkey", onPasskeyUnlock)}
                     >
                       {spin("passkey") ? (
@@ -166,38 +172,48 @@ export function UnlockScreen({
                   ) : null}
                 </div>
 
-                <div className="mt-2 flex flex-col gap-1 border-t pt-3 text-sm">
-                  {onForgotPassword ? (
-                    <Button
-                      type="button"
-                      variant="link"
-                      className="h-auto justify-start px-2 py-1.5 text-xs text-muted-foreground"
-                      disabled={busy}
-                      onClick={onForgotPassword}
-                    >
-                      Forgot your master password?
-                    </Button>
+                {/* Secondary actions, one calm tier above the create-a-vault switch.
+                    "Forgot" and "Set up as a new device" are equal-weight text links — no
+                    full-width ghost slab — so neither visually outranks the other. */}
+                <div className="mt-1 flex flex-col gap-3 border-t pt-4">
+                  {onForgotPassword || onNewDevice ? (
+                    <div className="flex flex-col items-start gap-2 text-xs">
+                      {onForgotPassword ? (
+                        <button
+                          type="button"
+                          onClick={onForgotPassword}
+                          disabled={inFlight}
+                          className="text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+                        >
+                          Forgot your master password?
+                        </button>
+                      ) : null}
+                      {onNewDevice ? (
+                        <button
+                          type="button"
+                          onClick={onNewDevice}
+                          disabled={inFlight}
+                          className="text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+                        >
+                          Set up as a new device
+                        </button>
+                      ) : null}
+                    </div>
                   ) : null}
-                  {onNewDevice ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-auto justify-start px-2 py-1.5 text-muted-foreground hover:text-foreground"
-                      disabled={busy}
-                      onClick={onNewDevice}
-                    >
-                      Set up as a new device
-                    </Button>
-                  ) : null}
-                </div>
 
-                <SwitchPrompt
-                  prompt="New to arc?"
-                  action="Create a vault"
-                  icon={<UserPlus className="h-3.5 w-3.5" />}
-                  disabled={busy}
-                  onClick={onStartEnroll}
-                />
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <span>New to arc?</span>
+                    <button
+                      type="button"
+                      onClick={onStartEnroll}
+                      disabled={inFlight}
+                      className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" />
+                      Create a vault
+                    </button>
+                  </div>
+                </div>
               </form>
             )}
           </Reveal>
@@ -210,35 +226,6 @@ export function UnlockScreen({
           </Reveal>
         </div>
       </div>
-    </div>
-  );
-}
-
-function SwitchPrompt({
-  prompt,
-  action,
-  icon,
-  onClick,
-  disabled,
-}: {
-  prompt: string;
-  action: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-center gap-1.5 border-t pt-4 text-sm text-muted-foreground">
-      <span>{prompt}</span>
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={disabled}
-        className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50"
-      >
-        {icon}
-        {action}
-      </button>
     </div>
   );
 }

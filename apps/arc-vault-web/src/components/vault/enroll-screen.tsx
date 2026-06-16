@@ -70,6 +70,13 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
     if (recoveryKey && step === "password") setStep("recovery");
   }, [recoveryKey, step]);
 
+  // Clear the in-flight flag once the parent settles (success advances the step; failure
+  // surfaces a toast and `busy` drops). Keeps the "Creating vault" spinner keyed on a state
+  // that's set synchronously on submit — see the submit handler.
+  React.useEffect(() => {
+    if (!busy) setSubmitted(false);
+  }, [busy]);
+
   const strength = scorePassword(password);
   const chunks = React.useMemo(
     () => (recoveryKey ?? "").replace(/[^A-Za-z0-9]/g, "").match(/.{1,4}/g) ?? [],
@@ -212,13 +219,13 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
                   className="flex flex-col gap-4"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (!password) return;
+                    if (!password || submitted) return;
                     setSubmitted(true);
-                    // Defer one frame so React commits the "submitted" + parent's `busy`
-                    // states before Argon2id starts blocking the main thread. Without this,
-                    // the heavy WASM work runs in the same microtask as the state updates
-                    // and the button never repaints to its loading variant — looks frozen.
-                    requestAnimationFrame(() => onEnroll(password));
+                    // Two frames before the heavy work: the first paints the "Creating vault"
+                    // spinner (driven by `submitted`, set synchronously above), the second runs
+                    // onEnroll — whose `enroll()` hits Argon2id *synchronously*. A single frame
+                    // isn't enough; that block would swallow the spinner's first paint.
+                    requestAnimationFrame(() => requestAnimationFrame(() => onEnroll(password)));
                   }}
                 >
                   <div className="flex flex-col gap-1.5">
@@ -253,8 +260,8 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
                     ) : null}
                   </div>
 
-                  <Button size="lg" type="submit" className="mt-1 w-full" disabled={busy || !password}>
-                    {busy && submitted ? (
+                  <Button size="lg" type="submit" className="mt-1 w-full" disabled={busy || submitted || !password}>
+                    {submitted ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" /> Creating vault
                       </>
