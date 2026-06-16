@@ -167,27 +167,28 @@ describe("SDK passkey e2e (register then unlock-with-passkey produces a full-cap
   let app: INestApplication;
   let baseUrl: string;
 
+  // Pin the passkey env for the whole suite — origins()/rpId() read it live per-request, so
+  // restoring it before the it() blocks (as a beforeAll `finally` would) makes them fall back
+  // to the production defaults. Capture here, restore in afterAll. Mirrors passkey-discover.
+  const savedEnv = { rp: process.env.ARC_PASSKEY_RP_ID, origin: process.env.ARC_PASSKEY_ORIGIN };
+
   beforeAll(async () => {
-    const saved = { rp: process.env.ARC_PASSKEY_RP_ID, origin: process.env.ARC_PASSKEY_ORIGIN };
     process.env.ARC_PASSKEY_RP_ID = RP_ID;
     process.env.ARC_PASSKEY_ORIGIN = ORIGIN;
-    try {
-      const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
-      app = mod.createNestApplication();
-      app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-      await app.listen(0);
-      const addr = app.getHttpServer().address() as AddressInfo;
-      baseUrl = `http://127.0.0.1:${addr.port}`;
-    } finally {
-      if (saved.rp === undefined) delete process.env.ARC_PASSKEY_RP_ID;
-      else process.env.ARC_PASSKEY_RP_ID = saved.rp;
-      if (saved.origin === undefined) delete process.env.ARC_PASSKEY_ORIGIN;
-      else process.env.ARC_PASSKEY_ORIGIN = saved.origin;
-    }
+    const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = mod.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    await app.listen(0);
+    const addr = app.getHttpServer().address() as AddressInfo;
+    baseUrl = `http://127.0.0.1:${addr.port}`;
   });
 
   afterAll(async () => {
     await app.close();
+    if (savedEnv.rp === undefined) delete process.env.ARC_PASSKEY_RP_ID;
+    else process.env.ARC_PASSKEY_RP_ID = savedEnv.rp;
+    if (savedEnv.origin === undefined) delete process.env.ARC_PASSKEY_ORIGIN;
+    else process.env.ARC_PASSKEY_ORIGIN = savedEnv.origin;
   });
 
   it("registers a passkey, then unlocks a fresh client with it and round-trips a write", async () => {
