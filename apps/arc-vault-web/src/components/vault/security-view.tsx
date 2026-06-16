@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScoreRing } from "@/components/arc/score-ring";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
+import { Stagger } from "@/components/motion/stagger";
 import { analyseSecurity, type FlaggedItem } from "@/lib/security";
 
 /**
@@ -38,16 +39,18 @@ export function SecurityView({
   const denom = Math.max(1, buckets.total);
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow="You · security"
-        title="Your security, at a glance"
-        description="A clear picture of what's strong and what needs attention — computed on this device. Nothing leaves the vault."
-        trailing={<TrustIndicator kind="zk" />}
-      />
+    <Stagger className="space-y-5" stagger={0.05}>
+      <Stagger.Item>
+        <PageHeader
+          eyebrow="You · security"
+          title="Your security, at a glance"
+          description="A clear picture of what's strong and what needs attention — computed on this device. Nothing leaves the vault."
+          trailing={<TrustIndicator kind="zk" />}
+        />
+      </Stagger.Item>
 
       {/* Top-of-page stat strip + score */}
-      <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+      <Stagger.Item className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
         <Card tone="raised">
           <CardContent className="flex items-center gap-6 p-5">
             <ScoreRing value={score} label="Security score" />
@@ -74,62 +77,64 @@ export function SecurityView({
           <StatCard big={buckets.twoFactor} label="2FA enabled" tone="ok" sub={`${buckets.total > 0 ? Math.round((buckets.twoFactor / buckets.total) * 100) : 0}% coverage`} />
           <StatCard big={buckets.total} label="Total logins" tone="ok" sub="indexed locally" />
         </div>
-      </div>
+      </Stagger.Item>
 
       {/* Needs-attention list */}
-      <Card tone="raised">
-        <CardContent className="p-0">
-          <div className="flex items-center justify-between border-b px-5 py-3">
-            <div>
-              <h2 className="font-display text-base font-semibold">Needs attention</h2>
-              <p className="text-xs text-muted-foreground">{flagged.length} {flagged.length === 1 ? "item" : "items"}</p>
-            </div>
-            {buckets.weak > 0 ? (
-              <Badge variant="secondary" className="gap-1.5 bg-[var(--danger-subtle)] text-[var(--danger-fg)]">
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                {buckets.weak} weak
-              </Badge>
-            ) : null}
-          </div>
-
-          {flagged.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 p-12 text-center">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--success-subtle)] text-[var(--success-fg)]">
-                <ShieldCheck className="h-5 w-5" />
-              </span>
+      <Stagger.Item>
+        <Card tone="raised">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between border-b px-5 py-3">
               <div>
-                <p className="text-sm font-semibold">Nothing flagged</p>
-                <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                  Every login is strong, unique, and recent. Keep an eye on this dashboard as
-                  your vault grows.
-                </p>
+                <h2 className="font-display text-base font-semibold">Needs attention</h2>
+                <p className="text-xs text-muted-foreground">{flagged.length} {flagged.length === 1 ? "item" : "items"}</p>
               </div>
+              {buckets.weak > 0 ? (
+                <Badge variant="secondary" className="gap-1.5 bg-[var(--danger-subtle)] text-[var(--danger-fg)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  {buckets.weak} weak
+                </Badge>
+              ) : null}
             </div>
-          ) : (
-            <ul className="divide-y">
-              {flagged.map((f) => (
-                <li key={`${f.id}-${f.kind}`}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenItem(f.id)}
-                    className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-accent/40"
-                  >
-                    <ItemAvatar title={f.title} />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{f.title}</div>
-                      <FlagLine f={f} />
-                    </div>
-                    <Badge variant="outline" className="capitalize">
-                      {f.kind}
-                    </Badge>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+
+            {flagged.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 p-12 text-center">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--success-subtle)] text-[var(--success-fg)]">
+                  <ShieldCheck className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Nothing flagged</p>
+                  <p className="mt-1 max-w-md text-sm text-muted-foreground">
+                    Every login is strong, unique, and recent. Keep an eye on this dashboard as
+                    your vault grows.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <ul className="divide-y">
+                {flagged.map((f) => (
+                  <li key={`${f.id}-${f.kind}`}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenItem(f.id)}
+                      className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-accent/40"
+                    >
+                      <ItemAvatar title={f.title} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{f.title}</div>
+                        <FlagLine f={f} />
+                      </div>
+                      <Badge variant="outline" className="capitalize">
+                        {f.kind}
+                      </Badge>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </Stagger.Item>
+    </Stagger>
   );
 }
 

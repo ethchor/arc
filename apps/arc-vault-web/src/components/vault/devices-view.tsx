@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
 import { PageHeader } from "@/components/vault/security-view";
+import { Stagger } from "@/components/motion/stagger";
 import { cn } from "@/lib/utils";
 
 /** Inactivity threshold for the "retire?" nudge — matches the design system's 40-day note. */
@@ -100,97 +101,105 @@ export function DevicesView({ getClient }: { getClient: () => VaultClient }) {
   const trusted = (devices ?? []).filter((d) => d.trusted).length;
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow="You · devices"
-        title="My devices"
-        description="Every device that can unlock your vault. Trusted devices skip the inactivity auto-revoke."
-        trailing={<TrustIndicator kind="e2e" />}
-      />
+    <Stagger className="space-y-5" stagger={0.05}>
+      <Stagger.Item>
+        <PageHeader
+          eyebrow="You · devices"
+          title="My devices"
+          description="Every device that can unlock your vault. Trusted devices skip the inactivity auto-revoke."
+          trailing={<TrustIndicator kind="e2e" />}
+        />
+      </Stagger.Item>
 
       {pending.length > 0 ? (
-        <Card tone="raised">
-          <CardContent className="p-0">
-            <div className="flex items-center gap-2 border-b px-5 py-3">
-              <Shield className="h-4 w-4 text-primary" />
-              <h2 className="font-display text-base font-semibold">Waiting for approval</h2>
-              <Badge variant="secondary" className="ml-1">{pending.length}</Badge>
-              <span className="ml-auto text-xs text-muted-foreground">
-                Approve only after the code matches the one shown on the new device.
-              </span>
-            </div>
-            <ul className="divide-y">
-              {pending.map((d) => (
-                <li key={d.id} className="flex items-center gap-3 px-5 py-3">
-                  <DeviceAvatar name={d.name} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{d.name}</div>
-                    <div className="font-mono text-sm tracking-[0.18em] text-muted-foreground">
-                      {d.verificationCode}
+        <Stagger.Item>
+          <Card tone="raised">
+            <CardContent className="p-0">
+              <div className="flex items-center gap-2 border-b px-5 py-3">
+                <Shield className="h-4 w-4 text-primary" />
+                <h2 className="font-display text-base font-semibold">Waiting for approval</h2>
+                <Badge variant="secondary" className="ml-1">{pending.length}</Badge>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  Approve only after the code matches the one shown on the new device.
+                </span>
+              </div>
+              <ul className="divide-y">
+                {pending.map((d) => (
+                  <li key={d.id} className="flex items-center gap-3 px-5 py-3">
+                    <DeviceAvatar name={d.name} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{d.name}</div>
+                      <div className="font-mono text-sm tracking-[0.18em] text-muted-foreground">
+                        {d.verificationCode}
+                      </div>
                     </div>
-                  </div>
-                  <Button size="sm" disabled={approving !== null} onClick={() => approve(d)}>
-                    {approving === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    Approve
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+                    <Button size="sm" disabled={approving !== null} onClick={() => approve(d)}>
+                      {approving === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      Approve
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        </Stagger.Item>
       ) : null}
 
-      <Card tone="raised">
-        <CardContent className="p-0">
-          <div className="flex items-center justify-between border-b px-5 py-3">
-            <div>
-              <h2 className="font-display text-base font-semibold">Trusted devices</h2>
-              <p className="text-xs text-muted-foreground">
-                {devices === null ? "Loading…" : `${devices.length} total · ${trusted} trusted`}
-              </p>
+      <Stagger.Item>
+        <Card tone="raised">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between border-b px-5 py-3">
+              <div>
+                <h2 className="font-display text-base font-semibold">Trusted devices</h2>
+                <p className="text-xs text-muted-foreground">
+                  {devices === null ? "Loading…" : `${devices.length} total · ${trusted} trusted`}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" disabled>
+                <Plus className="h-4 w-4" /> Approve new device
+              </Button>
             </div>
-            <Button variant="outline" size="sm" disabled>
-              <Plus className="h-4 w-4" /> Approve new device
-            </Button>
-          </div>
 
-          {devices === null ? (
-            <div className="px-5 py-10 text-center text-sm text-muted-foreground">Loading…</div>
-          ) : devices.length === 0 ? (
-            <div className="px-5 py-12 text-center text-sm text-muted-foreground">
-              No enrolled devices yet.
-            </div>
-          ) : (
-            <ul className="divide-y">
-              {[...devices]
-                .sort((a, b) => freshness(b.lastSeenAt) - freshness(a.lastSeenAt))
-                .map((d) => (
-                  <DeviceRow
-                    key={d.id}
-                    device={d}
-                    revoking={revoking === d.id}
-                    onRevoke={() => setConfirmRevoke(d)}
-                  />
-                ))}
-            </ul>
-          )}
+            {devices === null ? (
+              <div className="px-5 py-10 text-center text-sm text-muted-foreground">Loading…</div>
+            ) : devices.length === 0 ? (
+              <div className="px-5 py-12 text-center text-sm text-muted-foreground">
+                No enrolled devices yet.
+              </div>
+            ) : (
+              <ul className="divide-y">
+                {[...devices]
+                  .sort((a, b) => freshness(b.lastSeenAt) - freshness(a.lastSeenAt))
+                  .map((d) => (
+                    <DeviceRow
+                      key={d.id}
+                      device={d}
+                      revoking={revoking === d.id}
+                      onRevoke={() => setConfirmRevoke(d)}
+                    />
+                  ))}
+              </ul>
+            )}
 
-          {devices && devices.some(isStale) ? (
-            <div className="flex items-center gap-2.5 border-t bg-[var(--warning-subtle)] px-5 py-3 text-sm text-muted-foreground">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--warning)]" />
-              <span>
-                Some devices have been inactive for over {STALE_DAYS} days. Retire them to keep
-                your account tight.
-              </span>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+            {devices && devices.some(isStale) ? (
+              <div className="flex items-center gap-2.5 border-t bg-[var(--warning-subtle)] px-5 py-3 text-sm text-muted-foreground">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--warning)]" />
+                <span>
+                  Some devices have been inactive for over {STALE_DAYS} days. Retire them to keep
+                  your account tight.
+                </span>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </Stagger.Item>
 
-      <p className="text-xs text-muted-foreground">
-        Revoking a device removes its access to this vault. The device’s wrapped keys are
-        invalidated server-side; the user must re-enroll to regain access.
-      </p>
+      <Stagger.Item>
+        <p className="text-xs text-muted-foreground">
+          Revoking a device removes its access to this vault. The device’s wrapped keys are
+          invalidated server-side; the user must re-enroll to regain access.
+        </p>
+      </Stagger.Item>
 
       <Dialog open={confirmRevoke !== null} onOpenChange={(o) => !o && setConfirmRevoke(null)}>
         <DialogContent>
@@ -216,7 +225,7 @@ export function DevicesView({ getClient }: { getClient: () => VaultClient }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Stagger>
   );
 }
 

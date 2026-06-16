@@ -11,6 +11,7 @@ import { CopyButton } from "@/components/arc/copy-button";
 import { asLogin, itemTitle, itemSubtitle } from "@/lib/items";
 import { analyseSecurity } from "@/lib/security";
 import { PageHeader } from "@/components/vault/security-view";
+import { Stagger } from "@/components/motion/stagger";
 
 /**
  * The persona Home (arc design system `PersonaHome`) — a calm, persona-aware landing for
@@ -37,19 +38,21 @@ export function HomeView({
   const recent = React.useMemo(() => recentLogins(items, 4), [items]);
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow={greeting.eyebrow}
-        title={greeting.title}
-        description="Your account is protected by a key only you hold."
-        trailing={
-          <Button size="sm" onClick={onAddItem}>
-            <Plus className="h-4 w-4" /> Add item
-          </Button>
-        }
-      />
+    <Stagger className="space-y-5" stagger={0.05}>
+      <Stagger.Item>
+        <PageHeader
+          eyebrow={greeting.eyebrow}
+          title={greeting.title}
+          description="Your account is protected by a key only you hold."
+          trailing={
+            <Button size="sm" onClick={onAddItem}>
+              <Plus className="h-4 w-4" /> Add item
+            </Button>
+          }
+        />
+      </Stagger.Item>
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+      <Stagger.Item className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <Card tone="raised">
           <CardContent className="p-0">
             <div className="flex items-center gap-5 p-5">
@@ -99,13 +102,13 @@ export function HomeView({
         </Card>
 
         <DevicesTeaser onManage={() => onGo("devices")} />
-      </div>
+      </Stagger.Item>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <Stagger.Item className="grid gap-4 lg:grid-cols-2">
         <RecentlyUsed items={recent} onOpenAll={() => onGo("vault")} vault={vault} />
         <AgentsTeaser onView={() => onGo("agents")} />
-      </div>
-    </div>
+      </Stagger.Item>
+    </Stagger>
   );
 }
 
