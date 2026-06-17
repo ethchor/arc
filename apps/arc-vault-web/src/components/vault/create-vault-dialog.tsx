@@ -27,12 +27,27 @@ export function CreateVaultDialog({
   onCreate,
   trigger,
   tooltip = DEFAULT_TIP,
+  open: openProp,
+  onOpenChange,
 }: {
   onCreate: (type: VType, name: string) => Promise<void>;
   trigger?: React.ReactNode;
   tooltip?: TipProps;
+  /** Controlled open — when set, the opener lives elsewhere (e.g. a dropdown item) and no
+   *  trigger is rendered. Omit for the standalone, self-triggering button. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const controlled = openProp !== undefined;
+  const [openState, setOpenState] = React.useState(false);
+  const open = controlled ? openProp : openState;
+  const setOpen = React.useCallback(
+    (v: boolean) => {
+      if (!controlled) setOpenState(v);
+      onOpenChange?.(v);
+    },
+    [controlled, onOpenChange],
+  );
   const [name, setName] = React.useState("");
   const [type, setType] = React.useState<VType>("team");
   const [busy, setBusy] = React.useState(false);
@@ -51,13 +66,15 @@ export function CreateVaultDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <TipTrigger tip={tooltip}>
-        {trigger ?? (
-          <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Create new vault">
-            <FolderPlus className="h-4 w-4" />
-          </Button>
-        )}
-      </TipTrigger>
+      {!controlled ? (
+        <TipTrigger tip={tooltip}>
+          {trigger ?? (
+            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Create new vault">
+              <FolderPlus className="h-4 w-4" />
+            </Button>
+          )}
+        </TipTrigger>
+      ) : null}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New vault</DialogTitle>
