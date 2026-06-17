@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 const ROLES = ["viewer", "editor", "admin"] as const;
-type Role = (typeof ROLES)[number];
+export type Role = (typeof ROLES)[number];
 
 export interface IdentityLookup {
   /** Resolved arc user id — set by the email lookup, used in the grant call. */

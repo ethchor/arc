@@ -24,6 +24,8 @@ import {
   Workflow,
   Wrench,
 } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { DUR, EASE } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { ThemeCustomizer } from "@/components/theme-customizer";
 import { HoneycombMark } from "@/components/brand/honeycomb-mark";
@@ -266,7 +268,23 @@ export function ConsoleShell({
         </header>
 
         <main className="flex-1 px-4 py-6 data-[density=compact]:py-4" data-density={density}>
-          <div className={cn("mx-auto", density === "compact" ? "max-w-6xl" : "max-w-5xl")}>{children}</div>
+          <div className={cn("mx-auto", density === "compact" ? "max-w-6xl" : "max-w-5xl")}>
+            {/* Section crossfade. `mode="wait"` keeps the leaving + entering views from
+                stacking in flow (no layout jump); `initial={false}` skips the fade on the
+                first paint after unlock so it doesn't double up with the unlock→vault
+                transition. Reduced-motion users get an instant swap via MotionConfig. */}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={section}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: DUR.fast, ease: EASE.outQuart }}
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </main>
       </div>
 

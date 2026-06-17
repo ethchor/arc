@@ -1,13 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Clock, FileClock, FileText, Folder, GitBranch, KeyRound, KeySquare, Pencil, Plus, RefreshCw, RotateCw, Search, Shield, Trash2, Vault, X } from "lucide-react";
+import { Clock, FileClock, GitBranch, KeyRound, RefreshCw, RotateCw, Shield } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import type { JsonValue, TotpAlgorithm } from "@arc/types";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -16,8 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { AccessView } from "@/components/vault/access-view";
 import { AuditView } from "@/components/vault/audit-view";
 import {
@@ -31,26 +27,22 @@ import { DevicesView } from "@/components/vault/devices-view";
 import { HomeView } from "@/components/vault/home-view";
 import { SecurityView } from "@/components/vault/security-view";
 import { IdentitiesView } from "@/components/vault/identities-view";
-import { CopyField } from "@/components/vault/copy-field";
-import { CreateVaultDialog } from "@/components/vault/create-vault-dialog";
 import { DevicePendingView } from "@/components/vault/device-pending-view";
 import { EnrollScreen } from "@/components/vault/enroll-screen";
 import { DevicesDialog } from "@/components/vault/devices-dialog";
 import { InfoView } from "@/components/vault/info-view";
-import { ItemDialog, type LoginInput } from "@/components/vault/item-dialog";
-import { NoteDialog, type NoteInput } from "@/components/vault/note-dialog";
-import { SecretDialog, type SecretInput } from "@/components/vault/secret-dialog";
-import { TotpCard } from "@/components/vault/totp-card";
-import { TotpDialog, type TotpInput } from "@/components/vault/totp-dialog";
-import { NewFolderDialog } from "@/components/vault/new-folder-dialog";
+import type { LoginInput } from "@/components/vault/item-dialog";
+import type { NoteInput } from "@/components/vault/note-dialog";
+import type { SecretInput } from "@/components/vault/secret-dialog";
+import type { TotpInput } from "@/components/vault/totp-dialog";
 import { PoliciesView } from "@/components/vault/policies-view";
 import { RecoverScreen } from "@/components/vault/recover-screen";
-import { RecoveryKeyCard } from "@/components/vault/recovery-key-card";
 import { SettingsDialog } from "@/components/vault/settings-dialog";
 import { ShareDialog } from "@/components/vault/share-dialog";
 import { SiteHeader } from "@/components/vault/site-header";
 import { ToolsView } from "@/components/vault/tools-view";
 import { UnlockScreen } from "@/components/vault/unlock-screen";
+import { VaultView } from "@/components/vault/vault-view";
 import { WorkflowsView } from "@/components/vault/workflows-view";
 import { getClient, initClient, lock } from "@/vault-store";
 import { cn } from "@/lib/utils";
@@ -448,10 +440,6 @@ export function VaultApp() {
   const selectedVault = vaults.find((v) => v.id === selected);
   const canManage = !deviceMode && (selectedVault?.role === "owner" || selectedVault?.role === "admin");
   const active = items.find((i) => i.id === activeItem);
-  const activeLogin = active ? asLogin(active) : null;
-  const activeTotp = active ? asTotp(active) : null;
-  const activeNote = active ? asNote(active) : null;
-  const activeSecret = active ? asSecret(active) : null;
   const activeTitle = active ? itemTitle(active) : null;
   const q = query.trim().toLowerCase();
   const filtered = items.filter((i) => {
@@ -555,298 +543,39 @@ export function VaultApp() {
         )}
 
         {section === "vault" && (
-          <div className="space-y-6">
-            {recoveryKey && (
-              <RecoveryKeyCard recoveryKey={recoveryKey} onDismiss={() => setRecoveryKey(null)} />
-            )}
-            <div className="grid gap-6 md:grid-cols-[220px_1fr]">
-          <aside className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium text-muted-foreground">Vaults</h2>
-              <CreateVaultDialog onCreate={createVault} />
-            </div>
-            <div className="space-y-1">
-              {vaults.map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => openVault(v.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent",
-                    selected === v.id && "bg-accent font-medium",
-                  )}
-                >
-                  <Vault className="h-4 w-4 text-muted-foreground" />
-                  <span className={cn("truncate", !v.name && "capitalize")}>{v.name ?? v.type}</span>
-                  <Badge variant="secondary" className="ml-auto">
-                    {v.role}
-                  </Badge>
-                </button>
-              ))}
-            </div>
-          </aside>
-
-          <section className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h1 className="text-lg font-semibold">Items</h1>
-              <div className="flex items-center gap-2">
-                {selected && (
-                  <>
-                    <ItemDialog
-                      trigger={
-                        <Button size="sm">
-                          <Plus className="h-4 w-4" /> Add login
-                        </Button>
-                      }
-                      folders={folders}
-                      initialFolderId={folderFilter}
-                      onSubmit={(v, f) => saveLogin(v, f)}
-                    />
-                    <TotpDialog
-                      trigger={
-                        <Button size="sm" variant="outline">
-                          <KeyRound className="h-4 w-4" /> Add TOTP
-                        </Button>
-                      }
-                      folders={folders}
-                      initialFolderId={folderFilter}
-                      onSubmit={(v, f) => saveTotp(v, f)}
-                    />
-                    <NoteDialog
-                      trigger={
-                        <Button size="sm" variant="outline">
-                          <FileText className="h-4 w-4" /> Add note
-                        </Button>
-                      }
-                      folders={folders}
-                      initialFolderId={folderFilter}
-                      onSubmit={(v, f) => saveNote(v, f)}
-                    />
-                    <SecretDialog
-                      trigger={
-                        <Button size="sm" variant="outline">
-                          <KeySquare className="h-4 w-4" /> Add secret
-                        </Button>
-                      }
-                      folders={folders}
-                      initialFolderId={folderFilter}
-                      onSubmit={(v, f) => saveSecret(v, f)}
-                    />
-                    {canManage && (
-                      <ShareDialog
-                        onLookup={(email) => getClient().getUserIdentityKeyByEmail(email)}
-                        onShare={async (userId, role, pub) => {
-                          await getClient().addMember(selected, userId, role, pub);
-                          toast.success("Access granted");
-                        }}
-                      />
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {selected && (
-              <div className="flex flex-wrap items-center gap-1">
-                <Button
-                  variant={folderFilter === null ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setFolderFilter(null)}
-                >
-                  All
-                </Button>
-                {folders.map((f) => (
-                  <Button
-                    key={f.id}
-                    variant={folderFilter === f.id ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setFolderFilter(f.id)}
-                  >
-                    <Folder className="h-3.5 w-3.5" /> {f.name}
-                  </Button>
-                ))}
-                <NewFolderDialog onCreate={createFolder} />
-                {folderFilter && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive"
-                    onClick={deleteFolderAction}
-                    aria-label="Delete folder"
-                  >
-                    <X className="h-3.5 w-3.5" /> Delete folder
-                  </Button>
-                )}
-              </div>
-            )}
-
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search items"
-                className="pl-8"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
-            <Separator />
-
-            {filtered.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">
-                {items.length === 0 ? "No items yet. Add a login, TOTP, note, or secret." : "No matches."}
-              </p>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1">
-                  {filtered.map((i) => {
-                    const title = itemTitle(i);
-                    const icon = asTotp(i) ? (
-                      <KeyRound className="h-4 w-4" />
-                    ) : asNote(i) ? (
-                      <FileText className="h-4 w-4" />
-                    ) : asSecret(i) ? (
-                      <KeySquare className="h-4 w-4" />
-                    ) : (
-                      title.slice(0, 1).toUpperCase()
-                    );
-                    return (
-                      <button
-                        key={i.id}
-                        onClick={() => setActiveItem(i.id)}
-                        className={cn(
-                          "flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left hover:bg-accent",
-                          activeItem === i.id && "border-primary",
-                        )}
-                      >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
-                          {icon}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium">{title}</div>
-                          <div className="truncate text-xs text-muted-foreground">{itemSubtitle(i)}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <Card>
-                  <CardHeader className="flex-row items-center justify-between space-y-0">
-                    <CardTitle className="text-base">{activeTitle ?? "Select an item"}</CardTitle>
-                    {active && (activeLogin || activeTotp || activeNote || activeSecret) && (
-                      <div className="flex items-center gap-1">
-                        {activeLogin && (
-                          <ItemDialog
-                            heading="Edit login"
-                            initial={{
-                              title: activeLogin.title,
-                              url: activeLogin.fields.url,
-                              username: activeLogin.fields.username,
-                              password: activeLogin.fields.password,
-                            }}
-                            folders={folders}
-                            initialFolderId={active.folderId}
-                            trigger={
-                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            }
-                            onSubmit={(v, f) => saveLogin(v, f, active)}
-                          />
-                        )}
-                        {activeTotp && (
-                          <TotpDialog
-                            heading="Edit TOTP"
-                            initial={{
-                              key: activeTotp.key,
-                              secret: activeTotp.secret,
-                              issuer: activeTotp.issuer ?? "",
-                              account: activeTotp.account ?? "",
-                            }}
-                            folders={folders}
-                            initialFolderId={active.folderId}
-                            trigger={
-                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            }
-                            onSubmit={(v, f) => saveTotp(v, f, active)}
-                          />
-                        )}
-                        {activeNote && (
-                          <NoteDialog
-                            heading="Edit note"
-                            initial={{ title: activeNote.title, body: activeNote.body }}
-                            folders={folders}
-                            initialFolderId={active.folderId}
-                            trigger={
-                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            }
-                            onSubmit={(v, f) => saveNote(v, f, active)}
-                          />
-                        )}
-                        {activeSecret && (
-                          <SecretDialog
-                            heading="Edit secret"
-                            initial={{ key: activeSecret.key, value: activeSecret.value }}
-                            folders={folders}
-                            initialFolderId={active.folderId}
-                            trigger={
-                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit">
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            }
-                            onSubmit={(v, f) => saveSecret(v, f, active)}
-                          />
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive"
-                          aria-label="Delete"
-                          onClick={() => setConfirmDelete(true)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )}
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {activeLogin ? (
-                      <>
-                        <CopyField label="URL" value={activeLogin.fields.url} />
-                        <CopyField label="Username" value={activeLogin.fields.username} />
-                        <CopyField label="Password" value={activeLogin.fields.password} secret />
-                      </>
-                    ) : activeTotp ? (
-                      <TotpCard
-                        secret={activeTotp.secret}
-                        period={activeTotp.period}
-                        digits={activeTotp.digits}
-                        algorithm={activeTotp.algorithm}
-                        issuer={activeTotp.issuer}
-                        account={activeTotp.account}
-                      />
-                    ) : activeNote ? (
-                      <pre className="whitespace-pre-wrap break-words rounded-md border bg-muted/40 p-3 font-mono text-sm">
-                        {activeNote.body}
-                      </pre>
-                    ) : activeSecret ? (
-                      <>
-                        <CopyField label="Key" value={activeSecret.key} />
-                        <CopyField label="Value" value={activeSecret.value} secret />
-                      </>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">Choose an item to view its fields.</p>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-          </section>
-            </div>
-          </div>
+          <VaultView
+            vaults={vaults}
+            selected={selected}
+            selectedVault={selectedVault}
+            items={items}
+            filtered={filtered}
+            folders={folders}
+            folderFilter={folderFilter}
+            query={query}
+            activeItem={activeItem}
+            active={active}
+            canManage={canManage}
+            recoveryKey={recoveryKey}
+            onSelectVault={openVault}
+            onCreateVault={createVault}
+            onCreateFolder={createFolder}
+            onDeleteFolder={deleteFolderAction}
+            onSelectFolder={setFolderFilter}
+            onSelectItem={setActiveItem}
+            onQueryChange={setQuery}
+            onSaveLogin={saveLogin}
+            onSaveTotp={saveTotp}
+            onSaveNote={saveNote}
+            onSaveSecret={saveSecret}
+            onRequestDelete={() => setConfirmDelete(true)}
+            onDismissRecoveryKey={() => setRecoveryKey(null)}
+            onShareLookup={(email) => getClient().getUserIdentityKeyByEmail(email)}
+            onShareGrant={async (userId, role, pub) => {
+              if (!selected) return;
+              await getClient().addMember(selected, userId, role, pub);
+              toast.success("Access granted");
+            }}
+          />
         )}
 
         {section === "team" &&
