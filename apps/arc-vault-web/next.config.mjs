@@ -7,7 +7,10 @@ const isExport = process.env.NEXT_OUTPUT === "export";
 
 const csp = [
   "default-src 'self'",
-  "connect-src 'self' http://localhost:3001",
+  // api.pwnedpasswords.com: the opt-in HIBP breach check (k-anonymity — only the first 5
+  // chars of a password's SHA-1 are ever sent; see lib/breach.ts). The single permitted
+  // third-party egress; everything else stays same-origin.
+  "connect-src 'self' http://localhost:3001 https://api.pwnedpasswords.com",
   "style-src 'self' 'unsafe-inline'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "img-src 'self' data:",

@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:3001; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'"
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:3001 https://api.pwnedpasswords.com; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'"
     }
   },
   "bundle": {
