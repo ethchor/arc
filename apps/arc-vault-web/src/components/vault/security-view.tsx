@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import type { PulledItem } from "@arc/sdk";
-import { AlertCircle, AlertTriangle, KeyRound, ShieldCheck, Wrench } from "lucide-react";
+import { AlertCircle, AlertTriangle, KeyRound, Loader2, ShieldAlert, ShieldCheck, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +10,10 @@ import { IconTip } from "@/components/ui/tooltip";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
 import { Stagger } from "@/components/motion/stagger";
 import { analyseSecurity, type FlaggedItem } from "@/lib/security";
+import { asLogin } from "@/lib/items";
+import { pwnedCount } from "@/lib/breach";
+
+type BreachState = { status: "idle" | "checking" | "done" | "error"; error?: string; checked?: number };
 
 /**
  * Security dashboard (arc design system `SecurityDashboard`). Reads from the items the
@@ -28,8 +32,40 @@ export function SecurityView({
   items: readonly PulledItem[];
   onOpenItem: (id: string) => void;
 }) {
-  const report = React.useMemo(() => analyseSecurity(items), [items]);
+  // Opt-in HIBP exposure. `exposed` (itemId→breach count) starts empty; the report folds it
+  // in once the user runs the check. Network stays strictly behind the button press.
+  const [exposed, setExposed] = React.useState<ReadonlyMap<string, number>>(() => new Map());
+  const [breach, setBreach] = React.useState<BreachState>({ status: "idle" });
+
+  const report = React.useMemo(() => analyseSecurity(items, exposed), [items, exposed]);
   const { score, buckets, flagged } = report;
+
+  const runBreachCheck = React.useCallback(async () => {
+    setBreach({ status: "checking" });
+    try {
+      const logins = items
+        .map((i) => ({ id: i.id, pw: asLogin(i)?.fields.password }))
+        .filter((x): x is { id: string; pw: string } => !!x.pw);
+      // Dedupe network calls by password value; map each result back to every item that uses it.
+      const byPassword = new Map<string, string[]>();
+      for (const { id, pw } of logins) {
+        const ids = byPassword.get(pw);
+        if (ids) ids.push(id);
+        else byPassword.set(pw, [id]);
+      }
+      const next = new Map<string, number>();
+      await Promise.all(
+        [...byPassword.entries()].map(async ([pw, ids]) => {
+          const count = await pwnedCount(pw);
+          for (const id of ids) next.set(id, count);
+        }),
+      );
+      setExposed(next);
+      setBreach({ status: "done", checked: logins.length });
+    } catch (e) {
+      setBreach({ status: "error", error: (e as Error).message });
+    }
+  }, [items]);
 
   // Distinct items that carry at least one flag (flagged[] has one entry per issue, so an
   // item that's both weak and reused appears twice — count people, not problems, for the
@@ -104,6 +140,20 @@ export function SecurityView({
           tone="ok"
         />
       </Stagger.Item>
+
+      {/* Opt-in breach exposure (HIBP k-anonymity). Only the first 5 chars of each
+          password's SHA-1 leave the device; results fold into the score + the list below. */}
+      {buckets.total > 0 ? (
+        <Stagger.Item>
+          <BreachPanel
+            status={breach.status}
+            error={breach.error}
+            checked={breach.checked}
+            exposedCount={buckets.exposed}
+            onRun={runBreachCheck}
+          />
+        </Stagger.Item>
+      ) : null}
 
       {/* Strength breakdown — the detail behind the score */}
       <Stagger.Item>
@@ -188,6 +238,89 @@ export function SecurityView({
         </Card>
       </Stagger.Item>
     </Stagger>
+  );
+}
+
+/**
+ * Opt-in breach-exposure panel. Idle by default with a plain-language note about exactly
+ * what's transmitted (the first 5 hex chars of each password's SHA-1, nothing more); the
+ * actual HIBP fetch only runs on press. When done, the verdict colors green/red and the
+ * exposed items surface in "Needs attention" + drag the score down.
+ */
+function BreachPanel({
+  status,
+  error,
+  checked,
+  exposedCount,
+  onRun,
+}: {
+  status: BreachState["status"];
+  error?: string;
+  checked?: number;
+  exposedCount: number;
+  onRun: () => void;
+}) {
+  const danger = status === "done" && exposedCount > 0;
+  return (
+    <Card tone="raised">
+      <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
+        <span
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md"
+          style={{
+            background: danger ? "var(--danger-subtle)" : "var(--success-subtle)",
+            color: danger ? "var(--danger-fg)" : "var(--success-fg)",
+          }}
+        >
+          <ShieldAlert className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-display text-base font-semibold">Breach exposure</h2>
+          {status === "done" ? (
+            exposedCount > 0 ? (
+              <p className="text-sm" style={{ color: "var(--danger-fg)" }}>
+                {exposedCount} of {checked} {checked === 1 ? "password" : "passwords"} appear in known
+                breaches — see “Needs attention” below.
+              </p>
+            ) : (
+              <p className="text-sm" style={{ color: "var(--success-fg)" }}>
+                None of your {checked} {checked === 1 ? "password" : "passwords"} appear in known breaches.
+              </p>
+            )
+          ) : status === "error" ? (
+            <p className="text-sm" style={{ color: "var(--danger-fg)" }}>
+              Couldn’t reach the breach service: {error}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Check your passwords against Have I Been Pwned’s corpus of leaked passwords. Only the
+              first 5 characters of each password’s SHA-1 hash are sent — the password, and even its
+              full hash, never leave this device.
+            </p>
+          )}
+        </div>
+        <Button
+          variant={status === "done" ? "outline" : "default"}
+          size="sm"
+          onClick={onRun}
+          disabled={status === "checking"}
+          className="shrink-0 self-start sm:self-auto"
+        >
+          {status === "checking" ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" /> Checking…
+            </>
+          ) : status === "done" || status === "error" ? (
+            <>
+              <ShieldAlert className="h-4 w-4" /> Re-check
+            </>
+          ) : (
+            <>
+              <ShieldAlert className="h-4 w-4" /> Check for breaches
+            </>
+          )}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

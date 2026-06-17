@@ -33,6 +33,7 @@ export interface SecurityReport {
     reused: number;
     old: number;
     twoFactor: number; // items with TOTP companion
+    exposed: number; // logins found in a known breach (HIBP) — 0 until the opt-in check runs
     total: number;
   };
   flagged: FlaggedItem[];
@@ -176,14 +177,23 @@ export function isWeakPassword(pw: string): boolean {
 
 /**
  * Analyse the user's items. Pure function over already-decrypted state — the caller hands
- * us the items it already has in memory; we never re-fetch or send anything.
+ * us the items it already has in memory; we never re-fetch or send anything here.
+ *
+ * `exposed` is an optional itemId→breach-count map from the opt-in HIBP check (lib/breach).
+ * When supplied, exposed logins are flagged (kind "exposed", high severity), excluded from
+ * the "strong & unique" bucket, and weighed into the score. It's threaded in rather than
+ * fetched here so this function stays pure + synchronous and the network call remains
+ * strictly opt-in.
  *
  * Note on "old": the wire-level `PulledItem` doesn't carry an updatedAt timestamp (only a
  * monotonic `seq`), so we can't honestly tell how long ago a password was last rotated.
  * Rather than fake it, we leave the `old` bucket at 0 and surface only weak + reused; the
  * shape is in place to light up the moment the SDK carries a real timestamp.
  */
-export function analyseSecurity(items: readonly PulledItem[]): SecurityReport {
+export function analyseSecurity(
+  items: readonly PulledItem[],
+  exposed?: ReadonlyMap<string, number>,
+): SecurityReport {
   const logins = items.map((i) => ({ item: i, login: asLogin(i) })).filter((x) => x.login) as {
     item: PulledItem;
     login: NonNullable<ReturnType<typeof asLogin>>;
@@ -208,11 +218,13 @@ export function analyseSecurity(items: readonly PulledItem[]): SecurityReport {
   let weak = 0;
   let reused = 0;
   let twoFactor = 0;
+  let exposedCount = 0;
 
   for (const { item, login } of logins) {
     const pw = login.fields.password;
     const strength = passwordStrength(pw);
     const reuseN = passwordCounts.get(pw) ?? 0;
+    const breaches = exposed?.get(item.id) ?? 0;
     const issuer = (login.title || "").toLowerCase();
     const has2fa = totpCompanions.has(issuer);
     if (has2fa) twoFactor++;
@@ -240,12 +252,27 @@ export function analyseSecurity(items: readonly PulledItem[]): SecurityReport {
       });
       added = true;
     }
+    if (breaches > 0) {
+      exposedCount++;
+      flagged.push({
+        id: item.id,
+        title: itemTitle(item),
+        reason: `Found in ${breaches.toLocaleString()} known ${breaches === 1 ? "breach" : "breaches"}`,
+        kind: "exposed",
+        severity: "high",
+      });
+      added = true;
+    }
     if (!added && strength >= 3 && reuseN <= 1) strong++;
   }
 
-  // Score: 100, minus weight × ratio for each issue category.
+  // Score: 100, minus weight × ratio for each issue category. Breach exposure is the
+  // heaviest — a known-breached password is compromised regardless of how strong it looks.
   const total = logins.length || 1;
-  const penalty = Math.min(100, Math.round((weak / total) * 60 + (reused / total) * 30));
+  const penalty = Math.min(
+    100,
+    Math.round((weak / total) * 60 + (reused / total) * 30 + (exposedCount / total) * 70),
+  );
   const score = Math.max(0, 100 - penalty);
 
   // Sort: high-severity first, then by issue kind (weak before reused before old), stable.
@@ -257,7 +284,7 @@ export function analyseSecurity(items: readonly PulledItem[]): SecurityReport {
 
   return {
     score,
-    buckets: { strong, weak, reused, old: 0, twoFactor, total: logins.length },
+    buckets: { strong, weak, reused, old: 0, twoFactor, exposed: exposedCount, total: logins.length },
     flagged,
   };
 }
