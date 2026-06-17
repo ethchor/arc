@@ -12,6 +12,7 @@ import { Stagger } from "@/components/motion/stagger";
 import { analyseSecurity, type FlaggedItem } from "@/lib/security";
 import { asLogin } from "@/lib/items";
 import { pwnedCount } from "@/lib/breach";
+import { FixWeakWizard } from "@/components/vault/fix-weak-wizard";
 
 type BreachState = { status: "idle" | "checking" | "done" | "error"; error?: string; checked?: number };
 
@@ -28,17 +29,35 @@ type BreachState = { status: "idle" | "checking" | "done" | "error"; error?: str
 export function SecurityView({
   items,
   onOpenItem,
+  onFixLogin,
 }: {
   items: readonly PulledItem[];
   onOpenItem: (id: string) => void;
+  /** Rotate one login's password in place (same save path as the editor). Powers the wizard. */
+  onFixLogin: (item: PulledItem, newPassword: string) => Promise<void>;
 }) {
   // Opt-in HIBP exposure. `exposed` (itemId→breach count) starts empty; the report folds it
   // in once the user runs the check. Network stays strictly behind the button press.
   const [exposed, setExposed] = React.useState<ReadonlyMap<string, number>>(() => new Map());
   const [breach, setBreach] = React.useState<BreachState>({ status: "idle" });
+  // Fix-weak wizard queue (null = closed). Built from the flagged login items.
+  const [fixQueue, setFixQueue] = React.useState<PulledItem[] | null>(null);
 
   const report = React.useMemo(() => analyseSecurity(items, exposed), [items, exposed]);
   const { score, buckets, flagged } = report;
+
+  // Distinct flagged login items, in flag order — the queue the "Fix all" wizard walks.
+  const fixableItems = React.useMemo(() => {
+    const seen = new Set<string>();
+    const out: PulledItem[] = [];
+    for (const f of flagged) {
+      if (seen.has(f.id)) continue;
+      seen.add(f.id);
+      const it = items.find((i) => i.id === f.id);
+      if (it && asLogin(it)) out.push(it);
+    }
+    return out;
+  }, [flagged, items]);
 
   const runBreachCheck = React.useCallback(async () => {
     setBreach({ status: "checking" });
@@ -75,8 +94,6 @@ export function SecurityView({
     [flagged],
   );
   const twoFactorPct = buckets.total > 0 ? Math.round((buckets.twoFactor / buckets.total) * 100) : 0;
-  const firstWeakId = flagged.find((f) => f.kind === "weak")?.id ?? null;
-
   const breakdown = [
     { t: "Strong & unique", n: buckets.strong, color: "var(--success)" },
     { t: "Weak", n: buckets.weak, color: "var(--danger)" },
@@ -85,7 +102,8 @@ export function SecurityView({
   const denom = Math.max(1, buckets.total);
 
   return (
-    <Stagger className="space-y-5" stagger={0.05}>
+    <>
+      <Stagger className="space-y-5" stagger={0.05}>
       <Stagger.Item>
         <PageHeader
           eyebrow="You · security"
@@ -93,13 +111,13 @@ export function SecurityView({
           description="A clear picture of what's strong and what needs attention — computed on this device. Nothing leaves the vault."
           trailing={
             <div className="flex items-center gap-2">
-              {buckets.weak > 0 && firstWeakId ? (
+              {fixableItems.length > 0 ? (
                 <IconTip
-                  label="Fix weak logins"
-                  hint="Jumps to the first weak login in your vault so you can rotate it."
+                  label="Fix all"
+                  hint="Walk through every flagged login and rotate it to a strong, unique password."
                 >
-                  <Button size="sm" onClick={() => onOpenItem(firstWeakId)}>
-                    <ShieldCheck className="h-4 w-4" /> Fix weak logins
+                  <Button size="sm" onClick={() => setFixQueue(fixableItems)}>
+                    <ShieldCheck className="h-4 w-4" /> Fix all
                   </Button>
                 </IconTip>
               ) : null}
@@ -218,15 +236,26 @@ export function SecurityView({
                     className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/40"
                   >
                     <ItemAvatar title={f.title} />
-                    <div className="min-w-0 flex-1">
+                    <button
+                      type="button"
+                      onClick={() => onOpenItem(f.id)}
+                      className="min-w-0 flex-1 text-left"
+                    >
                       <div className="truncate text-sm font-medium">{f.title}</div>
                       <FlagLine f={f} />
-                    </div>
+                    </button>
                     <Badge variant="outline" className="hidden capitalize sm:inline-flex">
                       {f.kind}
                     </Badge>
-                    <IconTip label="Fix" hint={`Opens “${f.title}” in your vault to rotate its password.`} side="left">
-                      <Button variant="secondary" size="sm" onClick={() => onOpenItem(f.id)}>
+                    <IconTip label="Fix now" hint={`Rotate “${f.title}” to a strong, unique password.`} side="left">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          const it = items.find((i) => i.id === f.id);
+                          if (it) setFixQueue([it]);
+                        }}
+                      >
                         <Wrench className="h-3.5 w-3.5" /> Fix
                       </Button>
                     </IconTip>
@@ -237,7 +266,16 @@ export function SecurityView({
           </CardContent>
         </Card>
       </Stagger.Item>
-    </Stagger>
+      </Stagger>
+      <FixWeakWizard
+        open={fixQueue !== null}
+        queue={fixQueue ?? []}
+        onOpenChange={(o) => {
+          if (!o) setFixQueue(null);
+        }}
+        onSave={onFixLogin}
+      />
+    </>
   );
 }
 
