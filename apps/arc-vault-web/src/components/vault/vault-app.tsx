@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, FileClock, GitBranch, KeyRound, RefreshCw, RotateCw, Shield } from "lucide-react";
+import { Clock, FileClock, KeyRound, RefreshCw, RotateCw, Shield } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import type { JsonValue, TotpAlgorithm } from "@arc/types";
 import { toast } from "sonner";
@@ -31,6 +31,7 @@ import { DevicePendingView } from "@/components/vault/device-pending-view";
 import { EnrollScreen } from "@/components/vault/enroll-screen";
 import { DevicesDialog } from "@/components/vault/devices-dialog";
 import { InfoView } from "@/components/vault/info-view";
+import { KvView } from "@/components/vault/kv-view";
 import type { LoginInput } from "@/components/vault/item-dialog";
 import type { NoteInput } from "@/components/vault/note-dialog";
 import type { SecretInput } from "@/components/vault/secret-dialog";
@@ -505,15 +506,7 @@ export function VaultApp() {
           />
         )}
         {section === "devices" && <DevicesView getClient={getClient} />}
-        {section === "kv" && (
-          <PreviewScreen
-            eyebrow="Engine A · infrastructure"
-            title="KV secrets"
-            description="The secret/app/prod/db path tree, version history, soft-delete/undelete, metadata, and a version diff."
-            icon={GitBranch}
-            engine="Engine A"
-          />
-        )}
+        {section === "kv" && <KvView />}
         {section === "creds" && (
           <PreviewScreen
             eyebrow="Engine A · infrastructure"
