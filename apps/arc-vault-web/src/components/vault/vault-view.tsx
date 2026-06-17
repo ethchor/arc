@@ -99,24 +99,33 @@ export interface VaultViewProps {
 
 export function VaultView(props: VaultViewProps) {
   const { recoveryKey, onDismissRecoveryKey, selected, items } = props;
+  // The shell renders this section flush (no page gutter, full height), so the
+  // master-detail fills the viewport below the top bar. The recovery banner and the empty
+  // states keep their own padding so their cards don't butt against the window edges.
   return (
-    <div className="space-y-6">
+    <div className="flex h-full min-h-0 flex-col">
       {recoveryKey ? (
-        <RecoveryKeyCard recoveryKey={recoveryKey} onDismiss={onDismissRecoveryKey} />
+        <div className="p-4 pb-0">
+          <RecoveryKeyCard recoveryKey={recoveryKey} onDismiss={onDismissRecoveryKey} />
+        </div>
       ) : null}
 
       {selected ? (
         items.length === 0 ? (
-          <EmptyVaultHero {...props} />
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <EmptyVaultHero {...props} />
+          </div>
         ) : (
           <MasterDetail {...props} />
         )
       ) : (
-        <EmptyVaults
-          onCreate={props.onCreateVault}
-          vaults={props.vaults}
-          onSelectVault={props.onSelectVault}
-        />
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <EmptyVaults
+            onCreate={props.onCreateVault}
+            vaults={props.vaults}
+            onSelectVault={props.onSelectVault}
+          />
+        </div>
       )}
     </div>
   );
@@ -127,8 +136,12 @@ export function VaultView(props: VaultViewProps) {
 // ────────────────────────────────────────────────────────────────────────────────
 
 function MasterDetail(props: VaultViewProps) {
+  // Full-bleed, full-height: no outer card border/rounding and no fixed min-height. Flex
+  // (not grid) so the panes reliably stretch to the section height and scroll *internally*
+  // via their own `min-h-0 overflow-y-auto` — a long item list never overflows the clipped
+  // container. The rail's `md:border-r` is the only divider.
   return (
-    <div className="grid min-h-[560px] overflow-hidden rounded-[var(--radius-lg)] border border-border bg-[var(--surface-base)] md:grid-cols-[340px_1fr]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--surface-base)] md:flex-row">
       <ItemList {...props} />
       <DetailPane {...props} />
     </div>
@@ -168,7 +181,7 @@ function ItemList(props: VaultViewProps) {
   const addDisabled = !selected;
 
   return (
-    <aside className="flex min-h-0 flex-col border-b border-border bg-[var(--surface-base)] md:border-b-0 md:border-r">
+    <aside className="flex min-h-0 flex-col border-b border-border bg-[var(--surface-base)] md:w-[340px] md:shrink-0 md:border-b-0 md:border-r">
       <div className="flex flex-col gap-2 border-b border-border/60 p-3">
         <VaultSwitcher
           vaults={vaults}
@@ -518,7 +531,7 @@ function DetailPane(props: VaultViewProps) {
   const { active, folders, folderFilter, onSaveLogin, onSaveTotp, onSaveNote, onSaveSecret, onRequestDelete } = props;
   if (!active) {
     return (
-      <section className="flex min-h-0 items-center justify-center bg-[var(--surface-sunken)] p-10 text-center">
+      <section className="flex min-h-0 flex-1 items-center justify-center bg-[var(--surface-sunken)] p-10 text-center">
         <div className="max-w-sm space-y-3">
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] border border-border bg-[var(--surface-raised)] text-muted-foreground">
             <Lock className="h-5 w-5" />
@@ -537,7 +550,7 @@ function DetailPane(props: VaultViewProps) {
     );
   }
   return (
-    <section className="min-h-0 overflow-y-auto bg-[var(--surface-sunken)]">
+    <section className="min-h-0 flex-1 overflow-y-auto bg-[var(--surface-sunken)] md:min-w-0">
       <div className="mx-auto max-w-[560px] px-7 py-7">
         <DetailHero item={active} />
         <DetailFields item={active} />
