@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import type { PulledItem } from "@arc/sdk";
-import { AlertCircle, AlertTriangle, ShieldCheck } from "lucide-react";
+import { AlertCircle, AlertTriangle, KeyRound, ShieldCheck, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScoreRing } from "@/components/arc/score-ring";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
 import { Stagger } from "@/components/motion/stagger";
 import { analyseSecurity, type FlaggedItem } from "@/lib/security";
@@ -30,12 +30,21 @@ export function SecurityView({
   const report = React.useMemo(() => analyseSecurity(items), [items]);
   const { score, buckets, flagged } = report;
 
+  // Distinct items that carry at least one flag (flagged[] has one entry per issue, so an
+  // item that's both weak and reused appears twice — count people, not problems, for the
+  // headline number).
+  const flaggedItemCount = React.useMemo(
+    () => new Set(flagged.map((f) => f.id)).size,
+    [flagged],
+  );
+  const twoFactorPct = buckets.total > 0 ? Math.round((buckets.twoFactor / buckets.total) * 100) : 0;
+  const firstWeakId = flagged.find((f) => f.kind === "weak")?.id ?? null;
+
   const breakdown = [
     { t: "Strong & unique", n: buckets.strong, color: "var(--success)" },
     { t: "Weak", n: buckets.weak, color: "var(--danger)" },
     { t: "Reused", n: buckets.reused, color: "var(--warning)" },
   ];
-
   const denom = Math.max(1, buckets.total);
 
   return (
@@ -45,48 +54,88 @@ export function SecurityView({
           eyebrow="You · security"
           title="Your security, at a glance"
           description="A clear picture of what's strong and what needs attention — computed on this device. Nothing leaves the vault."
-          trailing={<TrustIndicator kind="zk" />}
+          trailing={
+            <div className="flex items-center gap-2">
+              {buckets.weak > 0 && firstWeakId ? (
+                <Button
+                  size="sm"
+                  onClick={() => onOpenItem(firstWeakId)}
+                  title="Open the first weak login in your vault to fix it"
+                >
+                  <ShieldCheck className="h-4 w-4" /> Fix weak logins
+                </Button>
+              ) : null}
+              <TrustIndicator kind="zk" />
+            </div>
+          }
         />
       </Stagger.Item>
 
-      {/* Top-of-page stat strip + score */}
-      <Stagger.Item className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-        <Card tone="raised">
-          <CardContent className="flex items-center gap-6 p-5">
-            <ScoreRing value={score} label="Security score" />
-            <div className="flex flex-1 flex-col gap-2.5">
-              {breakdown.map((b) => (
-                <div key={b.t} className="flex items-center gap-3">
-                  <span className="w-[120px] text-sm text-muted-foreground">{b.t}</span>
-                  <span className="flex h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                    <span
-                      className="h-full rounded-full transition-[width] [transition-duration:var(--dur-slow)] ease-out-quart"
-                      style={{ width: `${Math.round((b.n / denom) * 100)}%`, background: b.color }}
-                    />
-                  </span>
-                  <span className="w-10 text-right font-mono text-xs tabular-nums text-muted-foreground">{b.n}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard big={flagged.length} label="Need attention" tone={flagged.length > 0 ? "warn" : "ok"} sub={subForFlags(buckets)} />
-          <StatCard big={buckets.strong} label="Strong & unique" tone="ok" sub={`of ${buckets.total} logins`} />
-          <StatCard big={buckets.twoFactor} label="2FA enabled" tone="ok" sub={`${buckets.total > 0 ? Math.round((buckets.twoFactor / buckets.total) * 100) : 0}% coverage`} />
-          <StatCard big={buckets.total} label="Total logins" tone="ok" sub="indexed locally" />
-        </div>
+      {/* Four headline stats — every number is derived from items already decrypted on this
+          device. We deliberately don't surface a breach-exposure or password-age card: with
+          no remote breach list and no per-item rotation timestamp on the wire, those would
+          be fabricated. Coverage + strength below are real. */}
+      <Stagger.Item className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard
+          big={score}
+          label="Security score"
+          sub="computed on this device"
+          tone={score >= 80 ? "ok" : score >= 50 ? "warn" : "danger"}
+        />
+        <StatCard
+          big={flaggedItemCount}
+          label="Need attention"
+          sub={subForFlags(buckets)}
+          tone={flaggedItemCount > 0 ? "warn" : "ok"}
+        />
+        <StatCard
+          big={`${twoFactorPct}%`}
+          label="2FA coverage"
+          sub={`${buckets.twoFactor} of ${buckets.total} ${buckets.total === 1 ? "login" : "logins"}`}
+          tone={twoFactorPct >= 80 ? "ok" : "muted"}
+          icon={<KeyRound className="h-3.5 w-3.5" />}
+        />
+        <StatCard
+          big={buckets.strong}
+          label="Strong & unique"
+          sub={`of ${buckets.total} ${buckets.total === 1 ? "login" : "logins"}`}
+          tone="ok"
+        />
       </Stagger.Item>
 
-      {/* Needs-attention list */}
+      {/* Strength breakdown — the detail behind the score */}
+      <Stagger.Item>
+        <Card tone="raised">
+          <CardContent className="grid gap-3 p-5 sm:grid-cols-3">
+            {breakdown.map((b) => (
+              <div key={b.t} className="flex flex-col gap-1.5">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm text-muted-foreground">{b.t}</span>
+                  <span className="font-mono text-sm tabular-nums">{b.n}</span>
+                </div>
+                <span className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+                  <span
+                    className="h-full rounded-full transition-[width] [transition-duration:var(--dur-slow)] ease-out-quart"
+                    style={{ width: `${Math.round((b.n / denom) * 100)}%`, background: b.color }}
+                  />
+                </span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </Stagger.Item>
+
+      {/* Needs-attention list with per-row Fix */}
       <Stagger.Item>
         <Card tone="raised">
           <CardContent className="p-0">
             <div className="flex items-center justify-between border-b px-5 py-3">
               <div>
                 <h2 className="font-display text-base font-semibold">Needs attention</h2>
-                <p className="text-xs text-muted-foreground">{flagged.length} {flagged.length === 1 ? "item" : "items"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {flagged.length} {flagged.length === 1 ? "issue" : "issues"} across {flaggedItemCount}{" "}
+                  {flaggedItemCount === 1 ? "login" : "logins"}
+                </p>
               </div>
               {buckets.weak > 0 ? (
                 <Badge variant="secondary" className="gap-1.5 bg-[var(--danger-subtle)] text-[var(--danger-fg)]">
@@ -104,29 +153,34 @@ export function SecurityView({
                 <div>
                   <p className="text-sm font-semibold">Nothing flagged</p>
                   <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                    Every login is strong, unique, and recent. Keep an eye on this dashboard as
-                    your vault grows.
+                    Every login is strong and unique. Keep an eye on this dashboard as your vault
+                    grows.
                   </p>
                 </div>
               </div>
             ) : (
               <ul className="divide-y">
                 {flagged.map((f) => (
-                  <li key={`${f.id}-${f.kind}`}>
-                    <button
-                      type="button"
+                  <li
+                    key={`${f.id}-${f.kind}`}
+                    className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/40"
+                  >
+                    <ItemAvatar title={f.title} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{f.title}</div>
+                      <FlagLine f={f} />
+                    </div>
+                    <Badge variant="outline" className="hidden capitalize sm:inline-flex">
+                      {f.kind}
+                    </Badge>
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={() => onOpenItem(f.id)}
-                      className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-accent/40"
+                      title={`Open ${f.title} in your vault to fix`}
                     >
-                      <ItemAvatar title={f.title} />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{f.title}</div>
-                        <FlagLine f={f} />
-                      </div>
-                      <Badge variant="outline" className="capitalize">
-                        {f.kind}
-                      </Badge>
-                    </button>
+                      <Wrench className="h-3.5 w-3.5" /> Fix
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -143,20 +197,35 @@ function StatCard({
   label,
   sub,
   tone,
+  icon,
 }: {
   big: number | string;
   label: string;
   sub: string;
-  tone: "ok" | "warn" | "danger";
+  tone: "ok" | "warn" | "danger" | "muted";
+  icon?: React.ReactNode;
 }) {
-  const color = tone === "warn" ? "var(--warning)" : tone === "danger" ? "var(--danger)" : "var(--content-primary)";
+  const color =
+    tone === "warn"
+      ? "var(--warning)"
+      : tone === "danger"
+        ? "var(--danger)"
+        : tone === "ok"
+          ? "var(--success-fg)"
+          : "var(--content-primary)";
   return (
     <Card tone="raised">
       <CardContent className="p-4">
-        <div className="font-mono text-[28px] font-semibold leading-none tabular-nums" style={{ color }}>
-          {big}
+        <div className="flex items-center justify-between">
+          <div
+            className="font-mono text-[30px] font-semibold leading-none tabular-nums"
+            style={{ color: tone === "muted" ? "var(--content-primary)" : color }}
+          >
+            {big}
+          </div>
+          {icon ? <span className="text-muted-foreground">{icon}</span> : null}
         </div>
-        <div className="mt-2 text-[13px] font-medium">{label}</div>
+        <div className="mt-2.5 text-[13px] font-medium">{label}</div>
         <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>
       </CardContent>
     </Card>
