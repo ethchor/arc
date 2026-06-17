@@ -492,6 +492,7 @@ export function VaultApp() {
           <HomeView
             items={items}
             vault={selectedVault}
+            getClient={getClient}
             onGo={(s) => setSection(s)}
             onAddItem={() => setSection("vault")}
           />

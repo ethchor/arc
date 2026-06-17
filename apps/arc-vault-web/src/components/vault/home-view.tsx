@@ -1,8 +1,18 @@
 "use client";
 
 import * as React from "react";
-import type { PulledItem, VaultSummary } from "@arc/sdk";
-import { ArrowRight, Bot, ChevronRight, Plus, ShieldAlert } from "lucide-react";
+import type { EnrolledDevice, PulledItem, VaultClient, VaultSummary } from "@arc/sdk";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Bot,
+  ChevronRight,
+  Fingerprint,
+  KeyRound,
+  Plus,
+  ShieldAlert,
+  ShieldCheck,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScoreRing } from "@/components/arc/score-ring";
@@ -25,11 +35,13 @@ import { Stagger } from "@/components/motion/stagger";
 export function HomeView({
   items,
   vault,
+  getClient,
   onGo,
   onAddItem,
 }: {
   items: readonly PulledItem[];
   vault?: VaultSummary;
+  getClient: () => VaultClient;
   onGo: (section: "vault" | "security" | "devices" | "agents") => void;
   onAddItem: () => void;
 }) {
@@ -101,7 +113,7 @@ export function HomeView({
           </CardContent>
         </Card>
 
-        <DevicesTeaser onManage={() => onGo("devices")} />
+        <DevicesTeaser getClient={getClient} onManage={() => onGo("devices")} />
       </Stagger.Item>
 
       <Stagger.Item className="grid gap-4 lg:grid-cols-2">
@@ -164,7 +176,51 @@ function RecentlyUsed({
   );
 }
 
-function DevicesTeaser({ onManage }: { onManage: () => void }) {
+/** Devices stale beyond this many days get the inactivity nudge (matches DevicesView). */
+const INACTIVE_DAYS = 40;
+
+function isInactive(d: EnrolledDevice): boolean {
+  // Trusted devices are exempt from the inactivity policy, so we don't nag about them.
+  if (d.trusted || !d.lastSeenAt) return false;
+  const days = (Date.now() - Date.parse(d.lastSeenAt)) / 86_400_000;
+  return Number.isFinite(days) && days >= INACTIVE_DAYS;
+}
+
+/**
+ * Real device posture, loaded from the same SDK calls the dedicated Devices screen uses
+ * (`listDevices` + `listPasskeys`) — no server-trust change, just surfacing what the user
+ * can already see. Replaces the old "wired elsewhere" placeholder with live counts:
+ * total devices, how many are trusted, registered passkeys, and an inactivity nudge.
+ */
+function DevicesTeaser({
+  getClient,
+  onManage,
+}: {
+  getClient: () => VaultClient;
+  onManage: () => void;
+}) {
+  const [devices, setDevices] = React.useState<EnrolledDevice[] | null>(null);
+  const [passkeys, setPasskeys] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    getClient()
+      .listDevices()
+      .then((d) => alive && setDevices(d))
+      .catch(() => alive && setDevices([]));
+    getClient()
+      .listPasskeys()
+      .then((p) => alive && setPasskeys(p.length))
+      .catch(() => alive && setPasskeys(0));
+    return () => {
+      alive = false;
+    };
+  }, [getClient]);
+
+  const total = devices?.length ?? 0;
+  const trusted = devices?.filter((d) => d.trusted).length ?? 0;
+  const inactive = devices?.filter(isInactive).length ?? 0;
+
   return (
     <Card tone="raised">
       <CardContent className="p-0">
@@ -177,11 +233,59 @@ function DevicesTeaser({ onManage }: { onManage: () => void }) {
             Manage
           </Button>
         </div>
-        <div className="px-5 py-5 text-sm text-muted-foreground">
-          Devices list is wired in the dedicated <button type="button" onClick={onManage} className="font-medium text-primary hover:underline">Devices</button> screen.
-        </div>
+        {devices === null ? (
+          <div className="px-5 py-6 text-sm text-muted-foreground">Loading…</div>
+        ) : (
+          <div className="space-y-3 px-5 py-4">
+            <div className="grid grid-cols-3 gap-2">
+              <DeviceStat icon={<Fingerprint className="h-3.5 w-3.5" />} n={total} label={total === 1 ? "device" : "devices"} />
+              <DeviceStat icon={<ShieldCheck className="h-3.5 w-3.5" />} n={trusted} label="trusted" tone="ok" />
+              <DeviceStat icon={<KeyRound className="h-3.5 w-3.5" />} n={passkeys ?? 0} label={passkeys === 1 ? "passkey" : "passkeys"} />
+            </div>
+            {inactive > 0 ? (
+              <div className="flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--warning-subtle)] px-3 py-2 text-xs text-[var(--warning-fg)]">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {inactive} {inactive === 1 ? "device" : "devices"} inactive {INACTIVE_DAYS}+ days — consider
+                  retiring{" "}
+                  <button type="button" onClick={onManage} className="font-medium underline">
+                    in Devices
+                  </button>
+                  .
+                </span>
+              </div>
+            ) : null}
+          </div>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+function DeviceStat({
+  icon,
+  n,
+  label,
+  tone,
+}: {
+  icon: React.ReactNode;
+  n: number;
+  label: string;
+  tone?: "ok";
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-[var(--radius-md)] border border-border bg-[var(--surface-inset)] px-3 py-2.5">
+      <span
+        className="font-mono text-xl font-semibold leading-none tabular-nums"
+        style={tone === "ok" && n > 0 ? { color: "var(--success-fg)" } : undefined}
+      >
+        {n}
+      </span>
+      <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        {icon}
+        {label}
+      </span>
+    </div>
   );
 }
 
