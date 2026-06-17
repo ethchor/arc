@@ -36,7 +36,23 @@
     --border: 218 17% 88%;              /* border-default #DCE0E7 */
     --input: 218 17% 88%;
     --ring: 172 79% 38%;
-    --radius: 0.5rem;                   /* DS radius-md (8px) */
+    --radius: 0.5rem;                   /* DS radius-md (8px) — drives Tailwind rounded-sm/md/lg */
+
+    /* DS radius scale (ui_kits/arc-console → tokens/spacing.css). Components reference these
+       as Tailwind arbitrary values, e.g. `rounded-[var(--radius-md)]`. Without the
+       definitions here that resolves to `border-radius: var(<undefined>)`, which is invalid
+       at computed-value time → border-radius 0 → SQUARE corners. That's why some fields
+       (the `.arc-masked` password row, which carries an `,8px` fallback) rendered rounded
+       while others (the `rounded-[var(--radius-md)]` username/website rows) rendered square.
+       Defining the scale once makes every field, card, and control round consistently. */
+    --radius-xs: 4px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-2xl: 22px;
+    --radius-pill: 999px;
+    --control-radius: var(--radius-md);
 
     /* ember accent (warm pole) — for the mesh + any explicit warm moment. */
     --ember: 33 84% 55%;                /* ember-400 #EC9B2E */

@@ -263,14 +263,18 @@ function VaultSwitcher({
   onSelect: (id: string) => void;
   onCreate: (type: VaultType, name: string) => Promise<void>;
 }) {
+  // "New vault" now lives at the foot of the dropdown (opening the controlled dialog)
+  // rather than as a separate icon beside the switcher — so the switcher reads as a plain
+  // select field, matching the design kit's `.vault__switch`.
+  const [createOpen, setCreateOpen] = React.useState(false);
   return (
-    <div className="flex items-center gap-1.5">
+    <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            title={selectedName ? `Switch vault — current: ${selectedName}` : "Select a vault"}
-            className="flex h-9 flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-border bg-[var(--surface-inset)] px-2.5 text-left transition-colors [transition-duration:var(--dur-fast)] hover:border-[var(--border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            aria-label={selectedName ? `Switch vault — current: ${selectedName}` : "Select a vault"}
+            className="flex h-9 w-full items-center gap-2 rounded-[var(--radius-md)] border border-border bg-[var(--surface-inset)] px-2.5 text-left transition-colors [transition-duration:var(--dur-fast)] hover:border-[var(--border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
             <Lock className="h-3.5 w-3.5 shrink-0 text-primary" />
             <span
@@ -284,29 +288,42 @@ function VaultSwitcher({
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[260px]">
+        <DropdownMenuContent
+          align="start"
+          className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[260px] overflow-hidden p-0"
+        >
           <DropdownMenuLabel>Open a vault</DropdownMenuLabel>
-          {vaults.map((v) => (
+          <div className="max-h-[40vh] overflow-y-auto px-1 pb-1">
+            {vaults.map((v) => (
+              <DropdownMenuItem
+                key={v.id}
+                onSelect={() => onSelect(v.id)}
+                className="flex items-center gap-2"
+              >
+                <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className={cn("flex-1 truncate", !v.name && "capitalize")}>
+                  {v.name ?? v.type}
+                </span>
+                <Badge variant="secondary" className="ml-1 capitalize">
+                  {v.role}
+                </Badge>
+              </DropdownMenuItem>
+            ))}
+          </div>
+          {/* Sticky footer action — sits below the scrollable vault list. */}
+          <div className="border-t border-border p-1">
             <DropdownMenuItem
-              key={v.id}
-              onSelect={() => onSelect(v.id)}
-              className="flex items-center gap-2"
+              onSelect={() => setCreateOpen(true)}
+              className="flex items-center gap-2 font-medium text-primary focus:text-primary"
             >
-              <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className={cn("flex-1 truncate", !v.name && "capitalize")}>
-                {v.name ?? v.type}
-              </span>
-              <Badge variant="secondary" className="ml-1 capitalize">
-                {v.role}
-              </Badge>
+              <FolderPlus className="h-3.5 w-3.5" />
+              New vault
             </DropdownMenuItem>
-          ))}
+          </div>
         </DropdownMenuContent>
       </DropdownMenu>
-      {/* CreateVaultDialog renders its own trigger (icon button), placed next to the
-          switcher so "new vault" stays one click away whichever vault is open. */}
-      <CreateVaultDialog onCreate={onCreate} />
-    </div>
+      <CreateVaultDialog open={createOpen} onOpenChange={setCreateOpen} onCreate={onCreate} />
+    </>
   );
 }
 
@@ -429,7 +446,7 @@ function RailActions({
     </Button>
   );
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex items-center gap-1">
       <ItemDialog
         folders={folders}
         initialFolderId={initialFolderId}
@@ -458,7 +475,9 @@ function RailActions({
         tooltip={{ label: "Add generic secret", hint: "Any key/value — API tokens, SSH keys, environment values." }}
         trigger={iconBtn("Add generic secret", <KeySquare className="h-4 w-4" />)}
       />
-      <span className="ml-auto" />
+      {/* Divider + push the organise/share actions to the right so the four "add" types
+          read as one cluster and don't crowd the folder/share controls. */}
+      <span className="ml-auto h-5 w-px shrink-0 bg-border/70" />
       <NewFolderDialog
         onCreate={onCreateFolder}
         tooltip={{ label: "New folder", hint: "Group items in this vault. Folder names are encrypted too." }}
