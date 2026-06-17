@@ -15,7 +15,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function NewFolderDialog({ onCreate }: { onCreate: (name: string) => Promise<void> }) {
+export function NewFolderDialog({
+  onCreate,
+  trigger,
+}: {
+  onCreate: (name: string) => Promise<void>;
+  trigger?: React.ReactNode;
+}) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -34,9 +40,11 @@ export function NewFolderDialog({ onCreate }: { onCreate: (name: string) => Prom
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <FolderPlus className="h-4 w-4" /> New folder
-        </Button>
+        {trigger ?? (
+          <Button variant="outline" size="sm" title="New folder">
+            <FolderPlus className="h-4 w-4" /> New folder
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
