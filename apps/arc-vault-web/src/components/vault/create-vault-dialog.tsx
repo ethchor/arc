@@ -20,8 +20,10 @@ type VType = (typeof TYPES)[number];
 
 export function CreateVaultDialog({
   onCreate,
+  trigger,
 }: {
   onCreate: (type: VType, name: string) => Promise<void>;
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
@@ -43,9 +45,17 @@ export function CreateVaultDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="New vault">
-          <FolderPlus className="h-4 w-4" />
-        </Button>
+        {trigger ?? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            aria-label="Create new vault"
+            title="Create new vault"
+          >
+            <FolderPlus className="h-4 w-4" />
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

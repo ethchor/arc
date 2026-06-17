@@ -45,7 +45,8 @@ export function MaskedField({
           <button
             type="button"
             className="arc-copy arc-copy--icon"
-            aria-label={revealed ? "Hide" : "Reveal"}
+            aria-label={revealed ? "Hide value" : "Reveal value"}
+            title={revealed ? "Hide value" : "Reveal value"}
             onClick={() => setRevealed((r) => !r)}
           >
             {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}

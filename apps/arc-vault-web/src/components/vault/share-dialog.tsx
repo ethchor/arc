@@ -40,6 +40,7 @@ export interface IdentityLookup {
 export function ShareDialog({
   onLookup,
   onShare,
+  trigger,
 }: {
   onLookup: (email: string) => Promise<IdentityLookup>;
   onShare: (
@@ -47,6 +48,7 @@ export function ShareDialog({
     role: Role,
     identity: { identityPubB64: string; identityPubMlkemB64: string },
   ) => Promise<void>;
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
   const [email, setEmail] = React.useState("");
@@ -103,9 +105,11 @@ export function ShareDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <UserPlus className="h-4 w-4" /> Share
-        </Button>
+        {trigger ?? (
+          <Button variant="outline" size="sm" title="Share vault">
+            <UserPlus className="h-4 w-4" /> Share
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

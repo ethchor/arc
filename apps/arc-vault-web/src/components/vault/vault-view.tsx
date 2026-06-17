@@ -6,6 +6,7 @@ import {
   ExternalLink,
   FileText,
   Folder,
+  FolderPlus,
   KeyRound,
   KeySquare,
   Lock,
@@ -15,8 +16,10 @@ import {
   Share2,
   Shield,
   Trash2,
+  UserPlus,
   X,
 } from "lucide-react";
+import { totpCode } from "@arc/crypto";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +47,7 @@ import {
   type Role,
 } from "@/components/vault/share-dialog";
 import { TotpDialog, type TotpInput } from "@/components/vault/totp-dialog";
+import type { TotpData } from "@/lib/items";
 import { asLogin, asNote, asSecret, asTotp, itemSubtitle, itemTitle } from "@/lib/items";
 import { cn } from "@/lib/utils";
 
@@ -163,7 +167,7 @@ function ItemList(props: VaultViewProps) {
 
   return (
     <aside className="flex min-h-0 flex-col border-b border-border bg-[var(--surface-base)] md:border-b-0 md:border-r">
-      <div className="flex flex-col gap-2.5 border-b border-border/60 p-3.5">
+      <div className="flex flex-col gap-2 border-b border-border/60 p-3">
         <VaultSwitcher
           vaults={vaults}
           selected={selected}
@@ -182,30 +186,28 @@ function ItemList(props: VaultViewProps) {
           />
         </div>
 
-        {selected ? (
+        <RailActions
+          disabled={addDisabled}
+          canManage={canManage}
+          folders={folders}
+          initialFolderId={folderFilter}
+          onSaveLogin={onSaveLogin}
+          onSaveTotp={onSaveTotp}
+          onSaveNote={onSaveNote}
+          onSaveSecret={onSaveSecret}
+          onCreateFolder={onCreateFolder}
+          onShareLookup={onShareLookup}
+          onShareGrant={onShareGrant}
+        />
+
+        {selected && folders.length > 0 ? (
           <FolderStrip
             folders={folders}
             folderFilter={folderFilter}
             onSelectFolder={onSelectFolder}
-            onCreateFolder={onCreateFolder}
             onDeleteFolder={onDeleteFolder}
           />
         ) : null}
-
-        <div className="flex items-center justify-between gap-1.5">
-          <AddMenu
-            disabled={addDisabled}
-            folders={folders}
-            initialFolderId={folderFilter}
-            onSaveLogin={onSaveLogin}
-            onSaveTotp={onSaveTotp}
-            onSaveNote={onSaveNote}
-            onSaveSecret={onSaveSecret}
-          />
-          {canManage ? (
-            <ShareDialog onLookup={onShareLookup} onShare={onShareGrant} />
-          ) : null}
-        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -252,20 +254,17 @@ function VaultSwitcher({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-border bg-[var(--surface-inset)] px-2.5 py-2 text-left transition-colors hover:border-[var(--border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            title={selectedName ? `Switch vault — current: ${selectedName}` : "Select a vault"}
+            className="flex h-9 flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-border bg-[var(--surface-inset)] px-2.5 text-left transition-colors [transition-duration:var(--dur-fast)] hover:border-[var(--border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-primary/12 text-primary ring-1 ring-primary/20">
-              <Shield className="h-3 w-3" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold">
-                {selectedName ?? "Select a vault"}
-              </span>
-              {selected ? (
-                <span className="block truncate text-[11px] text-muted-foreground">
-                  {vaults.length} {vaults.length === 1 ? "vault" : "vaults"} available
-                </span>
-              ) : null}
+            <Lock className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-sm font-medium",
+                !selectedName && "capitalize",
+              )}
+            >
+              {selectedName ?? "Select a vault"}
             </span>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
@@ -300,25 +299,15 @@ function FolderStrip({
   folders,
   folderFilter,
   onSelectFolder,
-  onCreateFolder,
   onDeleteFolder,
 }: {
   folders: VaultFolder[];
   folderFilter: string | null;
   onSelectFolder: (id: string | null) => void;
-  onCreateFolder: (name: string) => Promise<void>;
   onDeleteFolder: () => void;
 }) {
-  if (folders.length === 0) {
-    return (
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
-          Folders
-        </span>
-        <NewFolderDialog onCreate={onCreateFolder} />
-      </div>
-    );
-  }
+  // Caller renders FolderStrip only when folders.length > 0 (the empty-state row was
+  // removed; "+ folder" lives in the rail action row now).
   return (
     <div className="flex flex-wrap items-center gap-1">
       <FolderChip active={folderFilter === null} onClick={() => onSelectFolder(null)}>
@@ -334,7 +323,6 @@ function FolderStrip({
           {f.name}
         </FolderChip>
       ))}
-      <NewFolderDialog onCreate={onCreateFolder} />
       {folderFilter ? (
         <button
           type="button"
@@ -378,60 +366,85 @@ function FolderChip({
   );
 }
 
-function AddMenu({
+// Rail action row — replaces the previous boxy 4-button row. Each action is an
+// icon-only trigger (no border, no fill at rest, subtle hover bg) with a native
+// `title` tooltip naming the action. Every dialog (item types, share, new folder)
+// still owns its own state machine; we only swap the trigger surface.
+function RailActions({
   disabled,
+  canManage,
   folders,
   initialFolderId,
   onSaveLogin,
   onSaveTotp,
   onSaveNote,
   onSaveSecret,
+  onCreateFolder,
+  onShareLookup,
+  onShareGrant,
 }: {
   disabled: boolean;
+  canManage: boolean;
   folders: VaultFolder[];
   initialFolderId: string | null;
   onSaveLogin: VaultViewProps["onSaveLogin"];
   onSaveTotp: VaultViewProps["onSaveTotp"];
   onSaveNote: VaultViewProps["onSaveNote"];
   onSaveSecret: VaultViewProps["onSaveSecret"];
+  onCreateFolder: VaultViewProps["onCreateFolder"];
+  onShareLookup: VaultViewProps["onShareLookup"];
+  onShareGrant: VaultViewProps["onShareGrant"];
 }) {
-  // Each `*Dialog` owns its trigger + open state — so we render four small icon triggers
-  // rather than a dropdown that would need controlled `open` props the dialogs don't
-  // expose. Keeps every dialog's existing flow (validation, generators) untouched.
-  const triggerCls =
-    "inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-border bg-[var(--surface-raised)] text-[12px] font-medium text-foreground transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50";
-  const trig = (icon: React.ReactNode, label: string, title: string) => (
-    <button type="button" disabled={disabled} className={triggerCls} title={title}>
+  const iconBtn = (title: string, icon: React.ReactNode, key?: string) => (
+    <button
+      key={key}
+      type="button"
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] text-muted-foreground transition-colors [transition-duration:var(--dur-fast)] hover:bg-[var(--surface-hover)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50"
+    >
       {icon}
-      <span className="hidden md:inline">{label}</span>
     </button>
   );
   return (
-    <div className="flex w-full items-stretch gap-1.5">
+    <div className="flex items-center gap-0.5">
       <ItemDialog
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveLogin(v, f)}
-        trigger={trig(<Shield className="h-3.5 w-3.5" />, "Login", "Add login")}
+        trigger={iconBtn("Add login", <Shield className="h-4 w-4" />)}
       />
       <TotpDialog
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveTotp(v, f)}
-        trigger={trig(<KeyRound className="h-3.5 w-3.5" />, "TOTP", "Add TOTP")}
+        trigger={iconBtn("Add one-time code", <KeyRound className="h-4 w-4" />)}
       />
       <NoteDialog
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveNote(v, f)}
-        trigger={trig(<FileText className="h-3.5 w-3.5" />, "Note", "Add secure note")}
+        trigger={iconBtn("Add secure note", <FileText className="h-4 w-4" />)}
       />
       <SecretDialog
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveSecret(v, f)}
-        trigger={trig(<KeySquare className="h-3.5 w-3.5" />, "Secret", "Add generic secret")}
+        trigger={iconBtn("Add generic secret", <KeySquare className="h-4 w-4" />)}
       />
+      <span className="ml-auto" />
+      <NewFolderDialog
+        onCreate={onCreateFolder}
+        trigger={iconBtn("New folder", <FolderPlus className="h-4 w-4" />)}
+      />
+      {canManage ? (
+        <ShareDialog
+          onLookup={onShareLookup}
+          onShare={onShareGrant}
+          trigger={iconBtn("Share vault", <UserPlus className="h-4 w-4" />)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -452,26 +465,27 @@ function ItemRow({
   const title = itemTitle(item);
   const sub = itemSubtitle(item);
   const weak = login ? isWeakPassword(login.fields.password) : false;
-  const typeIcon = totp ? <KeyRound className="h-3.5 w-3.5" /> : note ? <FileText className="h-3.5 w-3.5" /> : secret ? <KeySquare className="h-3.5 w-3.5" /> : null;
+  const typeIcon = totp ? <KeyRound className="h-4 w-4" /> : note ? <FileText className="h-4 w-4" /> : secret ? <KeySquare className="h-4 w-4" /> : null;
 
   return (
     <button
       type="button"
       onClick={onSelect}
+      title={title}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-[var(--radius-md)] px-2 py-1.5 text-left",
+        "flex w-full items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-left",
         "transition-colors [transition-duration:var(--dur-fast)]",
         active
           ? "bg-[var(--ds-accent-subtle)] text-[var(--ds-accent-subtle-fg)]"
           : "hover:bg-[var(--surface-hover)]",
       )}
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-border bg-[var(--surface-raised)] font-mono text-[13px] font-semibold text-muted-foreground">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-border bg-[var(--surface-raised)] font-display text-[14px] font-semibold text-foreground/80">
         {typeIcon ?? title.slice(0, 1).toUpperCase()}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{title}</span>
-        <span className="block truncate text-[11px] text-muted-foreground">{sub}</span>
+        <span className="block truncate text-[12px] text-muted-foreground">{sub}</span>
       </span>
       {weak ? (
         <Badge variant="secondary" className="bg-[var(--danger-subtle)] text-[var(--danger-fg)]">
@@ -551,10 +565,24 @@ function DetailHero({ item }: { item: PulledItem }) {
         <h2 className="truncate font-display text-[22px] font-semibold tracking-tight">{title}</h2>
         <p className="text-sm text-muted-foreground">{kindLabel}</p>
       </div>
-      <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Share" disabled>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9"
+        aria-label="Share item"
+        title="Share item — coming next"
+        disabled
+      >
         <Share2 className="h-4 w-4" />
       </Button>
-      <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="More" disabled>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9"
+        aria-label="More actions"
+        title="More actions — coming next"
+        disabled
+      >
         <MoreHorizontal className="h-4 w-4" />
       </Button>
     </div>
@@ -601,7 +629,8 @@ function DetailFields({ item }: { item: PulledItem }) {
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-muted-foreground hover:bg-[var(--surface-hover)] hover:text-foreground"
-                aria-label="Open in new tab"
+                aria-label="Open website in a new tab"
+                title="Open website in a new tab"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
@@ -616,15 +645,9 @@ function DetailFields({ item }: { item: PulledItem }) {
     return (
       <div className="space-y-4">
         <Field label="One-time code (2FA)">
-          <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-border bg-[var(--surface-inset)] px-3 py-2.5">
-            <TotpRing code={"••••••"} period={totp.period ?? 30} />
-            <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-              refreshes every {totp.period ?? 30}s
-            </span>
-          </div>
+          <TotpField totp={totp} />
           <p className="mt-1 text-[11px] text-muted-foreground">
-            Code is computed on this device from the stored secret. Open Edit to update the
-            seed.
+            Computed on this device from the stored seed. Open Edit to rotate the seed.
           </p>
         </Field>
         {totp.issuer ? <Field label="Issuer"><ValueRow value={totp.issuer} /></Field> : null}
@@ -692,6 +715,52 @@ function ValueRow({
         {value}
       </span>
       {children}
+    </div>
+  );
+}
+
+// Live TOTP — recomputes once per second from the stored seed so the displayed code
+// matches wall-clock no matter how long the tab was throttled. All derivation is local;
+// nothing leaves the device. Mirrors `totp-card.tsx`'s pattern, sized for the detail pane.
+function TotpField({ totp }: { totp: TotpData }) {
+  const [tick, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const periodSec = totp.period ?? 30;
+  const safe = React.useMemo(() => {
+    try {
+      return totpCode(totp.secret, {
+        period: totp.period,
+        digits: totp.digits,
+        algorithm: totp.algorithm,
+      });
+    } catch (err) {
+      return { error: (err as Error).message } as const;
+    }
+    // tick is intentional — recompute every second.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totp.secret, totp.period, totp.digits, totp.algorithm, tick]);
+
+  if ("error" in safe) {
+    return (
+      <div className="rounded-[var(--radius-md)] border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm">
+        Invalid TOTP seed: {safe.error}
+      </div>
+    );
+  }
+
+  const grouped =
+    safe.code.length === 6 ? `${safe.code.slice(0, 3)} ${safe.code.slice(3)}` : safe.code;
+  return (
+    <div className="flex items-center gap-4 rounded-[var(--radius-md)] border border-border bg-[var(--surface-inset)] px-4 py-3">
+      <TotpRing code={safe.code} period={periodSec} size={32} showCode={false} />
+      <span className="font-mono text-[22px] font-semibold tracking-[0.18em] text-foreground">
+        {grouped}
+      </span>
+      <span className="ml-auto text-[11px] text-muted-foreground">refreshes in {periodSec}s</span>
+      <CopyButton value={safe.code} iconOnly autoClearSeconds={20} />
     </div>
   );
 }
