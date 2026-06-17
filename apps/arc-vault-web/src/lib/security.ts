@@ -38,45 +38,128 @@ export interface SecurityReport {
   flagged: FlaggedItem[];
 }
 
-const SECRET_LIKE = new Set([
-  "password",
-  "p@ssword",
-  "qwerty",
-  "letmein",
-  "secret",
-  "admin",
-  "welcome",
-  "iloveyou",
-  "abc123",
-  "monkey",
-  "dragon",
+/**
+ * A small set of the most common passwords / base words. Not a full breach corpus (that's
+ * what the opt-in HIBP k-anonymity check is for) — just the handful that sit at the very
+ * top of every leak. We test the raw password *and* a de-leeted, punctuation-stripped
+ * "core" against this set so `P@ssw0rd!` and `Passw0rd` collapse onto their base word.
+ */
+const COMMON = new Set([
+  "password", "passwd", "p@ssword", "qwerty", "qwertyuiop", "letmein", "secret",
+  "admin", "welcome", "iloveyou", "abc123", "monkey", "dragon", "sunshine",
+  "princess", "football", "baseball", "superman", "trustno1", "master",
+  "login", "starwars", "whatever", "freedom", "ninja", "azerty", "google",
 ]);
 
+/** Leet substitutions, applied before the common-word lookup so `P@ssw0rd` → `password`.
+ *  Only glyph→letter swaps belong here; trailing punctuation like `!` is stripped by
+ *  {@link deleetCore}, not mapped to a letter (else `letmein!` wouldn't match `letmein`). */
+const LEET: Record<string, string> = {
+  "@": "a", "0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "$": "s",
+};
+
+/** Lower-case, de-leet, strip non-letters — the "base word" we match against {@link COMMON}. */
+function deleetCore(pw: string): string {
+  let out = "";
+  for (const ch of pw.toLowerCase()) out += LEET[ch] ?? ch;
+  return out.replace(/[^a-z]/g, "");
+}
+
+/** Ordered alphabets we treat as predictable when a password walks along them (either
+ *  direction): the latin alphabet, the digit run, and the three QWERTY keyboard rows. */
+const SEQ_SETS = ["abcdefghijklmnopqrstuvwxyz", "0123456789", "qwertyuiop", "asdfghjkl", "zxcvbnm"];
+
+/** Length of the predictable run starting at `i`, walking `dir` (+1 ascending / -1 descending) in `set`. */
+function runLength(s: string, i: number, set: string, dir: number): number {
+  let idx = set.indexOf(s[i]!);
+  if (idx < 0) return 1;
+  let len = 1;
+  while (i + len < s.length) {
+    const next = set.indexOf(s[i + len]!);
+    if (next < 0 || next !== idx + dir) break;
+    idx = next;
+    len++;
+  }
+  return len;
+}
+
+/** Characters carrying ~no entropy because they continue a sequence (`123`, `cba`, `qwert`):
+ *  we keep the first character of each run of length ≥3 and discount the rest. */
+function redundantFromSequences(pw: string): number {
+  const s = pw.toLowerCase();
+  let redundant = 0;
+  for (let i = 0; i < s.length; ) {
+    let best = 1;
+    for (const set of SEQ_SETS) {
+      best = Math.max(best, runLength(s, i, set, 1), runLength(s, i, set, -1));
+    }
+    if (best >= 3) {
+      redundant += best - 1;
+      i += best;
+    } else {
+      i += 1;
+    }
+  }
+  return redundant;
+}
+
+/** Characters carrying ~no entropy because they repeat the previous one (`aaa`, `!!!!`). */
+function redundantFromRepeats(pw: string): number {
+  let redundant = 0;
+  for (let i = 0; i < pw.length; ) {
+    let len = 1;
+    while (i + len < pw.length && pw[i + len] === pw[i]) len++;
+    if (len >= 3) redundant += len - 1;
+    i += len;
+  }
+  return redundant;
+}
+
 /**
- * Shannon-entropy estimate on the password's character set + length. Cheap, not perfect —
- * it's the same family of heuristic zxcvbn uses for its `guesses_log10` lower bound. We
- * combine it with a length floor and a small "looks like a common word" check.
+ * Structure-aware password-strength score (0–4). The single source of truth for "how
+ * strong is this password" across the app — the vault list's inline "weak" badge and the
+ * security dashboard both classify through here so they can never disagree (see
+ * {@link isWeakPassword}).
  *
- * Returns a 0–4 score. This is the single source of truth for "how strong is this
- * password" across the app — the vault list's inline "weak" badge and the security
- * dashboard both classify through here so they can never disagree (see {@link isWeakPassword}).
+ * Why not raw charset entropy: `length × log2(alphabet)` assumes every character is an
+ * independent uniform draw, so it rates `vimu@123` (8 chars, three classes) at ~49 bits =
+ * "strong" — nonsense, because it's a 4-letter word plus the sequence `123`. Real passwords
+ * cluster into predictable shapes, so we estimate *effective* entropy instead:
+ *
+ *   1. Hard-floor known-common base words, including de-leeted (`P@ssw0rd!` → `password`).
+ *   2. Discount characters that merely continue a sequence (`123`, `cba`) or repeat (`aaa`).
+ *   3. Cap the ubiquitous "word + short number/symbol suffix" template (`vimu@123`,
+ *      `Summer2024`, `hunter!1`) to ~30 bits — gated on a short letter core so genuine
+ *      passphrases that happen to end in digits aren't penalised.
+ *
+ * This is a heuristic (a tiny, dependency-free cousin of zxcvbn's pattern matching), kept
+ * fully on-device so the zero-knowledge invariant holds. It is intentionally conservative:
+ * it would rather call a borderline password "fair" than wave a weak one through as strong.
  */
 export function passwordStrength(pw: string): number {
   if (pw.length === 0) return 0;
   const lower = pw.toLowerCase();
-  if (SECRET_LIKE.has(lower)) return 1;
+  if (COMMON.has(lower) || COMMON.has(deleetCore(pw))) return 1;
 
   let space = 0;
   if (/[a-z]/.test(pw)) space += 26;
   if (/[A-Z]/.test(pw)) space += 26;
   if (/[0-9]/.test(pw)) space += 10;
   if (/[^a-zA-Z0-9]/.test(pw)) space += 33;
-  const entropyBits = pw.length * Math.log2(Math.max(space, 1));
+  const perChar = Math.log2(Math.max(space, 1));
 
-  // 0..4 scale: <32b weak, 32-44b fair, 44-60b strong, >=60b excellent.
-  if (entropyBits < 28) return 1;
-  if (entropyBits < 40) return 2;
-  if (entropyBits < 56) return 3;
+  // Effective length: drop the characters that only continue a sequence or a repeat run.
+  const redundant = Math.min(pw.length - 1, redundantFromSequences(pw) + redundantFromRepeats(pw));
+  let bits = (pw.length - redundant) * perChar;
+
+  // "word + optional separator + short digit run" — the dominant weak shape (`vimu@123`).
+  const template = /^([A-Za-z]+)[^A-Za-z0-9]{0,2}\d{1,4}$/.exec(pw);
+  if (template && template[1]!.length <= 12) bits = Math.min(bits, 30);
+
+  // 0..4 scale on *effective* bits: <28 weak, 28-40 fair, 40-56 strong, >=56 excellent.
+  if (bits < 28) return 1;
+  if (bits < 40) return 2;
+  if (bits < 56) return 3;
   return 4;
 }
 
