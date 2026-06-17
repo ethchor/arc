@@ -10,20 +10,27 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
 
 const TYPES = ["team", "personal"] as const;
 type VType = (typeof TYPES)[number];
 
+const DEFAULT_TIP: TipProps = {
+  label: "New vault",
+  hint: "Create a personal or shared team vault — keyed to your devices.",
+};
+
 export function CreateVaultDialog({
   onCreate,
   trigger,
+  tooltip = DEFAULT_TIP,
 }: {
   onCreate: (type: VType, name: string) => Promise<void>;
   trigger?: React.ReactNode;
+  tooltip?: TipProps;
 }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
@@ -44,19 +51,13 @@ export function CreateVaultDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+      <TipTrigger tip={tooltip}>
         {trigger ?? (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9"
-            aria-label="Create new vault"
-            title="Create new vault"
-          >
+          <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Create new vault">
             <FolderPlus className="h-4 w-4" />
           </Button>
         )}
-      </DialogTrigger>
+      </TipTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New vault</DialogTitle>

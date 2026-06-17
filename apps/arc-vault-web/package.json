@@ -20,6 +20,7 @@
     "@radix-ui/react-label": "^2.1.1",
     "@radix-ui/react-separator": "^1.1.1",
     "@radix-ui/react-slot": "^1.1.1",
+    "@radix-ui/react-tooltip": "^1.2.10",
     "@tauri-apps/api": "^2.1.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -39,8 +40,8 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.16",
-    "@types/node": "^24.0.0",
     "@types/dagre": "^0.7.52",
+    "@types/node": "^24.0.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.4.20",

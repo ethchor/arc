@@ -9,11 +9,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
 
 export interface TotpInput {
   key: string;
@@ -46,6 +46,7 @@ function maybeApplyOtpauth(prev: TotpInput, pasted: string): TotpInput {
 
 export function TotpDialog({
   trigger,
+  tooltip,
   initial,
   heading = "Add TOTP",
   folders = [],
@@ -53,6 +54,7 @@ export function TotpDialog({
   onSubmit,
 }: {
   trigger: React.ReactNode;
+  tooltip?: TipProps;
   initial?: TotpInput;
   heading?: string;
   folders?: Array<{ id: string; name: string }>;
@@ -86,7 +88,7 @@ export function TotpDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <TipTrigger tip={tooltip}>{trigger}</TipTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{heading}</DialogTitle>

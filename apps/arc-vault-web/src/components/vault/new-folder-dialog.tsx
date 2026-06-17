@@ -10,17 +10,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
 
 export function NewFolderDialog({
   onCreate,
   trigger,
+  tooltip,
 }: {
   onCreate: (name: string) => Promise<void>;
   trigger?: React.ReactNode;
+  tooltip?: TipProps;
 }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
@@ -39,13 +41,13 @@ export function NewFolderDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+      <TipTrigger tip={tooltip}>
         {trigger ?? (
-          <Button variant="outline" size="sm" title="New folder">
+          <Button variant="outline" size="sm" aria-label="New folder">
             <FolderPlus className="h-4 w-4" /> New folder
           </Button>
         )}
-      </DialogTrigger>
+      </TipTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New folder</DialogTitle>

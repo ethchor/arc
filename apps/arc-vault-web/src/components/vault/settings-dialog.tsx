@@ -9,10 +9,10 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { TipTrigger } from "@/components/ui/tooltip";
 import { PasskeysSection } from "@/components/vault/passkeys-section";
 
 const AUTOLOCK_OPTIONS = [1, 5, 15, 30];
@@ -29,11 +29,11 @@ export function SettingsDialog({
 }) {
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="icon" aria-label="Settings" title="Settings — auto-lock & account">
+      <TipTrigger tip={{ label: "Settings", hint: "Auto-lock timer, passkeys & account — stored on this device." }}>
+        <Button variant="outline" size="icon" aria-label="Settings">
           <Settings className="h-4 w-4" />
         </Button>
-      </DialogTrigger>
+      </TipTrigger>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Eye, EyeOff, Shield } from "lucide-react";
+import { IconTip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { CopyButton } from "./copy-button";
 
@@ -42,15 +43,19 @@ export function MaskedField({
           )}
         </span>
         <span className="arc-masked__actions">
-          <button
-            type="button"
-            className="arc-copy arc-copy--icon"
-            aria-label={revealed ? "Hide value" : "Reveal value"}
-            title={revealed ? "Hide value" : "Reveal value"}
-            onClick={() => setRevealed((r) => !r)}
+          <IconTip
+            label={revealed ? "Hide value" : "Reveal value"}
+            hint="Decrypted on this device and held in memory only — never sent to arc."
           >
-            {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          </button>
+            <button
+              type="button"
+              className="arc-copy arc-copy--icon"
+              aria-label={revealed ? "Hide value" : "Reveal value"}
+              onClick={() => setRevealed((r) => !r)}
+            >
+              {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          </IconTip>
           {copyable && <CopyButton value={value} iconOnly autoClearSeconds={autoClearSeconds} />}
         </span>
       </div>

@@ -10,10 +10,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 const ROLES = ["viewer", "editor", "admin"] as const;
@@ -41,6 +41,7 @@ export function ShareDialog({
   onLookup,
   onShare,
   trigger,
+  tooltip,
 }: {
   onLookup: (email: string) => Promise<IdentityLookup>;
   onShare: (
@@ -49,6 +50,7 @@ export function ShareDialog({
     identity: { identityPubB64: string; identityPubMlkemB64: string },
   ) => Promise<void>;
   trigger?: React.ReactNode;
+  tooltip?: TipProps;
 }) {
   const [open, setOpen] = React.useState(false);
   const [email, setEmail] = React.useState("");
@@ -104,13 +106,13 @@ export function ShareDialog({
         if (!o) reset();
       }}
     >
-      <DialogTrigger asChild>
+      <TipTrigger tip={tooltip}>
         {trigger ?? (
-          <Button variant="outline" size="sm" title="Share vault">
+          <Button variant="outline" size="sm" aria-label="Share vault">
             <UserPlus className="h-4 w-4" /> Share
           </Button>
         )}
-      </DialogTrigger>
+      </TipTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Share this vault</DialogTitle>

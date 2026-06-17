@@ -10,8 +10,8 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import { TipTrigger } from "@/components/ui/tooltip";
 
 export function DevicesDialog({
   onLoad,
@@ -44,11 +44,11 @@ export function DevicesDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="icon" aria-label="Devices" title="Devices — approve & manage trusted devices">
+      <TipTrigger tip={{ label: "Pending devices", hint: "Approve or reject devices waiting to join your vault." }}>
+        <Button variant="outline" size="icon" aria-label="Devices">
           <MonitorSmartphone className="h-4 w-4" />
         </Button>
-      </DialogTrigger>
+      </TipTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Pending devices</DialogTitle>
