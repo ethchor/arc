@@ -504,6 +504,15 @@ export function VaultApp() {
               setSection("vault");
               setActiveItem(id);
             }}
+            onFixLogin={async (item, newPassword) => {
+              const l = asLogin(item);
+              if (!l) return;
+              await saveLogin(
+                { title: l.title, url: l.fields.url, username: l.fields.username, password: newPassword },
+                item.folderId ?? null,
+                item,
+              );
+            }}
           />
         )}
         {section === "devices" && <DevicesView getClient={getClient} />}
