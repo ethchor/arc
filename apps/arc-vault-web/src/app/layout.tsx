@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 // arc design system type system:
@@ -73,8 +74,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          {children}
-          <Toaster />
+          {/* One provider at the root drives every tooltip. 200ms feels responsive without
+              firing on an incidental pointer pass; skipDelayDuration lets you sweep a
+              toolbar and read each tip instantly once the first has opened. */}
+          <TooltipProvider delayDuration={200} skipDelayDuration={300}>
+            {children}
+            <Toaster />
+          </TooltipProvider>
         </ThemeProvider>
         <script dangerouslySetInnerHTML={{ __html: SW_REGISTER }} />
       </body>

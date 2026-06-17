@@ -10,7 +10,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -20,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
 import { generatePassword } from "@/lib/password";
 
 export interface LoginInput {
@@ -34,6 +34,7 @@ const LENGTHS = [16, 20, 24, 32];
 
 export function ItemDialog({
   trigger,
+  tooltip,
   initial,
   heading = "Add login",
   folders = [],
@@ -41,6 +42,7 @@ export function ItemDialog({
   onSubmit,
 }: {
   trigger: React.ReactNode;
+  tooltip?: TipProps;
   initial?: LoginInput;
   heading?: string;
   folders?: Array<{ id: string; name: string }>;
@@ -74,7 +76,7 @@ export function ItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <TipTrigger tip={tooltip}>{trigger}</TipTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{heading}</DialogTitle>

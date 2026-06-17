@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { IconTip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { applyPreset, DEFAULT_PRESET, PRESET_STORAGE_KEY, THEME_PRESETS } from "@/lib/themes";
 
@@ -40,11 +41,13 @@ export function ThemeCustomizer() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" aria-label="Customize theme" title="Customize theme — accent & appearance">
-          <Palette className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
+      <IconTip label="Customize theme" hint="Accent color & light / dark / system appearance.">
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="icon" aria-label="Customize theme">
+            <Palette className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+      </IconTip>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel>Mode</DropdownMenuLabel>
         <div className="grid grid-cols-3 gap-2 p-2">

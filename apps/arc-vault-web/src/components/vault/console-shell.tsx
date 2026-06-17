@@ -31,6 +31,7 @@ import { ThemeCustomizer } from "@/components/theme-customizer";
 import { HoneycombMark } from "@/components/brand/honeycomb-mark";
 import { SegmentedControl } from "@/components/arc/segmented-control";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
+import { IconTip } from "@/components/ui/tooltip";
 import { CommandPalette, type CommandItem } from "@/components/vault/command-palette";
 import { cn } from "@/lib/utils";
 
@@ -56,35 +57,39 @@ export type ConsoleSection =
   | "agents"
   | "tools";
 
-type NavEntry = { group: string } | { id: ConsoleSection; label: string; icon: LucideIcon };
+type NavEntry =
+  | { group: string }
+  | { id: ConsoleSection; label: string; icon: LucideIcon; hint: string };
 
 const NAV: Record<Persona, NavEntry[]> = {
-  // Personal = Engine B (the human vault) + the shared team vault.
+  // Personal = Engine B (the human vault) + the shared team vault. Each `hint` is the
+  // one-line tooltip description shown beside the icon (and is the only label when the
+  // rail is collapsed to icons).
   person: [
     { group: "You" },
-    { id: "home", label: "Home", icon: Activity },
-    { id: "vault", label: "My vault", icon: Lock },
-    { id: "security", label: "Security", icon: ShieldCheck },
-    { id: "devices", label: "Devices", icon: Fingerprint },
+    { id: "home", label: "Home", icon: Activity, hint: "Security score, recent items & quick actions." },
+    { id: "vault", label: "My vault", icon: Lock, hint: "Your logins, one-time codes, notes & secrets." },
+    { id: "security", label: "Security", icon: ShieldCheck, hint: "Weak/reused password audit — computed on this device." },
+    { id: "devices", label: "Devices", icon: Fingerprint, hint: "Devices that can unlock your vault; approve or revoke." },
     { group: "Shared" },
-    { id: "team", label: "Team vault", icon: Users },
+    { id: "team", label: "Team vault", icon: Users, hint: "A vault shared with your team, end-to-end encrypted." },
   ],
   // Operator spans two engines — labels make the architecture legible (per the IA decision):
   //   Engine A · Infrastructure, the shared Govern control plane, and Engine C · Agents.
   operator: [
     { group: "Engine A · Infrastructure" },
-    { id: "kv", label: "KV secrets", icon: GitBranch },
-    { id: "creds", label: "Dynamic creds", icon: KeyRound },
-    { id: "transit", label: "Transit", icon: RefreshCw },
-    { id: "pki", label: "PKI", icon: Shield },
+    { id: "kv", label: "KV secrets", icon: GitBranch, hint: "Versioned key/value secrets with history & diff." },
+    { id: "creds", label: "Dynamic creds", icon: KeyRound, hint: "Short-lived credentials minted on demand." },
+    { id: "transit", label: "Transit", icon: RefreshCw, hint: "Encrypt/decrypt & sign as a service — keys never leave." },
+    { id: "pki", label: "PKI", icon: Shield, hint: "Issue and manage short-lived certificates." },
     { group: "Govern" },
-    { id: "policies", label: "Policies", icon: ScrollText },
-    { id: "workflows", label: "Workflows", icon: Workflow },
-    { id: "leases", label: "Leases", icon: Clock },
-    { id: "audit", label: "Audit log", icon: FileClock },
+    { id: "policies", label: "Policies", icon: ScrollText, hint: "Who can do what — access rules across engines." },
+    { id: "workflows", label: "Workflows", icon: Workflow, hint: "Approval and automation flows." },
+    { id: "leases", label: "Leases", icon: Clock, hint: "Active leases and their time-to-live." },
+    { id: "audit", label: "Audit log", icon: FileClock, hint: "Tamper-evident record of every action." },
     { group: "Engine C · Agents" },
-    { id: "agents", label: "Agents · MCP", icon: Bot },
-    { id: "tools", label: "Tools", icon: Wrench },
+    { id: "agents", label: "Agents · MCP", icon: Bot, hint: "AI agents and their scoped MCP tool access." },
+    { id: "tools", label: "Tools", icon: Wrench, hint: "Operator utilities and one-off actions." },
   ],
 };
 
@@ -194,6 +199,7 @@ export function ConsoleShell({
                 key={e.id}
                 icon={e.icon}
                 label={e.label}
+                hint={e.hint}
                 active={section === e.id}
                 collapsed={collapsed}
                 onClick={() => onSection(e.id)}
@@ -218,16 +224,20 @@ export function ConsoleShell({
           className="sticky top-0 flex h-14 items-center gap-3 border-b border-border bg-background/85 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-background/60"
           style={{ zIndex: "var(--z-sticky)" as React.CSSProperties["zIndex"] }}
         >
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-            title={collapsed ? "Expand navigation" : "Collapse navigation"}
-            onClick={() => setCollapsed((c) => !c)}
+          <IconTip
+            label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            hint="Toggle the nav rail between full labels and icons."
           >
-            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+              onClick={() => setCollapsed((c) => !c)}
+            >
+              {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </Button>
+          </IconTip>
 
           <button
             type="button"
@@ -266,16 +276,20 @@ export function ConsoleShell({
                 { value: "operator", label: "Operator" },
               ]}
             />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden h-8 w-8 lg:inline-flex"
-              aria-label="Toggle density"
-              title={density === "compact" ? "Comfortable" : "Compact"}
-              onClick={() => onDensity(density === "compact" ? "comfortable" : "compact")}
+            <IconTip
+              label={density === "compact" ? "Comfortable density" : "Compact density"}
+              hint="Switch row spacing for this session."
             >
-              {density === "compact" ? <PanelLeft className="h-4 w-4" /> : <Rows3 className="h-4 w-4" />}
-            </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="hidden h-8 w-8 lg:inline-flex"
+                aria-label="Toggle density"
+                onClick={() => onDensity(density === "compact" ? "comfortable" : "compact")}
+              >
+                {density === "compact" ? <PanelLeft className="h-4 w-4" /> : <Rows3 className="h-4 w-4" />}
+              </Button>
+            </IconTip>
             <Button variant="outline" size="sm" onClick={onLock}>
               <Lock className="h-4 w-4" /> Lock
             </Button>
@@ -328,34 +342,38 @@ export function ConsoleShell({
 function NavItem({
   icon: Icon,
   label,
+  hint,
   active,
   collapsed,
   onClick,
 }: {
   icon: LucideIcon;
   label: string;
+  hint: string;
   active: boolean;
   collapsed: boolean;
   onClick: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      title={label}
-      className={cn(
-        "relative flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-sm",
-        "transition-[background-color,color] [transition-duration:var(--dur-fast)] ease-out-quart",
-        collapsed && "justify-center px-0",
-        active
-          ? "bg-primary/10 font-medium text-primary"
-          : "text-muted-foreground hover:bg-accent hover:text-foreground",
-      )}
-    >
-      {active ? (
-        <span className="absolute -left-2.5 top-1.5 bottom-1.5 w-[3px] rounded-r bg-primary" />
-      ) : null}
-      <Icon className="h-[18px] w-[18px] shrink-0" />
-      {!collapsed ? <span className="truncate">{label}</span> : null}
-    </button>
+    <IconTip label={label} hint={hint} side="right">
+      <button
+        onClick={onClick}
+        aria-label={label}
+        className={cn(
+          "relative flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-sm",
+          "transition-[background-color,color] [transition-duration:var(--dur-fast)] ease-out-quart",
+          collapsed && "justify-center px-0",
+          active
+            ? "bg-primary/10 font-medium text-primary"
+            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+        )}
+      >
+        {active ? (
+          <span className="absolute -left-2.5 top-1.5 bottom-1.5 w-[3px] rounded-r bg-primary" />
+        ) : null}
+        <Icon className="h-[18px] w-[18px] shrink-0" />
+        {!collapsed ? <span className="truncate">{label}</span> : null}
+      </button>
+    </IconTip>
   );
 }

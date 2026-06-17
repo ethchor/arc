@@ -8,11 +8,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
 
 export interface SecretInput {
   key: string;
@@ -28,6 +28,7 @@ const EMPTY: SecretInput = { key: "", value: "" };
  */
 export function SecretDialog({
   trigger,
+  tooltip,
   initial,
   heading = "Add secret",
   folders = [],
@@ -35,6 +36,7 @@ export function SecretDialog({
   onSubmit,
 }: {
   trigger: React.ReactNode;
+  tooltip?: TipProps;
   initial?: SecretInput;
   heading?: string;
   folders?: Array<{ id: string; name: string }>;
@@ -65,7 +67,7 @@ export function SecretDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <TipTrigger tip={tooltip}>{trigger}</TipTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{heading}</DialogTitle>

@@ -31,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { IconTip } from "@/components/ui/tooltip";
 import { CopyButton } from "@/components/arc/copy-button";
 import { MaskedField } from "@/components/arc/masked-field";
 import { TotpRing } from "@/components/arc/totp-ring";
@@ -325,15 +326,16 @@ function FolderStrip({
         </FolderChip>
       ))}
       {folderFilter ? (
-        <button
-          type="button"
-          onClick={onDeleteFolder}
-          className="ml-auto inline-flex h-6 items-center gap-0.5 rounded-full px-1.5 text-[11px] text-destructive transition-colors hover:bg-destructive/10"
-          aria-label="Delete folder"
-          title="Delete folder"
-        >
-          <X className="h-3 w-3" />
-        </button>
+        <IconTip label="Delete folder" hint="Removes this folder; its items move back to All." side="top">
+          <button
+            type="button"
+            onClick={onDeleteFolder}
+            className="ml-auto inline-flex h-6 items-center gap-0.5 rounded-full px-1.5 text-[11px] text-destructive transition-colors hover:bg-destructive/10"
+            aria-label="Delete folder"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </IconTip>
       ) : null}
     </div>
   );
@@ -398,15 +400,16 @@ function RailActions({
 }) {
   // Reuse the shared Button (ghost/icon) so the rail matches every other icon control in
   // the app — same hover, focus ring, press-scale, and disabled treatment — rather than a
-  // bespoke button. Sized down to h-8 w-8 to stay compact in the rail.
-  const iconBtn = (title: string, icon: React.ReactNode) => (
+  // bespoke button. Sized down to h-8 w-8 to stay compact in the rail. The rich tooltip
+  // (label + "what it does") is supplied to each dialog via its `tooltip` prop; the button
+  // keeps an `aria-label` for screen readers (no native `title=` — that double-fires).
+  const iconBtn = (label: string, icon: React.ReactNode) => (
     <Button
       type="button"
       variant="ghost"
       size="icon"
       disabled={disabled}
-      title={title}
-      aria-label={title}
+      aria-label={label}
       className="h-8 w-8 text-muted-foreground hover:text-foreground"
     >
       {icon}
@@ -418,35 +421,41 @@ function RailActions({
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveLogin(v, f)}
+        tooltip={{ label: "Add login", hint: "Website, username & password — weak passwords are flagged on this device." }}
         trigger={iconBtn("Add login", <Shield className="h-4 w-4" />)}
       />
       <TotpDialog
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveTotp(v, f)}
+        tooltip={{ label: "Add one-time code", hint: "Store a TOTP/2FA seed. Codes are computed locally and never synced." }}
         trigger={iconBtn("Add one-time code", <KeyRound className="h-4 w-4" />)}
       />
       <NoteDialog
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveNote(v, f)}
+        tooltip={{ label: "Add secure note", hint: "Free-form encrypted text — recovery codes, license keys, anything." }}
         trigger={iconBtn("Add secure note", <FileText className="h-4 w-4" />)}
       />
       <SecretDialog
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveSecret(v, f)}
+        tooltip={{ label: "Add generic secret", hint: "Any key/value — API tokens, SSH keys, environment values." }}
         trigger={iconBtn("Add generic secret", <KeySquare className="h-4 w-4" />)}
       />
       <span className="ml-auto" />
       <NewFolderDialog
         onCreate={onCreateFolder}
+        tooltip={{ label: "New folder", hint: "Group items in this vault. Folder names are encrypted too." }}
         trigger={iconBtn("New folder", <FolderPlus className="h-4 w-4" />)}
       />
       {canManage ? (
         <ShareDialog
           onLookup={onShareLookup}
           onShare={onShareGrant}
+          tooltip={{ label: "Share vault", hint: "Grant another arc user access via their public key — end-to-end encrypted." }}
           trigger={iconBtn("Share vault", <UserPlus className="h-4 w-4" />)}
         />
       ) : null}
@@ -570,26 +579,23 @@ function DetailHero({ item }: { item: PulledItem }) {
         <h2 className="truncate font-display text-[22px] font-semibold tracking-tight">{title}</h2>
         <p className="text-sm text-muted-foreground">{kindLabel}</p>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-9 w-9"
-        aria-label="Share item"
-        title="Share item — coming next"
-        disabled
-      >
-        <Share2 className="h-4 w-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-9 w-9"
-        aria-label="More actions"
-        title="More actions — coming next"
-        disabled
-      >
-        <MoreHorizontal className="h-4 w-4" />
-      </Button>
+      {/* Disabled placeholders ("coming next"). The tooltip lives on a focusable span
+          wrapper because a disabled button swallows pointer events, so Radix can't see the
+          hover on the button itself. */}
+      <IconTip label="Share item" hint="Coming soon — share a single item, not the whole vault.">
+        <span tabIndex={0} className="inline-flex">
+          <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Share item" disabled>
+            <Share2 className="h-4 w-4" />
+          </Button>
+        </span>
+      </IconTip>
+      <IconTip label="More actions" hint="Coming soon — move, duplicate, and item history.">
+        <span tabIndex={0} className="inline-flex">
+          <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="More actions" disabled>
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </span>
+      </IconTip>
     </div>
   );
 }
@@ -629,16 +635,17 @@ function DetailFields({ item }: { item: PulledItem }) {
         {url ? (
           <Field label="Website">
             <ValueRow value={url}>
-              <a
-                href={url.startsWith("http") ? url : `https://${url}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-muted-foreground hover:bg-[var(--surface-hover)] hover:text-foreground"
-                aria-label="Open website in a new tab"
-                title="Open website in a new tab"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
+              <IconTip label="Open website" hint="Opens this URL in a new tab." side="top">
+                <a
+                  href={url.startsWith("http") ? url : `https://${url}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-muted-foreground hover:bg-[var(--surface-hover)] hover:text-foreground"
+                  aria-label="Open website in a new tab"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </IconTip>
             </ValueRow>
           </Field>
         ) : null}

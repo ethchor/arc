@@ -42,6 +42,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { IconTip } from "@/components/ui/tooltip";
 import { CopyButton } from "@/components/arc/copy-button";
 import { MaskedField } from "@/components/arc/masked-field";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
@@ -358,9 +359,13 @@ function Header() {
       </div>
       <div className="flex items-center gap-2">
         <MountSelector />
-        <Button size="sm" variant="secondary" disabled title="Write requires Engine A API — coming next">
-          <Plus className="h-3.5 w-3.5" /> Write secret
-        </Button>
+        <IconTip label="Write secret" hint="Coming soon — needs the Engine A write API." side="bottom">
+          <span tabIndex={0} className="inline-flex">
+            <Button size="sm" variant="secondary" disabled>
+              <Plus className="h-3.5 w-3.5" /> Write secret
+            </Button>
+          </span>
+        </IconTip>
       </div>
     </div>
   );

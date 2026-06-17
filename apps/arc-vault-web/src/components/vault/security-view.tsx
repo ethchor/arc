@@ -6,6 +6,7 @@ import { AlertCircle, AlertTriangle, KeyRound, ShieldCheck, Wrench } from "lucid
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { IconTip } from "@/components/ui/tooltip";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
 import { Stagger } from "@/components/motion/stagger";
 import { analyseSecurity, type FlaggedItem } from "@/lib/security";
@@ -57,13 +58,14 @@ export function SecurityView({
           trailing={
             <div className="flex items-center gap-2">
               {buckets.weak > 0 && firstWeakId ? (
-                <Button
-                  size="sm"
-                  onClick={() => onOpenItem(firstWeakId)}
-                  title="Open the first weak login in your vault to fix it"
+                <IconTip
+                  label="Fix weak logins"
+                  hint="Jumps to the first weak login in your vault so you can rotate it."
                 >
-                  <ShieldCheck className="h-4 w-4" /> Fix weak logins
-                </Button>
+                  <Button size="sm" onClick={() => onOpenItem(firstWeakId)}>
+                    <ShieldCheck className="h-4 w-4" /> Fix weak logins
+                  </Button>
+                </IconTip>
               ) : null}
               <TrustIndicator kind="zk" />
             </div>
@@ -173,14 +175,11 @@ export function SecurityView({
                     <Badge variant="outline" className="hidden capitalize sm:inline-flex">
                       {f.kind}
                     </Badge>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => onOpenItem(f.id)}
-                      title={`Open ${f.title} in your vault to fix`}
-                    >
-                      <Wrench className="h-3.5 w-3.5" /> Fix
-                    </Button>
+                    <IconTip label="Fix" hint={`Opens “${f.title}” in your vault to rotate its password.`} side="left">
+                      <Button variant="secondary" size="sm" onClick={() => onOpenItem(f.id)}>
+                        <Wrench className="h-3.5 w-3.5" /> Fix
+                      </Button>
+                    </IconTip>
                   </li>
                 ))}
               </ul>

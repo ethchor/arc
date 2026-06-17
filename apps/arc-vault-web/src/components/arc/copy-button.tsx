@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Check, Copy } from "lucide-react";
+import { IconTip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -63,16 +64,26 @@ export function CopyButton({
   const countdown = `0:${String(left).padStart(2, "0")}`;
 
   return (
-    <button
-      type="button"
-      className={cn("arc-copy", copied && "arc-copy--done", iconOnly && "arc-copy--icon", className)}
-      onClick={handle}
-      aria-label={copied ? copiedLabel : label}
-      title={copied && autoClearSeconds > 0 ? `Clears in ${countdown}` : label}
+    <IconTip
+      label={copied ? copiedLabel : label}
+      hint={
+        autoClearSeconds > 0
+          ? copied
+            ? `Clipboard auto-clears in ${countdown}.`
+            : `Copies to clipboard, then auto-clears after ${autoClearSeconds}s.`
+          : undefined
+      }
     >
-      {copied ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} /> : <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />}
-      {!iconOnly && <span>{copied ? copiedLabel : label}</span>}
-      {!iconOnly && copied && autoClearSeconds > 0 && <span className="arc-copy__count">{countdown}</span>}
-    </button>
+      <button
+        type="button"
+        className={cn("arc-copy", copied && "arc-copy--done", iconOnly && "arc-copy--icon", className)}
+        onClick={handle}
+        aria-label={copied ? copiedLabel : label}
+      >
+        {copied ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} /> : <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />}
+        {!iconOnly && <span>{copied ? copiedLabel : label}</span>}
+        {!iconOnly && copied && autoClearSeconds > 0 && <span className="arc-copy__count">{countdown}</span>}
+      </button>
+    </IconTip>
   );
 }
