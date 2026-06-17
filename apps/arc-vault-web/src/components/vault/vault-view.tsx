@@ -49,6 +49,7 @@ import {
 import { TotpDialog, type TotpInput } from "@/components/vault/totp-dialog";
 import type { TotpData } from "@/lib/items";
 import { asLogin, asNote, asSecret, asTotp, itemSubtitle, itemTitle } from "@/lib/items";
+import { isWeakPassword } from "@/lib/security";
 import { cn } from "@/lib/utils";
 
 /**
@@ -395,17 +396,21 @@ function RailActions({
   onShareLookup: VaultViewProps["onShareLookup"];
   onShareGrant: VaultViewProps["onShareGrant"];
 }) {
-  const iconBtn = (title: string, icon: React.ReactNode, key?: string) => (
-    <button
-      key={key}
+  // Reuse the shared Button (ghost/icon) so the rail matches every other icon control in
+  // the app — same hover, focus ring, press-scale, and disabled treatment — rather than a
+  // bespoke button. Sized down to h-8 w-8 to stay compact in the rail.
+  const iconBtn = (title: string, icon: React.ReactNode) => (
+    <Button
       type="button"
+      variant="ghost"
+      size="icon"
       disabled={disabled}
       title={title}
       aria-label={title}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] text-muted-foreground transition-colors [transition-duration:var(--dur-fast)] hover:bg-[var(--surface-hover)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50"
+      className="h-8 w-8 text-muted-foreground hover:text-foreground"
     >
       {icon}
-    </button>
+    </Button>
   );
   return (
     <div className="flex items-center gap-0.5">
@@ -1028,17 +1033,3 @@ function EmptyVaults({
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ────────────────────────────────────────────────────────────────────────────────
-
-/** Lightweight "is this password weak" heuristic for the inline badge — matches the
- *  Security dashboard's classifier shape (short, dictionary-ish, all-letter or all-digit).
- *  We don't import the real analyser here because it operates over the whole item set;
- *  this is a fast per-item glance. */
-function isWeakPassword(p: string): boolean {
-  if (!p) return false;
-  if (p.length < 10) return true;
-  if (!/[A-Z]/.test(p) || !/[a-z]/.test(p) || !/[0-9]/.test(p)) return true;
-  return false;
-}

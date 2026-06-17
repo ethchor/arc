@@ -56,8 +56,12 @@ const SECRET_LIKE = new Set([
  * Shannon-entropy estimate on the password's character set + length. Cheap, not perfect —
  * it's the same family of heuristic zxcvbn uses for its `guesses_log10` lower bound. We
  * combine it with a length floor and a small "looks like a common word" check.
+ *
+ * Returns a 0–4 score. This is the single source of truth for "how strong is this
+ * password" across the app — the vault list's inline "weak" badge and the security
+ * dashboard both classify through here so they can never disagree (see {@link isWeakPassword}).
  */
-function passwordStrength(pw: string): number {
+export function passwordStrength(pw: string): number {
   if (pw.length === 0) return 0;
   const lower = pw.toLowerCase();
   if (SECRET_LIKE.has(lower)) return 1;
@@ -74,6 +78,17 @@ function passwordStrength(pw: string): number {
   if (entropyBits < 40) return 2;
   if (entropyBits < 56) return 3;
   return 4;
+}
+
+/**
+ * The one "is this password weak" predicate for the whole UI. A login is weak when its
+ * strength is `<= 2` (under ~40 bits of estimated entropy, or a known common password) —
+ * exactly the threshold the security dashboard uses to populate its `weak` bucket. Empty
+ * passwords aren't flagged here (an item may legitimately have no password field yet).
+ */
+export function isWeakPassword(pw: string): boolean {
+  if (!pw) return false;
+  return passwordStrength(pw) <= 2;
 }
 
 /**

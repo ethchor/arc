@@ -91,6 +91,21 @@ const NAV: Record<Persona, NavEntry[]> = {
 /** First selectable section of a persona (used when switching personas). */
 export const PERSONA_HOME: Record<Persona, ConsoleSection> = { person: "home", operator: "kv" };
 
+/**
+ * Sections that read better in a centered, measure-constrained column: landing/dashboard
+ * pages and the not-yet-wired preview cards. Everything else (master-detail vaults, the KV
+ * browser, tables, the security grid) is a working surface that wants the full width — the
+ * design kit shows those edge-to-edge, and `max-w-5xl` was visibly cramping them.
+ */
+const CONTAINED_SECTIONS = new Set<ConsoleSection>([
+  "home",
+  "tools",
+  "creds",
+  "transit",
+  "pki",
+  "leases",
+]);
+
 const ALL_ITEMS: CommandItem[] = (Object.entries(NAV) as [Persona, NavEntry[]][]).flatMap(
   ([persona, entries]) => {
     let group = "";
@@ -207,7 +222,8 @@ export function ConsoleShell({
             variant="ghost"
             size="icon"
             className="h-8 w-8 shrink-0"
-            aria-label="Toggle navigation"
+            aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            title={collapsed ? "Expand navigation" : "Collapse navigation"}
             onClick={() => setCollapsed((c) => !c)}
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
@@ -267,8 +283,19 @@ export function ConsoleShell({
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 data-[density=compact]:py-4" data-density={density}>
-          <div className={cn("mx-auto", density === "compact" ? "max-w-6xl" : "max-w-5xl")}>
+        <main className="flex-1 px-4 py-6 data-[density=compact]:py-4 lg:px-6" data-density={density}>
+          <div
+            className={cn(
+              "mx-auto w-full",
+              // Contained pages keep a reading measure; working surfaces fill the width
+              // (capped on ultra-wide displays so content doesn't sprawl past ~1760px).
+              CONTAINED_SECTIONS.has(section)
+                ? density === "compact"
+                  ? "max-w-6xl"
+                  : "max-w-5xl"
+                : "max-w-[1760px]",
+            )}
+          >
             {/* Section crossfade. `mode="wait"` keeps the leaving + entering views from
                 stacking in flow (no layout jump); `initial={false}` skips the fade on the
                 first paint after unlock so it doesn't double up with the unlock→vault

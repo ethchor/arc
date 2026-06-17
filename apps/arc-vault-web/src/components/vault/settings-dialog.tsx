@@ -30,7 +30,7 @@ export function SettingsDialog({
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="outline" size="icon" aria-label="Settings">
+        <Button variant="outline" size="icon" aria-label="Settings" title="Settings — auto-lock & account">
           <Settings className="h-4 w-4" />
         </Button>
       </DialogTrigger>

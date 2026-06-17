@@ -41,7 +41,7 @@ export function ThemeCustomizer() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" aria-label="Customize theme">
+        <Button variant="outline" size="icon" aria-label="Customize theme" title="Customize theme — accent & appearance">
           <Palette className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
