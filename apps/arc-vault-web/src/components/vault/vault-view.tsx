@@ -8,6 +8,7 @@ import {
   Folder,
   KeyRound,
   KeySquare,
+  Lock,
   MoreHorizontal,
   Pencil,
   Search,
@@ -91,7 +92,7 @@ export interface VaultViewProps {
 }
 
 export function VaultView(props: VaultViewProps) {
-  const { recoveryKey, onDismissRecoveryKey, selected } = props;
+  const { recoveryKey, onDismissRecoveryKey, selected, items } = props;
   return (
     <div className="space-y-6">
       {recoveryKey ? (
@@ -99,7 +100,11 @@ export function VaultView(props: VaultViewProps) {
       ) : null}
 
       {selected ? (
-        <MasterDetail {...props} />
+        items.length === 0 ? (
+          <EmptyVaultHero {...props} />
+        ) : (
+          <MasterDetail {...props} />
+        )
       ) : (
         <EmptyVaults
           onCreate={props.onCreateVault}
@@ -486,11 +491,19 @@ function DetailPane(props: VaultViewProps) {
   if (!active) {
     return (
       <section className="flex min-h-0 items-center justify-center bg-[var(--surface-sunken)] p-10 text-center">
-        <div className="max-w-xs space-y-2">
-          <h3 className="font-display text-base font-semibold">Pick an item</h3>
-          <p className="text-sm text-muted-foreground">
-            Select something on the left to see its fields. Everything is decrypted on this device.
-          </p>
+        <div className="max-w-sm space-y-3">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] border border-border bg-[var(--surface-raised)] text-muted-foreground">
+            <Lock className="h-5 w-5" />
+          </span>
+          <div className="space-y-1">
+            <h3 className="font-display text-base font-semibold">Pick an item</h3>
+            <p className="text-sm text-muted-foreground">
+              Select something on the left to see its fields. Decryption happens on this device.
+            </p>
+          </div>
+          <div className="flex justify-center">
+            <TrustIndicator kind="e2e" />
+          </div>
         </div>
       </section>
     );
@@ -778,6 +791,140 @@ function DetailFooter({
     </div>
   );
 }
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Empty state when a vault is open but holds zero items — replaces the master-detail
+// card with a full-width onboarding hero (vault switcher + four type CTAs as cards +
+// trust strip). Avoids the "tiny text in a giant void" the master-detail produces when
+// there's nothing to list and nothing to detail.
+// ────────────────────────────────────────────────────────────────────────────────
+
+function EmptyVaultHero(props: VaultViewProps) {
+  const {
+    vaults,
+    selected,
+    selectedVault,
+    folders,
+    folderFilter,
+    onSelectVault,
+    onCreateVault,
+    onSaveLogin,
+    onSaveTotp,
+    onSaveNote,
+    onSaveSecret,
+  } = props;
+  return (
+    <div className="overflow-hidden rounded-[var(--radius-lg)] border border-border bg-[var(--surface-base)]">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border/60 bg-[var(--surface-raised)] px-4 py-3">
+        <div className="min-w-[260px] flex-1 sm:max-w-sm">
+          <VaultSwitcher
+            vaults={vaults}
+            selected={selected}
+            selectedName={selectedVault?.name ?? selectedVault?.type}
+            onSelect={onSelectVault}
+            onCreate={onCreateVault}
+          />
+        </div>
+        <span className="ml-auto text-[11px] text-muted-foreground">0 items</span>
+      </div>
+      <div className="mx-auto max-w-[560px] px-6 py-12 text-center sm:py-14">
+        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-[var(--radius-lg)] border border-primary/20 bg-primary/10 text-primary">
+          <Shield className="h-6 w-6" />
+        </span>
+        <h2 className="mt-5 font-display text-xl font-semibold tracking-tight sm:text-2xl">
+          Your vault is empty
+        </h2>
+        <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+          Add your first secret. Everything you store here is encrypted on this device — only you
+          and your authorized devices can decrypt it.
+        </p>
+        <div className="mt-7 grid gap-2.5 sm:grid-cols-2">
+          <ItemDialog
+            folders={folders}
+            initialFolderId={folderFilter}
+            onSubmit={(v, f) => onSaveLogin(v, f)}
+            trigger={
+              <TypeCardButton
+                icon={<Shield className="h-4 w-4" />}
+                title="Login"
+                description="Website, username, password — with weak-password detection."
+              />
+            }
+          />
+          <TotpDialog
+            folders={folders}
+            initialFolderId={folderFilter}
+            onSubmit={(v, f) => onSaveTotp(v, f)}
+            trigger={
+              <TypeCardButton
+                icon={<KeyRound className="h-4 w-4" />}
+                title="One-time code"
+                description="TOTP / 2FA. Codes are computed on this device from the stored seed."
+              />
+            }
+          />
+          <NoteDialog
+            folders={folders}
+            initialFolderId={folderFilter}
+            onSubmit={(v, f) => onSaveNote(v, f)}
+            trigger={
+              <TypeCardButton
+                icon={<FileText className="h-4 w-4" />}
+                title="Secure note"
+                description="Free-form encrypted text — recovery hints, license keys, anything."
+              />
+            }
+          />
+          <SecretDialog
+            folders={folders}
+            initialFolderId={folderFilter}
+            onSubmit={(v, f) => onSaveSecret(v, f)}
+            trigger={
+              <TypeCardButton
+                icon={<KeySquare className="h-4 w-4" />}
+                title="Generic secret"
+                description="Any key/value pair — API tokens, SSH keys, environment values."
+              />
+            }
+          />
+        </div>
+        <div className="mt-7 flex justify-center">
+          <TrustIndicator kind="zk" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const TypeCardButton = React.forwardRef<
+  HTMLButtonElement,
+  {
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+  } & React.ButtonHTMLAttributes<HTMLButtonElement>
+>(({ icon, title, description, className, ...rest }, ref) => (
+  <button
+    ref={ref}
+    type="button"
+    className={cn(
+      "group flex w-full items-start gap-3 rounded-[var(--radius-md)] border border-border bg-[var(--surface-raised)] p-3.5 text-left transition-colors [transition-duration:var(--dur-fast)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+      className,
+    )}
+    {...rest}
+  >
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-primary/10 text-primary ring-1 ring-primary/15 transition-colors group-hover:bg-primary/15">
+      {icon}
+    </span>
+    <span className="min-w-0 flex-1">
+      <span className="block text-sm font-semibold">{title}</span>
+      <span className="mt-0.5 block text-[12px] leading-relaxed text-muted-foreground">
+        {description}
+      </span>
+    </span>
+  </button>
+));
+TypeCardButton.displayName = "TypeCardButton";
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Empty state when there is literally no selected/existing vault
