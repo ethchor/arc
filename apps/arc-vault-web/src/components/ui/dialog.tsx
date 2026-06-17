@@ -17,7 +17,14 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      // Blurred glass scrim rather than an opaque black plate. The translucent dim
+      // (`bg-background/60`) preserves theme tint instead of forcing black-on-light,
+      // and `backdrop-blur-md` (12px) softens whatever's behind the dialog so the
+      // dialog reads as the foreground without hiding context. Browsers without
+      // `backdrop-filter` get a slightly heavier fallback (`bg-background/85`) so
+      // the surface still recedes legibly.
+      "fixed inset-0 z-50 bg-background/85 supports-[backdrop-filter]:bg-background/60 backdrop-blur-md",
+      "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className,
     )}
     {...props}
