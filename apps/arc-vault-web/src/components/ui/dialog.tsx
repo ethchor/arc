@@ -34,16 +34,25 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        // Standard shadcn fade+scale centered modal. Explicit `slide-in-from-*-0`
-        // overrides tailwindcss-animate's default ~1rem slide-up so the dialog
-        // doesn't ease in from the bottom — the canonical shadcn look is fade +
-        // 95→100% scale from the center, no translate.
+        // Centered shadcn dialog with pure fade + 95→100% zoom — no slide.
+        //
+        // The centering uses `left/top: 50%` plus `translate(-50%, -50%)`. During
+        // animation tailwindcss-animate replaces the element's transform with
+        //   translate3d(var(--tw-enter-translate-x, 0),
+        //               var(--tw-enter-translate-y, 0), 0) scale3d(...)
+        // so the from-frame transform must already encode the same -50%/-50%
+        // offset, or the dialog snaps to the upper-left of `left:50% top:50%` —
+        // i.e. the bottom-right quadrant — at the start of the animation and
+        // slides into place. `slide-in-from-left-[50%]` / `top-[50%]` set the
+        // enter-translate variables to exactly -50%, matching the resting
+        // transform, so no slide effect remains (only zoom + fade). The earlier
+        // `-0` value zeroed those vars and produced the visible corner-slide.
         "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
         "data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
-        "data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0",
-        "data-[state=closed]:slide-out-to-left-0 data-[state=closed]:slide-out-to-top-0",
+        "data-[state=open]:slide-in-from-left-[50%] data-[state=open]:slide-in-from-top-[50%]",
+        "data-[state=closed]:slide-out-to-left-[50%] data-[state=closed]:slide-out-to-top-[50%]",
         "sm:rounded-lg",
         className,
       )}
