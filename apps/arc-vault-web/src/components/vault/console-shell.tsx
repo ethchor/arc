@@ -111,6 +111,15 @@ const CONTAINED_SECTIONS = new Set<ConsoleSection>([
   "leases",
 ]);
 
+/**
+ * Sections that render their own full-height chrome and go edge-to-edge: the master-detail
+ * vault fills the viewport below the top bar with no page gutter and no outer card —
+ * exactly like the design kit's `Vault` screen. The shell drops `<main>`'s padding +
+ * max-width and threads a flex/min-h-0 height chain down to the view; everything else keeps
+ * the padded, measure-constrained column.
+ */
+const FLUSH_SECTIONS = new Set<ConsoleSection>(["vault"]);
+
 const ALL_ITEMS: CommandItem[] = (Object.entries(NAV) as [Persona, NavEntry[]][]).flatMap(
   ([persona, entries]) => {
     let group = "";
@@ -160,6 +169,7 @@ export function ConsoleShell({
   const [paletteOpen, setPaletteOpen] = React.useState(false);
 
   const current = LABELS[section] ?? "";
+  const flush = FLUSH_SECTIONS.has(section);
 
   const selectFromPalette = (item: CommandItem) => {
     if (item.persona !== persona) onPersona(item.persona);
@@ -297,17 +307,27 @@ export function ConsoleShell({
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 data-[density=compact]:py-4 lg:px-6" data-density={density}>
+        <main
+          className={cn(
+            "flex-1",
+            // Flush sections fill the viewport below the header (flex column, no page
+            // gutter); every other section keeps the padded, density-aware rhythm.
+            flush ? "flex min-h-0 flex-col" : "px-4 py-6 data-[density=compact]:py-4 lg:px-6",
+          )}
+          data-density={density}
+        >
           <div
             className={cn(
               "mx-auto w-full",
-              // Contained pages keep a reading measure; working surfaces fill the width
-              // (capped on ultra-wide displays so content doesn't sprawl past ~1760px).
-              CONTAINED_SECTIONS.has(section)
-                ? density === "compact"
-                  ? "max-w-6xl"
-                  : "max-w-5xl"
-                : "max-w-[1760px]",
+              flush
+                ? "flex min-h-0 flex-1 flex-col"
+                : // Contained pages keep a reading measure; working surfaces fill the width
+                  // (capped on ultra-wide displays so content doesn't sprawl past ~1760px).
+                  CONTAINED_SECTIONS.has(section)
+                  ? density === "compact"
+                    ? "max-w-6xl"
+                    : "max-w-5xl"
+                  : "max-w-[1760px]",
             )}
           >
             {/* Section crossfade. `mode="wait"` keeps the leaving + entering views from
@@ -321,6 +341,7 @@ export function ConsoleShell({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: DUR.fast, ease: EASE.outQuart }}
+                className={cn(flush && "flex min-h-0 flex-1 flex-col")}
               >
                 {children}
               </motion.div>
