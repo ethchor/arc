@@ -61,7 +61,7 @@ interface PendingChallenge {
  *     identity envelopes. Client unwraps with the PRF output.
  *
  * Configuration: `ARC_PASSKEY_RP_ID` (default `localhost`) + `ARC_PASSKEY_RP_NAME` (default
- * `arc`) + `ARC_PASSKEY_ORIGIN` (comma-separated; default `http://localhost:3000,tauri://localhost`
+ * `arc`) + `ARC_PASSKEY_ORIGIN` (comma-separated; default `http://localhost:3002,tauri://localhost`
  * — the dev web app + desktop shell). In production these MUST be set or WebAuthn will refuse
  * the registration / unlock.
  *
@@ -100,13 +100,13 @@ export class PasskeyService {
   /**
    * Allowed WebAuthn origin(s). `ARC_PASSKEY_ORIGIN` may be a comma-separated list so a
    * single deployment can accept both the web app and the desktop (Tauri) shell. Defaults
-   * to the dev web app (`http://localhost:3000`) + the Tauri origin, mirroring the CORS
+   * to the dev web app (`http://localhost:3002`) + the Tauri origin, mirroring the CORS
    * default in `main.ts`. In production this MUST be set to your real origin(s) or WebAuthn
    * refuses registration / unlock. `@simplewebauthn` matches the asserted origin against any
    * entry, so listing extra origins never weakens the check — it only widens the allowlist.
    */
   private origins(): string[] {
-    return (process.env.ARC_PASSKEY_ORIGIN ?? "http://localhost:3000,tauri://localhost")
+    return (process.env.ARC_PASSKEY_ORIGIN ?? "http://localhost:3002,tauri://localhost")
       .split(",")
       .map((o) => o.trim())
       .filter(Boolean);

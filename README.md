@@ -57,13 +57,13 @@ ARC_ENABLE_DEV_LOGIN=true pnpm --filter @arc/server start &
 
 # 3. Run the web console in another shell.
 pnpm --filter @arc/vault-web dev
-#   → open http://localhost:3000
+#   → open http://localhost:3002
 
 # Verify the server is up:
 curl -s http://localhost:3001/metrics | head -2
 ```
 
-That's it — open `http://localhost:3000`, click "create account" with any email, and you have a
+That's it — open `http://localhost:3002`, click "create account" with any email, and you have a
 fully functional end-to-end-encrypted vault running locally. **The server never sees the
 master password or any plaintext.**
 

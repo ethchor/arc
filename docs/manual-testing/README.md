@@ -39,9 +39,9 @@ pnpm -r test
 docker compose -f integrations/arc-openbao-adapter/docker-compose.yml up -d   # OpenBao
 export BAO_ADDR=http://127.0.0.1:8200 BAO_TOKEN=root
 pnpm --filter @arc/server start &                                              # arc-server :3001
-pnpm --filter @arc/vault-web dev                                               # web UI :3000
+pnpm --filter @arc/vault-web dev                                               # web UI :3002
 
-# open http://localhost:3000 and follow `02-engine-b-vault.md`
+# open http://localhost:3002 and follow `02-engine-b-vault.md`
 ```
 
 Everything else, in order of "what to try first":

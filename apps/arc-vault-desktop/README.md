@@ -49,7 +49,7 @@ tested in `crates/desktop-core`). To build locally you need the Tauri v2 prerequ
 
 ```bash
 # from apps/arc-vault-desktop
-pnpm dlx @tauri-apps/cli@^2 dev      # dev: runs `web dev` (http://localhost:3000)
+pnpm dlx @tauri-apps/cli@^2 dev      # dev: runs `web dev` (http://localhost:3002)
 pnpm dlx @tauri-apps/cli@^2 build    # prod: runs `web build:desktop` -> ../../arc-vault-web/out
 ```
 

@@ -101,10 +101,10 @@ In a second shell:
 
 ```sh
 pnpm --filter @arc/vault-web dev
-# > Ready on http://localhost:3000
+# > Ready on http://localhost:3002
 ```
 
-Open <http://localhost:3000>:
+Open <http://localhost:3002>:
 
 1. Click **"Create account"**, pick any email, and choose a master password.
 2. You're now enrolled. The server stored your wrapped private keys; **it never saw the
@@ -281,13 +281,13 @@ You forgot `ARC_ENABLE_DEV_LOGIN=true`. Restart the server with it set. In produ
 endpoint is force-disabled — use a real OAuth IdP instead.
 
 **Server boots but `/metrics` 404s**
-You're on `:3000` (the web app). The API server is `:3001`.
+You're on `:3002` (the web app). The API server is `:3001`.
 
 **`@arc/server#test` exits 137 / OOM**
 Jest needs ~2 GiB. Either run `pnpm test` on a host with more RAM, or run a single suite:
 `pnpm --filter @arc/server exec jest test/vault.e2e-spec.ts --no-coverage`.
 
-**The web console says "Server unreachable" on `http://localhost:3000`**
+**The web console says "Server unreachable" on `http://localhost:3002`**
 Check the server is listening on `:3001` (`curl http://localhost:3001/metrics`). If you've
 changed the port, set `NEXT_PUBLIC_API_URL` and restart the web dev server.
 

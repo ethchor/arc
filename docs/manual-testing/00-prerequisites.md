@@ -87,7 +87,7 @@ the internal interface, or front the route with nginx/envoy if the deployment ne
 
 | Port | What | Override |
 |---|---|---|
-| 3000 | Web UI (Next.js dev) | `pnpm --filter @arc/vault-web dev -- -p <port>` |
+| 3002 | Web UI (Next.js dev) | `pnpm --filter @arc/vault-web dev -- -p <port>` |
 | 3001 | arc-server (NestJS) | `PORT=3002 pnpm --filter @arc/server start` |
 | 8200 | OpenBao dev mode | docker-compose service port mapping |
 | 5173 | (matches `ARC_PASSKEY_ORIGIN` default; not actually a listening port — just the WebAuthn origin claim) | env |

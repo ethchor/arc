@@ -45,7 +45,7 @@ curl -s -X POST http://localhost:3001/auth/dev-login \\
   },
   startWeb: {
     code: `pnpm --filter @arc/vault-web dev
-# → open http://localhost:3000`,
+# → open http://localhost:3002`,
     lang: "bash",
   },
   optBao: {
@@ -112,7 +112,7 @@ export default async function GettingStartedPage() {
       <h2>4 · Run the web console</h2>
       <CodeBlock html={h.startWeb} raw={snippets.startWeb.code} language="bash" />
       <p>
-        Open <code>http://localhost:3000</code> and click <em>Create account</em>. The master
+        Open <code>http://localhost:3002</code> and click <em>Create account</em>. The master
         password and every derived key stay on the client — the server only receives
         ciphertext.
       </p>

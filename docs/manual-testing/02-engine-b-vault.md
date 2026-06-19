@@ -10,7 +10,7 @@ device approval → recovery → audit log. Server is blind throughout — verif
 
 ## A. Enrollment (first sign-in)
 
-1. Open `http://localhost:3000`.
+1. Open `http://localhost:3002`.
 2. Enter `you@example.com` (any email — `/auth/dev-login` mints a token for any string
    in dev mode). Click **Continue**.
 3. You land on the **Unlock your vault** screen. Type a master password (≥ 8 chars) and
@@ -71,7 +71,7 @@ filter (`vault-app.tsx`).
 
 Need a second account:
 
-1. New incognito window → `http://localhost:3000` → sign in as `bob@example.com`.
+1. New incognito window → `http://localhost:3002` → sign in as `bob@example.com`.
 2. Enroll Bob into a new master password. Bob is now in the system with an identity
    public key.
 3. Back in Alice's window: the **Share** button is in two places — the **Secrets**
