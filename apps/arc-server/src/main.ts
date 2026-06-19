@@ -29,7 +29,7 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: "40mb" }));
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   app.enableCors({
-    origin: (process.env.CORS_ORIGINS ?? "http://localhost:3000,tauri://localhost").split(","),
+    origin: (process.env.CORS_ORIGINS ?? "http://localhost:3002,tauri://localhost").split(","),
   });
 
   // Drain spans + flush metrics on graceful shutdown so a SIGTERM during a deploy

@@ -60,10 +60,10 @@ Terminal B:
 
 ```bash
 pnpm --filter @arc/vault-web dev
-# Next.js dev server on http://localhost:3000
+# Next.js dev server on http://localhost:3002
 ```
 
-Open `http://localhost:3000` — you should see the **Sign in** screen. The default base
+Open `http://localhost:3002` — you should see the **Sign in** screen. The default base
 URL `http://localhost:3001` matches Terminal A.
 
 ## 4. (Optional) Start OpenBao for Engine-A
@@ -101,7 +101,7 @@ The CLI exposes the same operations the web UI uses; full command map in
 
 ```
 :3001  arc-server      (NestJS / TypeORM / sql.js or Postgres / pino)
-:3000  arc-vault-web   (Next.js dev)
+:3002  arc-vault-web   (Next.js dev)
 :8200  OpenBao         (dev mode; optional, gates Engine-A surface)
 ```
 
