@@ -884,6 +884,150 @@ export class VaultClient {
     return this.http("GET", `/vaults/${vaultId}/members`);
   }
 
+  // -- Engine A · KV v2 -------------------------------------------------------
+  //
+  // Thin client over the Vault-compatible `/v1/*` surface arc-server exposes (see
+  // `EnginesController`). The same wire shape OpenBao speaks, so a Vault SDK pointed at
+  // this server "Just Works" — these helpers are for the in-browser KV browser, not a
+  // crypto path. Returns 503 with `{ engine: "A", configured: false }` when `BAO_ADDR`
+  // isn't set on the server; the caller renders a "configure an OpenBao backend" empty
+  // state rather than a generic error.
+
+  /** List configured engine mounts (KV + transit + PKI + plugin-mounted). */
+  async listMounts(): Promise<Array<{ path: string; type: string; description?: string }>> {
+    const r = await this.http<{
+      data: Array<{ path: string; type: string; description?: string }>;
+    }>("GET", "/v1/sys/mounts");
+    return r.data;
+  }
+
+  /** List the immediate child keys under `prefix` in a KV mount. Trailing `/` = folder. */
+  async kvList(mount: string, prefix = ""): Promise<string[]> {
+    const r = await this.http<{ data: { keys: string[] } }>(
+      "GET",
+      `/v1/${joinMount(mount)}metadata/${normaliseKvPath(prefix)}?list=true`,
+    );
+    return r.data.keys ?? [];
+  }
+
+  /** Read one version of a KV secret (latest when `version` is omitted). */
+  async kvRead(
+    mount: string,
+    path: string,
+    opts: { version?: number } = {},
+  ): Promise<{
+    data: Record<string, unknown>;
+    metadata: { version: number; createdTime: string; deleted: boolean; destroyed: boolean };
+  }> {
+    const qs = opts.version !== undefined ? `?version=${opts.version}` : "";
+    const r = await this.http<{
+      data: {
+        data: Record<string, unknown>;
+        metadata: { version: number; created_time: string; deletion_time: string; destroyed: boolean };
+      };
+    }>("GET", `/v1/${joinMount(mount)}data/${normaliseKvPath(path)}${qs}`);
+    return {
+      data: r.data.data,
+      metadata: {
+        version: r.data.metadata.version,
+        createdTime: r.data.metadata.created_time,
+        deleted: r.data.metadata.deletion_time !== "",
+        destroyed: r.data.metadata.destroyed,
+      },
+    };
+  }
+
+  /** Write a new version. `opts.cas` enforces optimistic concurrency on the path's latest. */
+  async kvWrite(
+    mount: string,
+    path: string,
+    data: Record<string, unknown>,
+    opts: { cas?: number } = {},
+  ): Promise<{ version: number; createdTime: string }> {
+    const body: Record<string, unknown> = { data };
+    if (opts.cas !== undefined) body.options = { cas: opts.cas };
+    const r = await this.http<{ data: { version: number; created_time: string } }>(
+      "POST",
+      `/v1/${joinMount(mount)}data/${normaliseKvPath(path)}`,
+      body,
+    );
+    return { version: r.data.version, createdTime: r.data.created_time };
+  }
+
+  /**
+   * Full version timeline. One call returns every version's createdTime + deleted/destroyed
+   * status — used by the KV browser's "versions" tab so it doesn't have to N-fan reads.
+   */
+  async kvMetadata(mount: string, path: string): Promise<KvFullMetadataWire> {
+    const r = await this.http<{
+      data: {
+        current_version: number;
+        max_versions: number;
+        cas_required: boolean;
+        custom_metadata?: Record<string, string> | null;
+        created_time: string;
+        updated_time: string;
+        versions: Record<
+          string,
+          { created_time: string; deletion_time: string; destroyed: boolean }
+        >;
+      };
+    }>("GET", `/v1/${joinMount(mount)}metadata/${normaliseKvPath(path)}`);
+    const d = r.data;
+    const versions = Object.entries(d.versions ?? {})
+      .map(([k, v]) => ({
+        version: Number(k),
+        createdTime: v.created_time,
+        deletionTime: v.deletion_time && v.deletion_time !== "" ? v.deletion_time : undefined,
+        destroyed: Boolean(v.destroyed),
+      }))
+      .sort((a, b) => b.version - a.version);
+    return {
+      currentVersion: d.current_version,
+      maxVersions: d.max_versions,
+      casRequired: d.cas_required,
+      customMetadata: { ...(d.custom_metadata ?? {}) },
+      createdTime: d.created_time,
+      updatedTime: d.updated_time,
+      versions,
+    };
+  }
+
+  /** Soft-delete the *latest* version (Vault `DELETE <mount>/data/<path>`). */
+  async kvDeleteLatest(mount: string, path: string): Promise<void> {
+    await this.http("DELETE", `/v1/${joinMount(mount)}data/${normaliseKvPath(path)}`);
+  }
+
+  /** Soft-delete specific versions. Recoverable via {@link kvUndeleteVersions}. */
+  async kvDeleteVersions(mount: string, path: string, versions: readonly number[]): Promise<void> {
+    if (versions.length === 0) return;
+    await this.http(
+      "POST",
+      `/v1/${joinMount(mount)}delete/${normaliseKvPath(path)}`,
+      { versions: [...versions] },
+    );
+  }
+
+  /** Restore soft-deleted versions. */
+  async kvUndeleteVersions(mount: string, path: string, versions: readonly number[]): Promise<void> {
+    if (versions.length === 0) return;
+    await this.http(
+      "POST",
+      `/v1/${joinMount(mount)}undelete/${normaliseKvPath(path)}`,
+      { versions: [...versions] },
+    );
+  }
+
+  /** **Permanently** destroy a version's data — metadata survives. Unrecoverable. */
+  async kvDestroyVersions(mount: string, path: string, versions: readonly number[]): Promise<void> {
+    if (versions.length === 0) return;
+    await this.http(
+      "POST",
+      `/v1/${joinMount(mount)}destroy/${normaliseKvPath(path)}`,
+      { versions: [...versions] },
+    );
+  }
+
   // -- Workflows (Phase 1: JIT-access / approval workflows) -------------------
 
   /** List workflows configured on a vault. Admin+ only on the server side. */
@@ -1593,6 +1737,38 @@ export class VaultClient {
     if (!vk) throw new Error(`no VK cached for vault ${vaultId}; call listVaults() first`);
     return vk;
   }
+}
+
+/**
+ * Wire-shape of {@link VaultClient.kvMetadata}'s response. Mirrors `@arc/secrets-engine`'s
+ * `KvFullMetadata` but is declared here so the SDK doesn't pull engine code into the
+ * browser bundle (it's a thin HTTP wrapper, not a re-export of the server contract).
+ */
+export interface KvFullMetadataWire {
+  currentVersion: number;
+  maxVersions: number;
+  casRequired: boolean;
+  customMetadata: Record<string, string>;
+  createdTime: string;
+  updatedTime: string;
+  versions: Array<{
+    version: number;
+    createdTime: string;
+    /** ISO 8601 when the version was soft-deleted; `undefined` if live. */
+    deletionTime?: string;
+    destroyed: boolean;
+  }>;
+}
+
+/** Normalise a KV mount to the canonical `name/` form the dispatcher expects. */
+function joinMount(mount: string): string {
+  const trimmed = mount.replace(/^\/+|\/+$/g, "");
+  return trimmed.length === 0 ? "" : `${trimmed}/`;
+}
+
+/** Strip leading/trailing slashes from a KV key path; OpenBao rejects empty segments. */
+function normaliseKvPath(path: string): string {
+  return path.replace(/^\/+|\/+$/g, "");
 }
 
 interface ItemRow {

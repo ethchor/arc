@@ -165,6 +165,34 @@ export class EnginesService {
         const keys = await kv.list(relativePath.slice("metadata/".length));
         return { data: { keys } };
       }
+      // GET <mount>/metadata/<path> (no `?list=`) returns the full version timeline. This is
+      // the read used by the KV browser to populate its versions tab — one call per path
+      // instead of N reads to discover deleted/destroyed status per version.
+      if (relativePath.startsWith("metadata/")) {
+        this.requirePluginCapability(mountPath, "read");
+        const meta = await kv.readMetadata(relativePath.slice("metadata/".length));
+        return {
+          data: {
+            current_version: meta.currentVersion,
+            max_versions: meta.maxVersions,
+            cas_required: meta.casRequired,
+            custom_metadata: meta.customMetadata,
+            created_time: meta.createdTime,
+            updated_time: meta.updatedTime,
+            // Vault wire shape: a map keyed by stringified version number.
+            versions: Object.fromEntries(
+              meta.versions.map((v) => [
+                String(v.version),
+                {
+                  created_time: v.createdTime,
+                  deletion_time: v.deletionTime ?? "",
+                  destroyed: Boolean(v.destroyed),
+                },
+              ]),
+            ),
+          },
+        };
+      }
       if (relativePath.startsWith("data/")) {
         this.requirePluginCapability(mountPath, "read");
         const versionRaw = pickFirst(query.version);
@@ -346,6 +374,26 @@ export class EnginesService {
         cas: options?.cas,
       });
       return { data: { version: res.version, created_time: res.createdTime } };
+    }
+
+    // KV v2 version-targeted lifecycle: delete, undelete, destroy. Body shape: `{ versions: [N] }`.
+    // Wire path mirrors Vault — `<mount>/delete/<path>`, `<mount>/undelete/<path>`,
+    // `<mount>/destroy/<path>`. Capability gate: `delete` covers all three because all three
+    // alter the data state; this matches Vault's policy vocabulary.
+    if (engine.type === "kv-v2") {
+      const kvOp = ["delete", "undelete", "destroy"].find((op) =>
+        relativePath.startsWith(`${op}/`),
+      );
+      if (kvOp) {
+        this.requirePluginCapability(mountPath, "delete");
+        const versions = parseVersionsBody(body, `kv/${kvOp}`);
+        const kv = engine as KvEngine;
+        const path = relativePath.slice(kvOp.length + 1);
+        if (kvOp === "delete") await kv.deleteVersions(path, versions);
+        else if (kvOp === "undelete") await kv.undeleteVersions(path, versions);
+        else await kv.destroyVersions(path, versions);
+        return { data: { versions } };
+      }
     }
 
     if (engine.type === "transit") {
@@ -566,6 +614,31 @@ function leaseDurationSeconds(lease: { expiresAt: number }): number {
 function pickFirst(v: string | string[] | undefined): string | undefined {
   if (Array.isArray(v)) return v[0];
   return v;
+}
+
+/**
+ * Body parser for KV version-targeted endpoints (`delete`, `undelete`, `destroy`). Accepts
+ * Vault's `{ versions: [1, 2, 3] }`, normalises to positive integers, dedupes, and rejects
+ * any non-integer or non-positive entry up front so the engine sees a clean list.
+ */
+function parseVersionsBody(body: Record<string, unknown>, op: string): number[] {
+  const raw = body.versions;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new BadRequestException({
+      errors: [`${op} requires a non-empty \`versions: number[]\` array`],
+    });
+  }
+  const out = new Set<number>();
+  for (const v of raw) {
+    const n = typeof v === "number" ? v : Number(v);
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new BadRequestException({
+        errors: [`${op}: every entry of \`versions\` must be a positive integer (got ${String(v)})`],
+      });
+    }
+    out.add(n);
+  }
+  return [...out].sort((a, b) => a - b);
 }
 
 function base64ToBytes(s: string): Uint8Array {

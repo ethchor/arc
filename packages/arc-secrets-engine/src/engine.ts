@@ -3,6 +3,7 @@ import type {
   EngineType,
   IssueOptions,
   IssuedCredential,
+  KvFullMetadata,
   KvReadResult,
   KvWriteResult,
   PkiCertificate,
@@ -32,8 +33,17 @@ export interface KvEngine extends SecretsEngine {
     data: Record<string, unknown>,
     opts?: { cas?: number },
   ): Promise<KvWriteResult>;
+  /** Soft-delete the *latest* version. Equivalent to `deleteVersions(path, [currentVersion])`. */
   deleteLatest(path: string): Promise<void>;
   list(prefix: string): Promise<string[]>;
+  /** Full version timeline + path metadata. Drives a "versions" history UI without N data reads. */
+  readMetadata(path: string): Promise<KvFullMetadata>;
+  /** Soft-delete one or more specific versions. Data can be restored via {@link undeleteVersions}. */
+  deleteVersions(path: string, versions: readonly number[]): Promise<void>;
+  /** Restore soft-deleted versions (no-op for versions that aren't currently soft-deleted). */
+  undeleteVersions(path: string, versions: readonly number[]): Promise<void>;
+  /** **Permanently** destroy versions' data. Metadata survives; the data is unrecoverable. */
+  destroyVersions(path: string, versions: readonly number[]): Promise<void>;
 }
 
 /** Engine that mints short-lived credentials governed by a lease (databases, cloud, SCM, …). */

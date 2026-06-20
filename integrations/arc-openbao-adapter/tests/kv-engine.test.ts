@@ -160,3 +160,74 @@ describe("OpenBaoKvEngine.list + deleteLatest", () => {
     expect(captured).toEqual({ url: "http://bao.test/v1/secret/data/app/key", method: "DELETE" });
   });
 });
+
+describe("OpenBaoKvEngine.readMetadata", () => {
+  it("GETs <mount>/metadata/<path> and flattens the versions map into a descending array", async () => {
+    const fetchFn: FetchLike = async (url, init) => {
+      expect(init?.method).toBe("GET");
+      expect(url).toBe("http://bao.test/v1/secret/metadata/app/key");
+      return reply(200, {
+        data: {
+          current_version: 3,
+          max_versions: 5,
+          cas_required: true,
+          custom_metadata: { owner: "platform" },
+          created_time: "2026-01-01T00:00:00Z",
+          updated_time: "2026-06-01T00:00:00Z",
+          versions: {
+            "1": { created_time: "T1", deletion_time: "", destroyed: false },
+            "2": { created_time: "T2", deletion_time: "2026-04-04T00:00:00Z", destroyed: false },
+            "3": { created_time: "T3", deletion_time: "", destroyed: false },
+          },
+        },
+      });
+    };
+    const out = await engine(fetchFn).readMetadata("app/key");
+    expect(out.currentVersion).toBe(3);
+    expect(out.maxVersions).toBe(5);
+    expect(out.casRequired).toBe(true);
+    expect(out.customMetadata).toEqual({ owner: "platform" });
+    expect(out.versions.map((v) => v.version)).toEqual([3, 2, 1]);
+    expect(out.versions[1]).toEqual({ version: 2, createdTime: "T2", destroyed: false, deletionTime: "2026-04-04T00:00:00Z" });
+    expect(out.versions[2]).toEqual({ version: 1, createdTime: "T1", destroyed: false });
+  });
+
+  it("treats empty `deletion_time` as undefined (so callers can test by presence)", async () => {
+    const fetchFn: FetchLike = async () =>
+      reply(200, {
+        data: { current_version: 1, versions: { "1": { created_time: "T", deletion_time: "", destroyed: false } } },
+      });
+    const out = await engine(fetchFn).readMetadata("k");
+    expect(out.versions[0]?.deletionTime).toBeUndefined();
+  });
+});
+
+describe("OpenBaoKvEngine.deleteVersions / undeleteVersions / destroyVersions", () => {
+  it.each([
+    ["deleteVersions", "delete"],
+    ["undeleteVersions", "undelete"],
+    ["destroyVersions", "destroy"],
+  ] as const)("%s posts { versions } to <mount>/%s/<path>", async (method, urlSeg) => {
+    let captured: { url: string; method?: string; body?: unknown } | undefined;
+    const fetchFn: FetchLike = async (url, init) => {
+      captured = { url, method: init?.method, body: init?.body ? JSON.parse(init.body) : undefined };
+      return reply(204, undefined);
+    };
+    await engine(fetchFn)[method]("app/key", [2, 4]);
+    expect(captured?.method).toBe("POST");
+    expect(captured?.url).toBe(`http://bao.test/v1/secret/${urlSeg}/app/key`);
+    expect(captured?.body).toEqual({ versions: [2, 4] });
+  });
+
+  it("no-ops on an empty versions array (skips the HTTP call entirely)", async () => {
+    let calls = 0;
+    const fetchFn: FetchLike = async () => {
+      calls++;
+      return reply(204, undefined);
+    };
+    await engine(fetchFn).deleteVersions("app/key", []);
+    await engine(fetchFn).undeleteVersions("app/key", []);
+    await engine(fetchFn).destroyVersions("app/key", []);
+    expect(calls).toBe(0);
+  });
+});

@@ -1,5 +1,11 @@
 import { normalizeMount } from "@arc/leasing";
-import type { KvEngine, KvReadResult, KvWriteResult } from "@arc/secrets-engine";
+import type {
+  KvEngine,
+  KvFullMetadata,
+  KvReadResult,
+  KvVersionInfo,
+  KvWriteResult,
+} from "@arc/secrets-engine";
 import { OpenBaoError } from "./client";
 import type { OpenBaoClient, OpenBaoResponse } from "./client";
 
@@ -103,5 +109,64 @@ export class OpenBaoKvEngine implements KvEngine {
     const res = await this.client.list(`${this.mount}metadata/${strip(prefix)}`);
     const keys = (res.data as { keys?: unknown } | undefined)?.keys;
     return Array.isArray(keys) ? (keys as string[]) : [];
+  }
+
+  /**
+   * Full version timeline at `<mount>/metadata/<path>`. KV v2 returns `versions` as a map
+   * keyed by stringified version number; we flatten it into a descending-by-version array
+   * for client convenience. Empty `deletion_time` is normalised to `undefined` so callers
+   * can treat the field as a "is soft-deleted?" predicate by presence.
+   */
+  async readMetadata(path: string): Promise<KvFullMetadata> {
+    const res = await this.client.read(`${this.mount}metadata/${strip(path)}`);
+    const data = (res.data ?? {}) as {
+      current_version?: number;
+      max_versions?: number;
+      cas_required?: boolean;
+      custom_metadata?: Record<string, string> | null;
+      created_time?: string;
+      updated_time?: string;
+      versions?: Record<string, { created_time?: string; deletion_time?: string; destroyed?: boolean }>;
+    };
+    const versions: KvVersionInfo[] = Object.entries(data.versions ?? {})
+      .map(([k, v]) => {
+        const info: KvVersionInfo = {
+          version: Number(k),
+          createdTime: String(v.created_time ?? ""),
+          destroyed: Boolean(v.destroyed),
+        };
+        if (typeof v.deletion_time === "string" && v.deletion_time.length > 0) {
+          info.deletionTime = v.deletion_time;
+        }
+        return info;
+      })
+      .sort((a, b) => b.version - a.version);
+    return {
+      currentVersion: Number(data.current_version ?? 0),
+      maxVersions: Number(data.max_versions ?? 0),
+      casRequired: Boolean(data.cas_required),
+      customMetadata: { ...(data.custom_metadata ?? {}) },
+      createdTime: String(data.created_time ?? ""),
+      updatedTime: String(data.updated_time ?? ""),
+      versions,
+    };
+  }
+
+  /** Soft-delete one or more specific versions via `POST <mount>/delete/<path> { versions }`. */
+  async deleteVersions(path: string, versions: readonly number[]): Promise<void> {
+    if (versions.length === 0) return;
+    await this.client.write(`${this.mount}delete/${strip(path)}`, { versions: [...versions] });
+  }
+
+  /** Restore soft-deleted versions via `POST <mount>/undelete/<path> { versions }`. */
+  async undeleteVersions(path: string, versions: readonly number[]): Promise<void> {
+    if (versions.length === 0) return;
+    await this.client.write(`${this.mount}undelete/${strip(path)}`, { versions: [...versions] });
+  }
+
+  /** Permanently destroy versions' data via `POST <mount>/destroy/<path> { versions }`. */
+  async destroyVersions(path: string, versions: readonly number[]): Promise<void> {
+    if (versions.length === 0) return;
+    await this.client.write(`${this.mount}destroy/${strip(path)}`, { versions: [...versions] });
   }
 }
