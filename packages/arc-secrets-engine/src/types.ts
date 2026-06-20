@@ -93,6 +93,43 @@ export interface KvWriteResult {
   createdTime: string;
 }
 
+/**
+ * Per-version timeline entry returned by {@link KvEngine.readMetadata}. Mirrors KV v2's
+ * `versions` map (`/<mount>/metadata/<path>`): each version has a `createdTime`, may have a
+ * `deletionTime` (soft-deleted), and may be `destroyed` (permanently gone — only metadata
+ * survives). Both flags `false` ⇒ the version is live and readable via {@link KvEngine.get}.
+ */
+export interface KvVersionInfo {
+  version: number;
+  createdTime: string;
+  /** ISO 8601 when this version was soft-deleted. Absent or empty string ⇒ not deleted. */
+  deletionTime?: string;
+  /** `true` when the version's data has been destroyed (only metadata survives). */
+  destroyed?: boolean;
+}
+
+/**
+ * Full path metadata: the timeline of every version plus path-level config (max retained
+ * versions, CAS guard, free-form custom metadata). Returned by {@link KvEngine.readMetadata}
+ * and used by clients to render a version history with per-version controls
+ * (soft-delete / undelete / destroy) without re-reading each payload.
+ */
+export interface KvFullMetadata {
+  /** Highest version number (live or not). 0 ⇒ no versions yet. */
+  currentVersion: number;
+  /** Server-side retention cap (0 ⇒ unlimited / backend default). */
+  maxVersions: number;
+  /** When set, writes must pass a `cas` matching the latest version. */
+  casRequired: boolean;
+  customMetadata: Record<string, string>;
+  /** ISO 8601 — when the *path* was first written. */
+  createdTime: string;
+  /** ISO 8601 — when any version under the path was last touched. */
+  updatedTime: string;
+  /** Descending by version number. May include soft-deleted and destroyed entries. */
+  versions: KvVersionInfo[];
+}
+
 export interface IssueOptions {
   ttlSeconds?: number;
   params?: Record<string, unknown>;

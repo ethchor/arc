@@ -2,6 +2,8 @@ export type {
   EngineType,
   MountConfig,
   KvVersionMetadata,
+  KvVersionInfo,
+  KvFullMetadata,
   KvReadResult,
   KvWriteResult,
   IssueOptions,

@@ -42,24 +42,29 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { IconTip } from "@/components/ui/tooltip";
 import { CopyButton } from "@/components/arc/copy-button";
 import { MaskedField } from "@/components/arc/masked-field";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import type { VaultClient } from "@arc/sdk";
 
 /**
  * Operator KV (v2) browser — implements the arc-console design-kit operator screen
- * (Engine A · Infrastructure → "KV secrets"). Left rail is a search + path tree;
- * right pane has the path hero plus three tabs: Current, Versions, Metadata. Versions
- * carry soft-delete / undelete / destroy actions and a diff against the previous
- * version.
+ * (Engine A · Infrastructure → "KV secrets"). Left rail is a search + path tree; right
+ * pane has the path hero plus three tabs: Current, Versions, Metadata. Versions carry
+ * soft-delete / undelete / destroy actions and a diff against the previous version.
  *
- * Preview only. The OpenBao KV engine adapter exists server-side but is not yet
- * exposed to the web client, so this view runs against a small mock dataset embedded
- * below — wide enough to demonstrate every status (current, soft-deleted, destroyed)
- * and the diff/undelete flows. When the engine API lands, swap `INITIAL_DATA` for a
- * fetched store and the same callbacks back the network mutations.
+ * Wired to the real engine surface via the SDK's `kv*` helpers, which call the Vault-
+ * compatible `/v1/<mount>/...` routes the arc-server engines controller exposes. The
+ * server has done the OpenBao plumbing already (`OpenBaoKvEngine` + `EnginesService`);
+ * this view only talks to the SDK.
+ *
+ * Degrade-gracefully posture: when no KV mount is configured (the dev default when
+ * `BAO_ADDR` is unset), the view shows an honest "no KV mount" empty state with the
+ * one-line how-to instead of faking data.
  */
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -90,242 +95,264 @@ type KvSecret = {
 type TabKey = "current" | "versions" | "metadata";
 
 // ────────────────────────────────────────────────────────────────────────────────
-// Mock data — single mount, varied statuses
+// Engine-state machine
+//
+// `loading`     → first list-mounts in flight.
+// `no-mount`    → server returned 0 KV mounts (Engine A not configured / no mounts).
+// `error`       → the list call failed; show the error + a retry.
+// `ready`       → we know our mount; path tree is loaded.
 // ────────────────────────────────────────────────────────────────────────────────
 
-const MOUNT = "secret/";
+type EngineState = "loading" | "no-mount" | "error" | "ready";
 
-const INITIAL_DATA: KvSecret[] = [
-  {
-    path: "app/prod/db",
-    versions: [
-      {
-        version: 3,
-        data: {
-          POSTGRES_URL: "postgres://app:r0t8d-Hjk2@db-prod.arc.internal:5432/app",
-          REDIS_URL: "rediss://:Vr9q-2KdM@cache-prod.arc.internal:6380/0",
-          RW_PASSWORD: "Hkq-3pLwTeR-9xZ",
-        },
-        createdAt: "2026-06-14T09:14:00Z",
-        createdBy: "automation@arc",
-      },
-      {
-        version: 2,
-        data: {
-          POSTGRES_URL: "postgres://app:8wK-x2RmN@db-prod.arc.internal:5432/app",
-          REDIS_URL: "rediss://:Vr9q-2KdM@cache-prod.arc.internal:6380/0",
-          RW_PASSWORD: "X3q-9zLmRpC-7tH",
-        },
-        createdAt: "2026-05-27T18:42:00Z",
-        createdBy: "ethan@arc",
-      },
-      {
-        version: 1,
-        data: {
-          POSTGRES_URL: "postgres://app:legacy@db-prod.arc.internal:5432/app",
-          REDIS_URL: "rediss://:legacy@cache-prod.arc.internal:6380/0",
-        },
-        createdAt: "2026-04-02T11:09:00Z",
-        createdBy: "ethan@arc",
-      },
-    ],
-    metadata: {
-      maxVersions: 10,
-      casRequired: true,
-      customMetadata: { owner: "platform", rotation: "weekly" },
-      createdAt: "2026-04-02T11:09:00Z",
-      updatedAt: "2026-06-14T09:14:00Z",
-    },
-  },
-  {
-    path: "app/prod/api",
-    versions: [
-      {
-        version: 2,
-        data: {
-          STRIPE_KEY: "sk_live_51N0v3rR9-7QkLmZ-8H2c3D4f5G6h7J8k9L0m",
-          SENDGRID_KEY: "SG.aB1cD2eF3-gH4iJ5kL6mN7oP8qR9s",
-        },
-        createdAt: "2026-06-10T15:01:00Z",
-        createdBy: "automation@arc",
-      },
-      {
-        version: 1,
-        data: { STRIPE_KEY: "sk_live_initial_50W3Lm-9KrXn-4P2c3D" },
-        createdAt: "2026-05-13T08:22:00Z",
-        createdBy: "ethan@arc",
-      },
-    ],
-    metadata: {
-      maxVersions: 10,
-      casRequired: false,
-      customMetadata: { owner: "platform" },
-      createdAt: "2026-05-13T08:22:00Z",
-      updatedAt: "2026-06-10T15:01:00Z",
-    },
-  },
-  {
-    path: "app/staging/db",
-    versions: [
-      {
-        version: 1,
-        data: {
-          POSTGRES_URL: "postgres://app:K2-x9LpQrM@db-stg.arc.internal:5432/app",
-          REDIS_URL: "rediss://:K2-x9LpQrM@cache-stg.arc.internal:6380/0",
-        },
-        createdAt: "2026-06-13T10:00:00Z",
-        createdBy: "ethan@arc",
-      },
-    ],
-    metadata: {
-      maxVersions: 5,
-      casRequired: false,
-      customMetadata: { owner: "platform" },
-      createdAt: "2026-06-13T10:00:00Z",
-      updatedAt: "2026-06-13T10:00:00Z",
-    },
-  },
-  {
-    path: "ops/oncall",
-    versions: [
-      {
-        version: 5,
-        data: {
-          PAGERDUTY_TOKEN: "u+2K3rL-9xMnP-4qHj-7vBcW-3pZmK",
-          SLACK_WEBHOOK: "https://hooks.slack.com/services/T0000/B0000/aB1cD2eF3gH4iJ5kL6",
-        },
-        createdAt: "2026-06-17T03:30:00Z",
-        createdBy: "automation@arc",
-      },
-      {
-        version: 4,
-        data: { PAGERDUTY_TOKEN: "u+legacy-rotation-2026-06-17a" },
-        createdAt: "2026-06-17T03:00:00Z",
-        createdBy: "ethan@arc",
-        deletedAt: "2026-06-17T03:30:00Z",
-      },
-      {
-        version: 3,
-        data: { PAGERDUTY_TOKEN: "u+rotation-2026-06-10" },
-        createdAt: "2026-06-10T09:00:00Z",
-        createdBy: "automation@arc",
-      },
-      {
-        version: 2,
-        data: { PAGERDUTY_TOKEN: "u+rotation-2026-06-03" },
-        createdAt: "2026-06-03T09:00:00Z",
-        createdBy: "automation@arc",
-      },
-      {
-        version: 1,
-        data: { PAGERDUTY_TOKEN: "u+rotation-2026-05-27" },
-        createdAt: "2026-05-27T09:00:00Z",
-        createdBy: "ethan@arc",
-      },
-    ],
-    metadata: {
-      maxVersions: 5,
-      casRequired: true,
-      customMetadata: { owner: "ops", rotation: "weekly" },
-      createdAt: "2026-05-27T09:00:00Z",
-      updatedAt: "2026-06-17T03:30:00Z",
-    },
-  },
-  {
-    path: "ops/legacy",
-    versions: [
-      {
-        version: 1,
-        data: { TOKEN: "(destroyed)" },
-        createdAt: "2024-11-08T12:00:00Z",
-        createdBy: "ethan@arc",
-        destroyed: true,
-      },
-    ],
-    metadata: {
-      maxVersions: 1,
-      casRequired: false,
-      customMetadata: { owner: "ops", status: "decommissioned" },
-      createdAt: "2024-11-08T12:00:00Z",
-      updatedAt: "2025-02-14T16:21:00Z",
-    },
-  },
-];
+/**
+ * Placeholder `createdBy` for SDK-backed versions. OpenBao's metadata response doesn't
+ * carry the writer's identity; we'd need to record it ourselves in `custom_metadata` at
+ * write time to surface a real name. Showing "—" keeps the UI honest until then.
+ */
+const UNKNOWN_AUTHOR = "—";
+
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Top-level view
 // ────────────────────────────────────────────────────────────────────────────────
 
-export function KvView() {
-  const [data, setData] = React.useState<KvSecret[]>(INITIAL_DATA);
-  const [activePath, setActivePath] = React.useState<string | null>("app/prod/db");
+/**
+ * Live KV browser. State machine:
+ *
+ *   1. **boot**: list mounts → pick the first `kv-v2` mount → list its paths recursively
+ *      to populate the tree. Empty mount list → `no-mount` empty state.
+ *   2. **path-select**: load that path's full metadata + every version's data in parallel
+ *      so the Current/Versions tabs render with no further fetches. Cached in `data`.
+ *   3. **mutate** (soft-delete / undelete / destroy / write): call the SDK, then
+ *      re-fetch the path's metadata + data to reflect the engine's truth (e.g. a write
+ *      may have evicted the oldest version under `max_versions`).
+ *
+ * All fetch surface goes through {@link VaultClient}; nothing here speaks fetch directly.
+ */
+export function KvView({ getClient }: { getClient: () => VaultClient }) {
+  const [engineState, setEngineState] = React.useState<EngineState>("loading");
+  const [engineError, setEngineError] = React.useState<string | null>(null);
+  const [mounts, setMounts] = React.useState<Array<{ path: string; type: string }>>([]);
+  const [mount, setMount] = React.useState<string>("");
+  const [data, setData] = React.useState<KvSecret[]>([]);
+  const [activePath, setActivePath] = React.useState<string | null>(null);
   const [viewingVersion, setViewingVersion] = React.useState<number | null>(null);
   const [query, setQuery] = React.useState("");
   const [tab, setTab] = React.useState<TabKey>("current");
+  const [pathBusy, setPathBusy] = React.useState<string | null>(null);
 
   const active = React.useMemo(
     () => (activePath ? data.find((s) => s.path === activePath) ?? null : null),
     [data, activePath],
   );
 
-  // When the active secret changes, reset to viewing its current version.
+  /** Load mount list + path tree for the chosen mount. Run on boot + on retry/mount change. */
+  const loadMount = React.useCallback(
+    async (preferredMount?: string) => {
+      setEngineState("loading");
+      setEngineError(null);
+      try {
+        const ms = await getClient().listMounts();
+        setMounts(ms);
+        const kvMounts = ms.filter((m) => m.type === "kv-v2");
+        if (kvMounts.length === 0) {
+          setEngineState("no-mount");
+          return;
+        }
+        const chosen = preferredMount && kvMounts.find((m) => m.path === preferredMount)
+          ? preferredMount
+          : kvMounts[0]!.path;
+        setMount(chosen);
+        const paths = await listAllPaths(getClient(), chosen, "");
+        setData(paths.sort().map((p) => ({ path: p, versions: [], metadata: emptyMeta() })));
+        setActivePath(paths[0] ?? null);
+        setEngineState("ready");
+      } catch (err) {
+        setEngineError((err as Error).message);
+        setEngineState("error");
+      }
+    },
+    [getClient],
+  );
+
+  React.useEffect(() => {
+    void loadMount();
+  }, [loadMount]);
+
+  /** Eagerly fetch a path's metadata + all version data; cache into `data`. */
+  const refreshPath = React.useCallback(
+    async (path: string) => {
+      setPathBusy(path);
+      try {
+        const meta = await getClient().kvMetadata(mount, path);
+        const versions = await Promise.all(
+          meta.versions.map(async (v): Promise<KvVersion> => {
+            if (v.destroyed) {
+              return {
+                version: v.version,
+                data: {},
+                createdAt: v.createdTime,
+                createdBy: UNKNOWN_AUTHOR,
+                destroyed: true,
+                ...(v.deletionTime ? { deletedAt: v.deletionTime } : {}),
+              };
+            }
+            if (v.deletionTime) {
+              return {
+                version: v.version,
+                data: {},
+                createdAt: v.createdTime,
+                createdBy: UNKNOWN_AUTHOR,
+                deletedAt: v.deletionTime,
+              };
+            }
+            try {
+              const r = await getClient().kvRead(mount, path, { version: v.version });
+              return {
+                version: v.version,
+                data: toStringMap(r.data),
+                createdAt: r.metadata.createdTime || v.createdTime,
+                createdBy: UNKNOWN_AUTHOR,
+              };
+            } catch {
+              // Version disappeared between metadata and read — treat as soft-deleted.
+              return {
+                version: v.version,
+                data: {},
+                createdAt: v.createdTime,
+                createdBy: UNKNOWN_AUTHOR,
+                deletedAt: new Date().toISOString(),
+              };
+            }
+          }),
+        );
+        setData((prev) =>
+          prev.map((s) =>
+            s.path === path
+              ? {
+                  ...s,
+                  versions,
+                  metadata: {
+                    maxVersions: meta.maxVersions,
+                    casRequired: meta.casRequired,
+                    customMetadata: meta.customMetadata,
+                    createdAt: meta.createdTime,
+                    updatedAt: meta.updatedTime,
+                  },
+                }
+              : s,
+          ),
+        );
+      } finally {
+        setPathBusy((p) => (p === path ? null : p));
+      }
+    },
+    [getClient, mount],
+  );
+
+  // When the active path changes, reset focus + load its details on demand (only if not
+  // already cached — switching back to a path you've visited is instant).
   React.useEffect(() => {
     setViewingVersion(null);
     setTab("current");
-  }, [activePath]);
+    if (!activePath) return;
+    const sec = data.find((s) => s.path === activePath);
+    if (!sec || sec.versions.length === 0) void refreshPath(activePath);
+    // `data` is intentionally not in the dep array: refreshPath updates `data` itself, and
+    // including it would re-fire the effect on every load and loop. The "cached?" probe is
+    // a one-shot decision per `activePath` change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePath, refreshPath]);
 
-  const onSelectPath = (path: string) => {
-    setActivePath(path);
+  const handleOp = async (path: string, op: () => Promise<unknown>, success: string) => {
+    try {
+      await op();
+      await refreshPath(path);
+      toast.success(success);
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
   };
 
-  const mutate = (
-    path: string,
-    fn: (versions: KvVersion[]) => KvVersion[],
-  ) =>
-    setData((prev) =>
-      prev.map((s) =>
-        s.path === path
-          ? { ...s, versions: fn(s.versions), metadata: { ...s.metadata, updatedAt: new Date().toISOString() } }
-          : s,
-      ),
-    );
-
   const onSoftDelete = (path: string, version: number) =>
-    mutate(path, (vs) =>
-      vs.map((v) =>
-        v.version === version
-          ? { ...v, deletedAt: new Date().toISOString() }
-          : v,
-      ),
-    );
+    handleOp(path, () => getClient().kvDeleteVersions(mount, path, [version]), `Version ${version} soft-deleted`);
 
   const onUndelete = (path: string, version: number) =>
-    mutate(path, (vs) =>
-      vs.map((v) => (v.version === version ? { ...v, deletedAt: undefined } : v)),
-    );
+    handleOp(path, () => getClient().kvUndeleteVersions(mount, path, [version]), `Version ${version} restored`);
 
   const onDestroy = (path: string, version: number) =>
-    mutate(path, (vs) =>
-      vs.map((v) =>
-        v.version === version
-          ? { ...v, destroyed: true, data: Object.fromEntries(Object.keys(v.data).map((k) => [k, "(destroyed)"])) }
-          : v,
-      ),
-    );
+    handleOp(path, () => getClient().kvDestroyVersions(mount, path, [version]), `Version ${version} destroyed`);
 
+  const onWrite = async (path: string, payload: Record<string, string>) => {
+    try {
+      await getClient().kvWrite(mount, path, payload);
+      // A new path doesn't appear in the tree until we know about it — refresh the list.
+      const known = data.find((s) => s.path === path);
+      if (!known) {
+        const paths = await listAllPaths(getClient(), mount, "");
+        setData((prev) => {
+          const byPath = new Map(prev.map((s) => [s.path, s]));
+          return paths.sort().map((p) => byPath.get(p) ?? { path: p, versions: [], metadata: emptyMeta() });
+        });
+      }
+      setActivePath(path);
+      await refreshPath(path);
+      toast.success(`Wrote ${path}`);
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  };
+
+  if (engineState === "loading") {
+    return (
+      <div className="space-y-5">
+        <Header mount={mount || "—"} mounts={mounts} onSelectMount={loadMount} writable={false} onWrite={onWrite} />
+        <div className="grid min-h-[480px] place-items-center rounded-[var(--radius-lg)] border border-border bg-[var(--surface-base)] text-sm text-muted-foreground">
+          Loading KV mounts…
+        </div>
+      </div>
+    );
+  }
+  if (engineState === "no-mount") {
+    return (
+      <div className="space-y-5">
+        <Header mount="—" mounts={mounts} onSelectMount={loadMount} writable={false} onWrite={onWrite} />
+        <EmptyEngineState
+          title="No KV mount configured"
+          body="Engine A is reachable but no KV v2 mount is registered on this arc-server. Start a colocated OpenBao (or set BAO_ADDR to point at one) and arc will auto-mount `secret/` on boot."
+          retry={() => loadMount()}
+        />
+      </div>
+    );
+  }
+  if (engineState === "error") {
+    return (
+      <div className="space-y-5">
+        <Header mount="—" mounts={mounts} onSelectMount={loadMount} writable={false} onWrite={onWrite} />
+        <EmptyEngineState
+          title="Couldn’t load the KV engine"
+          body={engineError ?? "The list-mounts call failed. The most common cause is the engine being temporarily unreachable."}
+          retry={() => loadMount()}
+        />
+      </div>
+    );
+  }
   return (
     <div className="space-y-5">
-      <Header />
+      <Header mount={mount} mounts={mounts} onSelectMount={loadMount} writable onWrite={onWrite} />
       <div className="grid min-h-[560px] overflow-hidden rounded-[var(--radius-lg)] border border-border bg-[var(--surface-base)] md:grid-cols-[340px_1fr]">
         <PathRail
           data={data}
           activePath={activePath}
           query={query}
           onQueryChange={setQuery}
-          onSelectPath={onSelectPath}
+          onSelectPath={setActivePath}
         />
         <DetailPane
+          mount={mount}
           secret={active}
+          loading={pathBusy === activePath && (active?.versions.length ?? 0) === 0}
           tab={tab}
           onSelectTab={setTab}
           viewingVersion={viewingVersion}
@@ -339,11 +366,74 @@ export function KvView() {
   );
 }
 
+function emptyMeta(): KvSecret["metadata"] {
+  return { maxVersions: 0, casRequired: false, customMetadata: {}, createdAt: "", updatedAt: "" };
+}
+
+function toStringMap(data: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(data)) {
+    out[k] = typeof v === "string" ? v : JSON.stringify(v);
+  }
+  return out;
+}
+
+/**
+ * Recursively walk a KV mount via `kvList` to flatten every leaf path into a flat array
+ * the existing tree component can group by `/`. Folder entries from `kvList` end in `/`;
+ * we recurse into them. Errors per-subtree are swallowed (a sub-prefix may have been
+ * deleted between calls) so a partial tree still renders.
+ */
+async function listAllPaths(client: VaultClient, mount: string, prefix: string): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = await client.kvList(mount, prefix);
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const e of entries) {
+    if (e.endsWith("/")) {
+      out.push(...(await listAllPaths(client, mount, prefix + e)));
+    } else {
+      out.push(prefix + e);
+    }
+  }
+  return out;
+}
+
+function EmptyEngineState({ title, body, retry }: { title: string; body: string; retry: () => void }) {
+  return (
+    <div className="flex min-h-[480px] flex-col items-center justify-center gap-3 rounded-[var(--radius-lg)] border border-dashed border-border bg-[var(--surface-base)] p-10 text-center">
+      <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+        <Database className="h-5 w-5" />
+      </span>
+      <h3 className="font-display text-base font-semibold">{title}</h3>
+      <p className="max-w-md text-sm text-muted-foreground">{body}</p>
+      <Button size="sm" variant="outline" onClick={retry}>
+        <RotateCcw className="h-3.5 w-3.5" /> Retry
+      </Button>
+    </div>
+  );
+}
+
 // ────────────────────────────────────────────────────────────────────────────────
-// Header — eyebrow + title + mount selector + write button (write is a preview no-op)
+// Header — eyebrow + title + mount selector + write button
 // ────────────────────────────────────────────────────────────────────────────────
 
-function Header() {
+function Header({
+  mount,
+  mounts,
+  onSelectMount,
+  writable,
+  onWrite,
+}: {
+  mount: string;
+  mounts: Array<{ path: string; type: string }>;
+  onSelectMount: (path: string) => void;
+  writable: boolean;
+  onWrite: (path: string, data: Record<string, string>) => Promise<void>;
+}) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="space-y-1">
@@ -352,26 +442,39 @@ function Header() {
         </span>
         <h1 className="font-display text-2xl font-medium tracking-tight">KV secrets</h1>
         <p className="max-w-prose text-sm text-muted-foreground">
-          Versioned key-value paths on the <span className="font-mono text-foreground">{MOUNT}</span>{" "}
+          Versioned key-value paths on the <span className="font-mono text-foreground">{mount}</span>{" "}
           mount. Soft-delete and undelete history, destroy specific versions, and diff a write
           against the version before it.
         </p>
       </div>
       <div className="flex items-center gap-2">
-        <MountSelector />
-        <IconTip label="Write secret" hint="Coming soon — needs the Engine A write API." side="bottom">
-          <span tabIndex={0} className="inline-flex">
-            <Button size="sm" variant="secondary" disabled>
-              <Plus className="h-3.5 w-3.5" /> Write secret
-            </Button>
-          </span>
-        </IconTip>
+        <MountSelector mount={mount} mounts={mounts} onSelect={onSelectMount} />
+        {writable ? (
+          <WriteSecretDialog onWrite={onWrite} />
+        ) : (
+          <IconTip label="Write secret" hint="Pick a KV mount first." side="bottom">
+            <span tabIndex={0} className="inline-flex">
+              <Button size="sm" variant="secondary" disabled>
+                <Plus className="h-3.5 w-3.5" /> Write secret
+              </Button>
+            </span>
+          </IconTip>
+        )}
       </div>
     </div>
   );
 }
 
-function MountSelector() {
+function MountSelector({
+  mount,
+  mounts,
+  onSelect,
+}: {
+  mount: string;
+  mounts: Array<{ path: string; type: string }>;
+  onSelect: (path: string) => void;
+}) {
+  const kvMounts = mounts.filter((m) => m.type === "kv-v2");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -380,7 +483,7 @@ function MountSelector() {
           className="flex items-center gap-2 rounded-[var(--radius-md)] border border-border bg-[var(--surface-inset)] px-2.5 py-1.5 text-sm transition-colors hover:border-[var(--border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         >
           <Database className="h-3.5 w-3.5 text-primary" />
-          <span className="font-mono text-[12px]">{MOUNT}</span>
+          <span className="font-mono text-[12px]">{mount}</span>
           <Badge variant="secondary" className="ml-1 text-[10px] uppercase tracking-wide">
             kv-v2
           </Badge>
@@ -388,18 +491,152 @@ function MountSelector() {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[220px]">
-        <DropdownMenuLabel>Mounts</DropdownMenuLabel>
-        <DropdownMenuItem className="flex items-center gap-2">
-          <Database className="h-3.5 w-3.5 text-primary" />
-          <span className="flex-1 font-mono text-[12px]">{MOUNT}</span>
-          <Badge variant="secondary">current</Badge>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-          Additional mounts appear when the Engine A list-mounts API is wired.
-        </DropdownMenuItem>
+        <DropdownMenuLabel>KV mounts</DropdownMenuLabel>
+        {kvMounts.length === 0 ? (
+          <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+            No KV mounts.
+          </DropdownMenuItem>
+        ) : (
+          kvMounts.map((m) => (
+            <DropdownMenuItem
+              key={m.path}
+              onSelect={() => onSelect(m.path)}
+              className="flex items-center gap-2"
+            >
+              <Database className="h-3.5 w-3.5 text-primary" />
+              <span className="flex-1 font-mono text-[12px]">{m.path}</span>
+              {m.path === mount ? <Badge variant="secondary">current</Badge> : null}
+            </DropdownMenuItem>
+          ))
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * Write a new version (or create a new path). Keeps the same Dialog primitive every other
+ * dialog uses, so it inherits the platform's blurred scrim + radius tokens. Each field row
+ * is a key/value pair; user can add or remove rows before saving.
+ */
+function WriteSecretDialog({
+  onWrite,
+}: {
+  onWrite: (path: string, data: Record<string, string>) => Promise<void>;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [path, setPath] = React.useState("");
+  const [rows, setRows] = React.useState<Array<{ k: string; v: string }>>([{ k: "", v: "" }]);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      setPath("");
+      setRows([{ k: "", v: "" }]);
+    }
+  }, [open]);
+
+  const submit = async () => {
+    const data: Record<string, string> = {};
+    for (const r of rows) {
+      const k = r.k.trim();
+      if (!k) continue;
+      data[k] = r.v;
+    }
+    const cleanPath = path.replace(/^\/+|\/+$/g, "");
+    if (!cleanPath || Object.keys(data).length === 0) return;
+    setBusy(true);
+    try {
+      await onWrite(cleanPath, data);
+      setOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Plus className="h-3.5 w-3.5" /> Write secret
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Write a KV secret</DialogTitle>
+          <DialogDescription>
+            Creates a new path or bumps an existing one to the next version. The engine keeps
+            previous versions per its <span className="font-mono">max_versions</span> setting.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="kv-path">Path</Label>
+            <Input
+              id="kv-path"
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              placeholder="app/prod/db"
+              className="font-mono"
+              autoFocus
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Key/value pairs</Label>
+            <div className="space-y-1.5">
+              {rows.map((row, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <Input
+                    aria-label={`Key ${i + 1}`}
+                    placeholder="KEY"
+                    className="font-mono"
+                    value={row.k}
+                    onChange={(e) =>
+                      setRows((rs) => rs.map((r, j) => (j === i ? { ...r, k: e.target.value } : r)))
+                    }
+                  />
+                  <Input
+                    aria-label={`Value ${i + 1}`}
+                    placeholder="value"
+                    className="font-mono"
+                    value={row.v}
+                    onChange={(e) =>
+                      setRows((rs) => rs.map((r, j) => (j === i ? { ...r, v: e.target.value } : r)))
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Remove row ${i + 1}`}
+                    disabled={rows.length === 1}
+                    onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setRows((rs) => [...rs, { k: "", v: "" }])}
+              >
+                <Plus className="h-3 w-3" /> Add row
+              </Button>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={submit}
+            disabled={busy || !path.trim() || rows.every((r) => !r.k.trim())}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -612,7 +849,9 @@ function TreeRow({
 // ────────────────────────────────────────────────────────────────────────────────
 
 function DetailPane({
+  mount,
   secret,
+  loading,
   tab,
   onSelectTab,
   viewingVersion,
@@ -621,7 +860,9 @@ function DetailPane({
   onUndelete,
   onDestroy,
 }: {
+  mount: string;
   secret: KvSecret | null;
+  loading: boolean;
   tab: TabKey;
   onSelectTab: (t: TabKey) => void;
   viewingVersion: number | null;
@@ -630,6 +871,28 @@ function DetailPane({
   onUndelete: (path: string, version: number) => void;
   onDestroy: (path: string, version: number) => void;
 }) {
+  // Path is selected but its versions haven't arrived yet — render a loading placeholder
+  // rather than the `versions[0]!` access (the existing tabs invariant).
+  if (secret && loading) {
+    return (
+      <section className="grid min-h-0 place-items-center bg-[var(--surface-sunken)] p-10 text-sm text-muted-foreground">
+        Loading {secret.path}…
+      </section>
+    );
+  }
+  // A selected path with zero versions after the load completes: every version was
+  // destroyed (the metadata survives but no data). Surface that explicitly instead of
+  // throwing on `versions[0]!`.
+  if (secret && secret.versions.length === 0) {
+    return (
+      <section className="grid min-h-0 place-items-center bg-[var(--surface-sunken)] p-10 text-center text-sm text-muted-foreground">
+        <div className="max-w-sm space-y-2">
+          <p className="font-medium">No versions</p>
+          <p>This path has no live or recoverable versions on the engine.</p>
+        </div>
+      </section>
+    );
+  }
   if (!secret) {
     return (
       <section className="flex min-h-0 items-center justify-center bg-[var(--surface-sunken)] p-10 text-center">
@@ -656,7 +919,7 @@ function DetailPane({
   return (
     <section className="min-h-0 overflow-y-auto bg-[var(--surface-sunken)]">
       <div className="mx-auto max-w-[640px] px-7 py-7">
-        <Hero secret={secret} focused={focused} onResetFocus={() => onSelectVersion(null)} />
+        <Hero mount={mount} secret={secret} focused={focused} onResetFocus={() => onSelectVersion(null)} />
         <Tabs tab={tab} onSelectTab={onSelectTab} />
         <div className="mt-5">
           {tab === "current" ? (
@@ -681,10 +944,12 @@ function DetailPane({
 }
 
 function Hero({
+  mount,
   secret,
   focused,
   onResetFocus,
 }: {
+  mount: string;
   secret: KvSecret;
   focused: KvVersion;
   onResetFocus: () => void;
@@ -698,7 +963,7 @@ function Hero({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-mono text-[11px] text-muted-foreground">{MOUNT}</span>
+          <span className="font-mono text-[11px] text-muted-foreground">{mount}</span>
           <h2 className="truncate font-mono text-[15px] font-semibold tracking-tight">
             {secret.path}
           </h2>
@@ -1185,7 +1450,7 @@ function Footer() {
     <div className="mt-6 flex items-center gap-2 border-t border-border/60 pt-4 text-[11px] text-muted-foreground">
       <TrustIndicator kind="verified">Engine A · KV v2</TrustIndicator>
       <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-primary">
-        <Sparkles className="h-3 w-3" /> preview · writes wire next
+        <Sparkles className="h-3 w-3" /> live · OpenBao via arc-server
       </span>
     </div>
   );

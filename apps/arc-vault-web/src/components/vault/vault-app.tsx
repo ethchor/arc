@@ -516,7 +516,7 @@ export function VaultApp() {
           />
         )}
         {section === "devices" && <DevicesView getClient={getClient} />}
-        {section === "kv" && <KvView />}
+        {section === "kv" && <KvView getClient={getClient} />}
         {section === "creds" && (
           <PreviewScreen
             eyebrow="Engine A · infrastructure"
