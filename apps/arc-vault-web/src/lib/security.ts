@@ -1,5 +1,11 @@
 import type { PulledItem } from "@arc/sdk";
 import { asLogin, asTotp, itemTitle } from "./items";
+import { daysSince } from "./datetime";
+
+/** Past this many days a login is "old" (`mid` severity). Industry norm: rotate yearly. */
+const OLD_DAYS = 365;
+/** Past this many days a login is "very old" (`high` severity). */
+const VERY_OLD_DAYS = 730;
 
 /**
  * Client-side security analysis over already-decrypted vault items.
@@ -185,10 +191,12 @@ export function isWeakPassword(pw: string): boolean {
  * fetched here so this function stays pure + synchronous and the network call remains
  * strictly opt-in.
  *
- * Note on "old": the wire-level `PulledItem` doesn't carry an updatedAt timestamp (only a
- * monotonic `seq`), so we can't honestly tell how long ago a password was last rotated.
- * Rather than fake it, we leave the `old` bucket at 0 and surface only weak + reused; the
- * shape is in place to light up the moment the SDK carries a real timestamp.
+ * `old`: each item carries an `updatedAt` from the server's `@UpdateDateColumn` — bumps on
+ * every save (any field, incl. a password rotation). We flag past {@link OLD_DAYS} (1 year)
+ * as `mid` and {@link VERY_OLD_DAYS} (2 years) as `high`. We say "Last updated …" rather
+ * than "Last rotated …" because save-bumping is broader than a password change — but the
+ * signal is still honest: a login the user hasn't touched in 2 years almost certainly
+ * hasn't had its password rotated either.
  */
 export function analyseSecurity(
   items: readonly PulledItem[],
@@ -217,6 +225,7 @@ export function analyseSecurity(
   let strong = 0;
   let weak = 0;
   let reused = 0;
+  let oldCount = 0;
   let twoFactor = 0;
   let exposedCount = 0;
 
@@ -225,6 +234,7 @@ export function analyseSecurity(
     const strength = passwordStrength(pw);
     const reuseN = passwordCounts.get(pw) ?? 0;
     const breaches = exposed?.get(item.id) ?? 0;
+    const ageDays = daysSince(item.updatedAt);
     const issuer = (login.title || "").toLowerCase();
     const has2fa = totpCompanions.has(issuer);
     if (has2fa) twoFactor++;
@@ -263,15 +273,36 @@ export function analyseSecurity(
       });
       added = true;
     }
+    if (ageDays !== null && ageDays >= OLD_DAYS) {
+      oldCount++;
+      const years = Math.floor(ageDays / 365);
+      const reason = years >= 1
+        ? `Unchanged for ${years === 1 ? "over a year" : `${years} years`}`
+        : `Unchanged for ${Math.floor(ageDays / 30)} months`;
+      flagged.push({
+        id: item.id,
+        title: itemTitle(item),
+        reason,
+        kind: "old",
+        severity: ageDays >= VERY_OLD_DAYS ? "high" : "mid",
+      });
+      added = true;
+    }
     if (!added && strength >= 3 && reuseN <= 1) strong++;
   }
 
   // Score: 100, minus weight × ratio for each issue category. Breach exposure is the
   // heaviest — a known-breached password is compromised regardless of how strong it looks.
+  // Old is the lightest — a 2-year-old strong+unique password isn't broken, just stale.
   const total = logins.length || 1;
   const penalty = Math.min(
     100,
-    Math.round((weak / total) * 60 + (reused / total) * 30 + (exposedCount / total) * 70),
+    Math.round(
+      (weak / total) * 60 +
+        (reused / total) * 30 +
+        (exposedCount / total) * 70 +
+        (oldCount / total) * 15,
+    ),
   );
   const score = Math.max(0, 100 - penalty);
 
@@ -284,7 +315,7 @@ export function analyseSecurity(
 
   return {
     score,
-    buckets: { strong, weak, reused, old: 0, twoFactor, exposed: exposedCount, total: logins.length },
+    buckets: { strong, weak, reused, old: oldCount, twoFactor, exposed: exposedCount, total: logins.length },
     flagged,
   };
 }

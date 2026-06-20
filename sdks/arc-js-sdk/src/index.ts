@@ -159,6 +159,10 @@ export interface PulledItem {
   deleted: boolean;
   folderId: string | null;
   data: JsonValue | null;
+  /** ISO 8601. Server-side `updated_at` — bumps on every save (any field, including a
+   *  password rotation). Drives the "updated 3 days ago" detail subtitle and the security
+   *  dashboard's "old password" flag (`analyseSecurity`). Carried on deleted rows too. */
+  updatedAt: string;
 }
 
 /**
@@ -989,14 +993,30 @@ export class VaultClient {
     );
     const items = res.items.map((row): PulledItem => {
       if (row.deletedAt) {
-        return { id: row.id, version: row.version, seq: row.seq, deleted: true, folderId: row.folderId ?? null, data: null };
+        return {
+          id: row.id,
+          version: row.version,
+          seq: row.seq,
+          deleted: true,
+          folderId: row.folderId ?? null,
+          data: null,
+          updatedAt: row.updatedAt,
+        };
       }
       const data = decryptItem(
         vk.vk,
         { vaultId, itemId: row.id, version: row.version, keyVersion: row.vaultKeyVersion },
         { ciphertext: row.ciphertext, wrappedItemKey: row.wrappedItemKey },
       );
-      return { id: row.id, version: row.version, seq: row.seq, deleted: false, folderId: row.folderId ?? null, data };
+      return {
+        id: row.id,
+        version: row.version,
+        seq: row.seq,
+        deleted: false,
+        folderId: row.folderId ?? null,
+        data,
+        updatedAt: row.updatedAt,
+      };
     });
     return { items, cursor: res.cursor };
   }
@@ -1584,6 +1604,9 @@ interface ItemRow {
   wrappedItemKey: Envelope;
   folderId: string | null;
   deletedAt: string | null;
+  /** ISO 8601 server timestamp (from `@UpdateDateColumn`). Always present, including on
+   *  soft-deleted rows. Threaded straight to {@link PulledItem.updatedAt}. */
+  updatedAt: string;
 }
 
 // --- Browser-default passkey authenticator -------------------------------------------
