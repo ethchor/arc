@@ -51,6 +51,7 @@ import { TotpDialog, type TotpInput } from "@/components/vault/totp-dialog";
 import type { TotpData } from "@/lib/items";
 import { asLogin, asNote, asSecret, asTotp, itemSubtitle, itemTitle } from "@/lib/items";
 import { isWeakPassword } from "@/lib/security";
+import { relativeAgo } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 /**
@@ -609,7 +610,9 @@ function DetailHero({ item }: { item: PulledItem }) {
       </span>
       <div className="min-w-0 flex-1">
         <h2 className="truncate font-display text-[22px] font-semibold tracking-tight">{title}</h2>
-        <p className="text-sm text-muted-foreground">{kindLabel}</p>
+        <p className="text-sm text-muted-foreground">
+          {kindLabel} · updated {relativeAgo(item.updatedAt)}
+        </p>
       </div>
       {/* Disabled placeholders ("coming next"). The tooltip lives on a focusable span
           wrapper because a disabled button swallows pointer events, so Radix can't see the

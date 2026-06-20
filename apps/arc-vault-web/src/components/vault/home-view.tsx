@@ -333,12 +333,17 @@ function useGreeting(): { eyebrow: string; title: string } {
 }
 
 /**
- * Recency proxy: `seq` is the per-vault monotonic version `pull` returns. Higher seq =
- * more recently created/updated. The wire shape doesn't carry an explicit updatedAt yet.
+ * Order by server `updatedAt` (ISO) — the real "most recently touched" signal. Falls back
+ * to `seq` if the timestamp is unparseable (shouldn't happen now that the SDK threads it,
+ * but keeps the sort total in pathological cases).
  */
 function recentLogins(items: readonly PulledItem[], n: number): PulledItem[] {
+  const ts = (i: PulledItem): number => {
+    const t = Date.parse(i.updatedAt);
+    return Number.isFinite(t) ? t : i.seq ?? 0;
+  };
   return [...items]
     .filter((i) => asLogin(i))
-    .sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))
+    .sort((a, b) => ts(b) - ts(a))
     .slice(0, n);
 }

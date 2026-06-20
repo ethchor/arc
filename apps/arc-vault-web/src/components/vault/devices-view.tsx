@@ -29,6 +29,7 @@ import {
 import { TrustIndicator } from "@/components/arc/trust-indicator";
 import { PageHeader } from "@/components/vault/security-view";
 import { Stagger } from "@/components/motion/stagger";
+import { relativeAgo } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 /** Inactivity threshold for the "retire?" nudge — matches the design system's 40-day note. */
@@ -239,7 +240,7 @@ function DeviceRow({
   onRevoke: () => void;
 }) {
   const stale = isStale(device);
-  const lastSeen = formatLastSeen(device.lastSeenAt);
+  const lastSeen = relativeAgo(device.lastSeenAt);
   return (
     <li className="flex items-center gap-3 px-5 py-3">
       <DeviceAvatar name={device.name} />
@@ -300,21 +301,6 @@ function isStale(d: { lastSeenAt: string | null; trusted: boolean }): boolean {
   if (!d.lastSeenAt) return false;
   const days = (Date.now() - Date.parse(d.lastSeenAt)) / 86_400_000;
   return Number.isFinite(days) && days >= STALE_DAYS;
-}
-
-function formatLastSeen(iso: string | null): string {
-  if (!iso) return "never";
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return "unknown";
-  const diffMs = Date.now() - t;
-  const m = Math.round(diffMs / 60_000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m} min ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.round(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(t).toLocaleDateString();
 }
 
 /** Used by ConsoleShell to hide unused class warnings. */
