@@ -77,6 +77,18 @@ export class EnginesController {
   }
 
   /**
+   * Snapshot of every lease the arc LeaseManager is tracking. Active leases first
+   * (soonest expiry), then expired (most recent), then revoked. Operators use this to
+   * find orphans, clean up, or just see what's outstanding across every engine on this
+   * server. The handler is explicit (not the wildcard dispatcher) because the path
+   * doesn't resolve to a mount — leases are server-wide.
+   */
+  @Get("sys/leases")
+  listLeases() {
+    return { data: { leases: this.engines.listLeases() } };
+  }
+
+  /**
    * Vault's lease-renewal endpoint. Body: `{ lease_id, increment? }`. The increment is
    * seconds; arc accepts a bare integer (no Vault TTL string forms here — clients of this
    * endpoint already know they're talking to the renew API).

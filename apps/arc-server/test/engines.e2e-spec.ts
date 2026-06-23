@@ -103,6 +103,11 @@ describe("engines e2e — disabled (no BAO_ADDR)", () => {
       .expect(404);
   });
 
+  it("sys/leases returns an empty list when no leases have been issued — operator Leases screen renders without 503", async () => {
+    const res = await request(server).get("/v1/sys/leases").set(auth(token)).expect(200);
+    expect(res.body.data.leases).toEqual([]);
+  });
+
   it("sys/leases/renew rejects an empty lease_id with 400 before reaching the engine", async () => {
     await request(server)
       .post("/v1/sys/leases/renew")

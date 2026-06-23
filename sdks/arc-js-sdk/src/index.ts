@@ -1349,6 +1349,15 @@ export class VaultClient {
     await this.http("POST", "/v1/sys/leases/revoke", { lease_id: leaseId });
   }
 
+  /**
+   * Server-wide snapshot of every lease the arc LeaseManager is tracking. Active first
+   * (soonest expiry), then expired, then revoked. Drives the operator Leases screen.
+   */
+  async listLeases(): Promise<LeaseWire[]> {
+    const r = await this.http<{ data: { leases: LeaseWire[] } }>("GET", "/v1/sys/leases");
+    return r.data.leases ?? [];
+  }
+
   // -- Workflows (Phase 1: JIT-access / approval workflows) -------------------
 
   /** List workflows configured on a vault. Admin+ only on the server side. */
@@ -2100,6 +2109,27 @@ export interface IssuedCredentialWire {
   leaseId: string;
   leaseDurationSeconds: number;
   renewable: boolean;
+}
+
+/** Wire-shape of one entry returned by {@link VaultClient.listLeases}. Times are epoch ms
+ *  (server's `Date.now()`). State is derived server-side from `revokedAt` / `expiresAt`. */
+export interface LeaseWire {
+  id: string;
+  mount: string;
+  engineType: string;
+  backendLeaseId?: string;
+  ttlSeconds: number;
+  maxTtlSeconds: number;
+  renewable: boolean;
+  /** Unix epoch ms when the lease was issued. */
+  issuedAt: number;
+  /** Unix epoch ms when the lease expires unless renewed. */
+  expiresAt: number;
+  /** Unix epoch ms when explicitly revoked. Absent on active/expired. */
+  revokedAt?: number;
+  state: "active" | "expired" | "revoked";
+  /** Engine-C task binding (ADR-005); absent for human-issued leases. */
+  taskId?: string;
 }
 
 /** Wire-shape of {@link VaultClient.pkiReadRole}. Mirrors `PkiRole` from `@arc/secrets-engine`

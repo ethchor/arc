@@ -337,6 +337,59 @@ export class EnginesService {
   }
 
   /**
+   * Snapshot of every lease the arc LeaseManager is tracking, enriched with the engine
+   * type that minted them. Powers the operator Leases screen + machinery audits.
+   *
+   * `state` is derived (not stored): `revoked` ⇒ revoked, otherwise `expired` past
+   * `expiresAt`, otherwise `active`. Times are wire-ISO-friendly (epoch ms numbers
+   * preserved as-is; the client converts).
+   */
+  listLeases(): Array<{
+    id: string;
+    mount: string;
+    engineType: string;
+    backendLeaseId?: string;
+    ttlSeconds: number;
+    maxTtlSeconds: number;
+    renewable: boolean;
+    issuedAt: number;
+    expiresAt: number;
+    revokedAt?: number;
+    state: "active" | "expired" | "revoked";
+    taskId?: string;
+  }> {
+    const now = Date.now();
+    const out = this.config.leases.list().map((l) => {
+      const engine = this.config.enginesByMount.get(l.mount);
+      const state: "active" | "expired" | "revoked" =
+        l.revokedAt !== undefined ? "revoked" : l.expiresAt <= now ? "expired" : "active";
+      const wire: ReturnType<typeof this.listLeases>[number] = {
+        id: l.id,
+        mount: l.mount,
+        engineType: engine?.type ?? "unknown",
+        ttlSeconds: l.ttlSeconds,
+        maxTtlSeconds: l.maxTtlSeconds,
+        renewable: l.renewable,
+        issuedAt: l.issuedAt,
+        expiresAt: l.expiresAt,
+        state,
+      };
+      if (l.backendLeaseId !== undefined) wire.backendLeaseId = l.backendLeaseId;
+      if (l.revokedAt !== undefined) wire.revokedAt = l.revokedAt;
+      if (l.taskId !== undefined) wire.taskId = l.taskId;
+      return wire;
+    });
+    // Sort: active first (soonest expiry); then expired (most recent); then revoked.
+    const rank = { active: 0, expired: 1, revoked: 2 } as const;
+    out.sort((a, b) => {
+      if (a.state !== b.state) return rank[a.state] - rank[b.state];
+      if (a.state === "active") return a.expiresAt - b.expiresAt;
+      return b.expiresAt - a.expiresAt;
+    });
+    return out;
+  }
+
+  /**
    * `POST /v1/sys/leases/renew` — renew an arc-internal lease. The dispatcher resolves
    * the lease's mount to a {@link DynamicSecretsEngine} and delegates; the adapter knows
    * how to drive the upstream `sys/leases/renew` against OpenBao if needed.
