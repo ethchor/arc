@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, FileClock, RotateCw } from "lucide-react";
+import { FileClock, RotateCw } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import type { JsonValue, TotpAlgorithm } from "@arc/types";
 import { toast } from "sonner";
@@ -29,7 +29,7 @@ import { IdentitiesView } from "@/components/vault/identities-view";
 import { DevicePendingView } from "@/components/vault/device-pending-view";
 import { EnrollScreen } from "@/components/vault/enroll-screen";
 import { DevicesDialog } from "@/components/vault/devices-dialog";
-import { InfoView } from "@/components/vault/info-view";
+import { LeasesView } from "@/components/vault/leases-view";
 import { KvView } from "@/components/vault/kv-view";
 import { TransitView } from "@/components/vault/transit-view";
 import { PkiView } from "@/components/vault/pki-view";
@@ -595,19 +595,7 @@ export function VaultApp() {
           <WorkflowsView vaultId={selected} canManage={canManage} getClient={getClient} />
         )}
 
-        {section === "leases" && (
-          <InfoView
-            icon={Clock}
-            title="Leases"
-            description="Time-boxed access grants and break-glass sessions."
-            points={[
-              "Active time-boxed member grants and their expiry",
-              "Break-glass / emergency sessions with a server-enforced TTL",
-              "Manual revoke before expiry",
-              "Backed by signed grants — see docs/14 (developer platform)",
-            ]}
-          />
-        )}
+        {section === "leases" && <LeasesView getClient={getClient} />}
 
         {section === "audit" &&
           (selected ? (
