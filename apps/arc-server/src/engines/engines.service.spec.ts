@@ -45,6 +45,13 @@ class FakeDatabaseEngine implements DynamicSecretsEngine {
   async revoke(leaseId: string): Promise<void> {
     this.leases.revoke(leaseId);
   }
+
+  /** Required by {@link DynamicSecretsEngine} since #111 added role discovery. Tests that
+   *  need a non-empty list can stub the method per-case; the default works for the
+   *  existing issue/renew/revoke lifecycle tests that don't exercise role listing. */
+  async listRoles(): Promise<string[]> {
+    return [];
+  }
 }
 
 class FakeKvEngine implements SecretsEngine {
