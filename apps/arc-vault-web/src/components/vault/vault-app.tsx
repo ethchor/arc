@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, FileClock, KeyRound, RefreshCw, RotateCw, Shield } from "lucide-react";
+import { Clock, FileClock, KeyRound, RotateCw, Shield } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import type { JsonValue, TotpAlgorithm } from "@arc/types";
 import { toast } from "sonner";
@@ -32,6 +32,7 @@ import { EnrollScreen } from "@/components/vault/enroll-screen";
 import { DevicesDialog } from "@/components/vault/devices-dialog";
 import { InfoView } from "@/components/vault/info-view";
 import { KvView } from "@/components/vault/kv-view";
+import { TransitView } from "@/components/vault/transit-view";
 import type { LoginInput } from "@/components/vault/item-dialog";
 import type { NoteInput } from "@/components/vault/note-dialog";
 import type { SecretInput } from "@/components/vault/secret-dialog";
@@ -526,15 +527,7 @@ export function VaultApp() {
             engine="Engine A"
           />
         )}
-        {section === "transit" && (
-          <PreviewScreen
-            eyebrow="Engine A · infrastructure"
-            title="Transit"
-            description="Encryption-as-a-service: key list, encrypt/decrypt playground, rotate-key, and key versions."
-            icon={RefreshCw}
-            engine="Engine A"
-          />
-        )}
+        {section === "transit" && <TransitView getClient={getClient} />}
         {section === "pki" && (
           <PreviewScreen
             eyebrow="Engine A · infrastructure"

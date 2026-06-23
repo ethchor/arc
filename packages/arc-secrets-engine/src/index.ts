@@ -26,6 +26,7 @@ export type {
   TransitDecryptOptions,
   TransitEncryptOptions,
   TransitEngine,
+  TransitKeyInfo,
 } from "./engine";
 export { MountRegistry } from "./mount-registry";
 export type { ResolvedMount } from "./mount-registry";

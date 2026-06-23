@@ -72,6 +72,10 @@ export interface TransitEngine extends SecretsEngine {
   createKey(keyName: string, opts?: TransitCreateKeyOptions): Promise<void>;
   /** Rotate the key, advancing `latestVersion` by one. Older versions remain valid for decrypt. */
   rotateKey(keyName: string): Promise<{ latestVersion: number }>;
+  /** Names of every key on the mount, sorted by the backend (alpha for OpenBao). */
+  listKeys(): Promise<string[]>;
+  /** Read posture + version metadata for one key. Key material is never returned. */
+  readKey(keyName: string): Promise<TransitKeyInfo>;
 }
 
 /** Backend-portable ciphertext: the leading `vault:vN:` prefix carries the key version. */
@@ -80,6 +84,31 @@ export interface TransitCiphertext {
   ciphertext: string;
   /** Key version that produced this ciphertext. */
   keyVersion: number;
+}
+
+/**
+ * Info-level metadata about a transit key, returned by {@link TransitEngine.readKey}.
+ * Mirrors the small surface of OpenBao's `GET <mount>/keys/<name>` that's useful for an
+ * operator UI (versions + posture flags). Key material is never exposed.
+ */
+export interface TransitKeyInfo {
+  name: string;
+  /** Algorithm, e.g. `aes256-gcm96`. */
+  type: string;
+  /** Highest key version (rotations bump this). 0 ⇒ key not yet initialised. */
+  latestVersion: number;
+  /** Decrypt is refused for ciphertexts encrypted under versions below this. */
+  minDecryptionVersion: number;
+  /** Encrypt is refused for versions below this — useful for retiring older versions. */
+  minEncryptionVersion: number;
+  /** When `true`, the key may be deleted via `DELETE <mount>/keys/<name>`. Defaults to false. */
+  deletionAllowed: boolean;
+  /** When `true`, the key's raw material can be exported. Defaults to false (recommended). */
+  exportable: boolean;
+  /** True for keyed-derivation modes (HKDF / NaCl box / etc.). */
+  supportsDerivation?: boolean;
+  /** ISO-8601 per-version creation time, keyed by stringified version number. */
+  versionCreatedAt?: Record<string, string>;
 }
 
 export interface TransitEncryptOptions {

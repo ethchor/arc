@@ -115,4 +115,87 @@ describe("OpenBaoTransitEngine", () => {
       engine.encrypt("app-data", new TextEncoder().encode("hello")),
     ).rejects.toThrow(TransitProtocolError);
   });
+
+  it("listKeys LISTs <mount>/keys and returns the array", async () => {
+    const fetchFn = fakeFetch((url, init) => {
+      expect(url).toBe("http://bao:8200/v1/transit/keys");
+      expect(init.method).toBe("LIST");
+      return { status: 200, body: { data: { keys: ["app", "billing", "ml-1"] } } };
+    });
+    const engine = new OpenBaoTransitEngine(
+      new OpenBaoClient({ addr: "http://bao:8200", token: "root", fetchFn }),
+    );
+    expect(await engine.listKeys()).toEqual(["app", "billing", "ml-1"]);
+  });
+
+  it("listKeys treats a 404 (empty mount) as an empty array, not an error", async () => {
+    const fetchFn = fakeFetch(() => ({ status: 404, body: { errors: [] } }));
+    const engine = new OpenBaoTransitEngine(
+      new OpenBaoClient({ addr: "http://bao:8200", token: "root", fetchFn }),
+    );
+    expect(await engine.listKeys()).toEqual([]);
+  });
+
+  it("readKey GETs <mount>/keys/<name> and normalises the response fields", async () => {
+    const fetchFn = fakeFetch((url, init) => {
+      expect(url).toBe("http://bao:8200/v1/transit/keys/app");
+      expect(init.method).toBe("GET");
+      return {
+        status: 200,
+        body: {
+          data: {
+            name: "app",
+            type: "aes256-gcm96",
+            latest_version: 3,
+            min_decryption_version: 1,
+            min_encryption_version: 0,
+            deletion_allowed: false,
+            exportable: false,
+            supports_derivation: false,
+            keys: {
+              "1": "2026-01-01T00:00:00Z",
+              "2": "2026-03-01T00:00:00Z",
+              "3": "2026-06-01T00:00:00Z",
+            },
+          },
+        },
+      };
+    });
+    const engine = new OpenBaoTransitEngine(
+      new OpenBaoClient({ addr: "http://bao:8200", token: "root", fetchFn }),
+    );
+    const info = await engine.readKey("app");
+    expect(info.name).toBe("app");
+    expect(info.type).toBe("aes256-gcm96");
+    expect(info.latestVersion).toBe(3);
+    expect(info.minDecryptionVersion).toBe(1);
+    expect(info.minEncryptionVersion).toBe(0);
+    expect(info.deletionAllowed).toBe(false);
+    expect(info.exportable).toBe(false);
+    expect(info.supportsDerivation).toBe(false);
+    expect(info.versionCreatedAt?.["3"]).toBe("2026-06-01T00:00:00Z");
+  });
+
+  it("readKey converts numeric epoch-seconds version creation times to ISO strings", async () => {
+    const fetchFn = fakeFetch(() => ({
+      status: 200,
+      body: {
+        data: {
+          name: "raw",
+          type: "aes256-gcm96",
+          latest_version: 1,
+          min_decryption_version: 0,
+          min_encryption_version: 0,
+          deletion_allowed: false,
+          exportable: false,
+          keys: { "1": 1_730_000_000 },
+        },
+      },
+    }));
+    const engine = new OpenBaoTransitEngine(
+      new OpenBaoClient({ addr: "http://bao:8200", token: "root", fetchFn }),
+    );
+    const info = await engine.readKey("raw");
+    expect(info.versionCreatedAt?.["1"]).toBe(new Date(1_730_000_000 * 1000).toISOString());
+  });
 });

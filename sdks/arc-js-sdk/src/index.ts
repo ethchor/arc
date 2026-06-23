@@ -1028,6 +1028,112 @@ export class VaultClient {
     );
   }
 
+  // -- Engine A · Transit (encryption-as-a-service) ---------------------------
+  //
+  // Same `/v1/*` Vault-compatible wire shape as KV. Key material never crosses this
+  // surface — `transitEncrypt` takes plaintext bytes and returns the engine's opaque
+  // `vault:v<N>:…` ciphertext (which carries the key version internally and is portable
+  // between OpenBao instances). The operator UI's encrypt/decrypt playground rides on top.
+
+  /** List every transit key on a mount (empty list when the mount has no keys yet). */
+  async transitListKeys(mount: string): Promise<string[]> {
+    const r = await this.http<{ data: { keys?: string[] } }>(
+      "GET",
+      `/v1/${joinMount(mount)}keys?list=true`,
+    );
+    return r.data.keys ?? [];
+  }
+
+  /** Read posture + version metadata for one key. Never returns key material. */
+  async transitReadKey(mount: string, name: string): Promise<TransitKeyInfoWire> {
+    const r = await this.http<{
+      data: {
+        name: string;
+        type: string;
+        latest_version: number;
+        min_decryption_version: number;
+        min_encryption_version: number;
+        deletion_allowed: boolean;
+        exportable: boolean;
+        supports_derivation?: boolean;
+        keys?: Record<string, string>;
+      };
+    }>("GET", `/v1/${joinMount(mount)}keys/${normaliseKvPath(name)}`);
+    const d = r.data;
+    const out: TransitKeyInfoWire = {
+      name: d.name,
+      type: d.type,
+      latestVersion: d.latest_version,
+      minDecryptionVersion: d.min_decryption_version,
+      minEncryptionVersion: d.min_encryption_version,
+      deletionAllowed: d.deletion_allowed,
+      exportable: d.exportable,
+    };
+    if (d.supports_derivation !== undefined) out.supportsDerivation = d.supports_derivation;
+    if (d.keys) out.versionCreatedAt = { ...d.keys };
+    return out;
+  }
+
+  /** Idempotently create a key. No-op on an existing name. */
+  async transitCreateKey(
+    mount: string,
+    name: string,
+    opts: { algorithm?: string; exportable?: boolean } = {},
+  ): Promise<void> {
+    const body: Record<string, unknown> = {};
+    if (opts.algorithm !== undefined) body.type = opts.algorithm;
+    if (opts.exportable !== undefined) body.exportable = opts.exportable;
+    await this.http("POST", `/v1/${joinMount(mount)}keys/${normaliseKvPath(name)}`, body);
+  }
+
+  /** Rotate the key, advancing `latestVersion` by one. Older versions stay valid for decrypt. */
+  async transitRotateKey(mount: string, name: string): Promise<{ latestVersion: number }> {
+    const r = await this.http<{ data: { latest_version: number } }>(
+      "POST",
+      `/v1/${joinMount(mount)}keys/${normaliseKvPath(name)}/rotate`,
+      {},
+    );
+    return { latestVersion: r.data.latest_version };
+  }
+
+  /**
+   * Encrypt plaintext bytes under a transit key. Returns OpenBao's portable
+   * `vault:v<N>:<b64>` ciphertext + the key version that produced it. Bytes are base64'd
+   * on the wire (engine requirement); callers pass / receive raw `Uint8Array`.
+   */
+  async transitEncrypt(
+    mount: string,
+    keyName: string,
+    plaintext: Uint8Array,
+    opts: { contextBase64?: string } = {},
+  ): Promise<{ ciphertext: string; keyVersion: number }> {
+    const body: Record<string, unknown> = { plaintext: bytesToBase64(plaintext) };
+    if (opts.contextBase64 !== undefined) body.context = opts.contextBase64;
+    const r = await this.http<{ data: { ciphertext: string; key_version: number } }>(
+      "POST",
+      `/v1/${joinMount(mount)}encrypt/${normaliseKvPath(keyName)}`,
+      body,
+    );
+    return { ciphertext: r.data.ciphertext, keyVersion: r.data.key_version };
+  }
+
+  /** Decrypt a `vault:v<N>:…` ciphertext. Throws on tampered/mismatched-context input. */
+  async transitDecrypt(
+    mount: string,
+    keyName: string,
+    ciphertext: string,
+    opts: { contextBase64?: string } = {},
+  ): Promise<Uint8Array> {
+    const body: Record<string, unknown> = { ciphertext };
+    if (opts.contextBase64 !== undefined) body.context = opts.contextBase64;
+    const r = await this.http<{ data: { plaintext: string } }>(
+      "POST",
+      `/v1/${joinMount(mount)}decrypt/${normaliseKvPath(keyName)}`,
+      body,
+    );
+    return base64ToBytes(r.data.plaintext);
+  }
+
   // -- Workflows (Phase 1: JIT-access / approval workflows) -------------------
 
   /** List workflows configured on a vault. Admin+ only on the server side. */
@@ -1769,6 +1875,37 @@ function joinMount(mount: string): string {
 /** Strip leading/trailing slashes from a KV key path; OpenBao rejects empty segments. */
 function normaliseKvPath(path: string): string {
   return path.replace(/^\/+|\/+$/g, "");
+}
+
+/** Posture + version metadata for a transit key — wire-shape of {@link VaultClient.transitReadKey}. */
+export interface TransitKeyInfoWire {
+  name: string;
+  type: string;
+  latestVersion: number;
+  minDecryptionVersion: number;
+  minEncryptionVersion: number;
+  deletionAllowed: boolean;
+  exportable: boolean;
+  supportsDerivation?: boolean;
+  /** Per-version creation time (ISO 8601), keyed by stringified version number. */
+  versionCreatedAt?: Record<string, string>;
+}
+
+/**
+ * Standard base64 (NOT base64url) — the wire format OpenBao's transit engine accepts.
+ * `btoa`/`atob` are globals in every supported runtime (browsers + Node ≥16) so no
+ * Buffer fallback is needed; the SDK stays free of Node-only types.
+ */
+function bytesToBase64(b: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]!);
+  return btoa(s);
+}
+function base64ToBytes(s: string): Uint8Array {
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 interface ItemRow {

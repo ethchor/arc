@@ -213,6 +213,38 @@ export class EnginesService {
       }
       throw new NotFoundException({ errors: [`unsupported KV path: ${relativePath}`] });
     }
+    if (engine.type === "transit") {
+      const transit = engine as TransitEngine;
+      const listMode = query.list === "true" || query.list === "1";
+      if (listMode && relativePath === "keys") {
+        this.requirePluginCapability(mountPath, "list");
+        const keys = await transit.listKeys();
+        return { data: { keys } };
+      }
+      if (relativePath.startsWith("keys/")) {
+        this.requirePluginCapability(mountPath, "read");
+        const info = await transit.readKey(relativePath.slice("keys/".length));
+        return {
+          data: {
+            name: info.name,
+            type: info.type,
+            latest_version: info.latestVersion,
+            min_decryption_version: info.minDecryptionVersion,
+            min_encryption_version: info.minEncryptionVersion,
+            deletion_allowed: info.deletionAllowed,
+            exportable: info.exportable,
+            ...(info.supportsDerivation !== undefined
+              ? { supports_derivation: info.supportsDerivation }
+              : {}),
+            ...(info.versionCreatedAt ? { keys: info.versionCreatedAt } : {}),
+          },
+        };
+      }
+      throw new NotFoundException({
+        errors: [`unsupported transit GET path: ${relativePath}`],
+      });
+    }
+
     if (engine.type === "pki") {
       const pki = engine as PkiEngine;
       const listMode = query.list === "true" || query.list === "1";
