@@ -253,6 +253,26 @@ export class EnginesService {
         const keys = await pki.listCertificates();
         return { data: { keys } };
       }
+      if (listMode && relativePath === "roles") {
+        this.requirePluginCapability(mountPath, "list");
+        const keys = await pki.listRoles();
+        return { data: { keys } };
+      }
+      if (relativePath.startsWith("roles/")) {
+        this.requirePluginCapability(mountPath, "read");
+        const role = await pki.readRole(relativePath.slice("roles/".length));
+        const data: Record<string, unknown> = { name: role.name };
+        if (role.ttlSeconds !== undefined) data.ttl = role.ttlSeconds;
+        if (role.maxTtlSeconds !== undefined) data.max_ttl = role.maxTtlSeconds;
+        if (role.allowAnyName !== undefined) data.allow_any_name = role.allowAnyName;
+        if (role.allowSubdomains !== undefined) data.allow_subdomains = role.allowSubdomains;
+        if (role.allowBareDomains !== undefined) data.allow_bare_domains = role.allowBareDomains;
+        if (role.allowedDomains !== undefined) data.allowed_domains = role.allowedDomains;
+        if (role.keyType !== undefined) data.key_type = role.keyType;
+        if (role.keyBits !== undefined) data.key_bits = role.keyBits;
+        if (role.extra) Object.assign(data, role.extra);
+        return { data };
+      }
       if (relativePath === "ca/pem" || relativePath === "ca") {
         this.requirePluginCapability(mountPath, "read");
         const cert = await pki.readCaCertificate();

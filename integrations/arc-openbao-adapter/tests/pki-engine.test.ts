@@ -178,4 +178,63 @@ describe("OpenBaoPkiEngine", () => {
     expect(pki.mount).toBe("pki-int/");
     await pki.issueCertificate("web", { commonName: "x" });
   });
+
+  it("listRoles LISTs <mount>/roles and folds 404 (empty mount) into []", async () => {
+    const ok = fakeFetch((url, init) => {
+      expect(init.method).toBe("LIST");
+      expect(url).toBe("http://bao:8200/v1/pki/roles");
+      return { status: 200, body: { data: { keys: ["server", "client"] } } };
+    });
+    const pki = new OpenBaoPkiEngine(new OpenBaoClient({ addr: "http://bao:8200", token: "t", fetchFn: ok }));
+    expect(await pki.listRoles()).toEqual(["server", "client"]);
+
+    const empty = fakeFetch(() => ({ status: 404, body: { errors: [] } }));
+    const pki2 = new OpenBaoPkiEngine(new OpenBaoClient({ addr: "http://bao:8200", token: "t", fetchFn: empty }));
+    expect(await pki2.listRoles()).toEqual([]);
+  });
+
+  it("listCertificates also folds 404 (no certs yet) into []", async () => {
+    const empty = fakeFetch(() => ({ status: 404, body: { errors: [] } }));
+    const pki = new OpenBaoPkiEngine(new OpenBaoClient({ addr: "http://bao:8200", token: "t", fetchFn: empty }));
+    expect(await pki.listCertificates()).toEqual([]);
+  });
+
+  it("readRole normalises the documented role fields + collects unknowns into extra", async () => {
+    const fetchFn = fakeFetch((url, init) => {
+      expect(url).toBe("http://bao:8200/v1/pki/roles/server");
+      expect(init.method).toBe("GET");
+      return {
+        status: 200,
+        body: {
+          data: {
+            name: "server",
+            ttl: 3600,
+            max_ttl: "72h",
+            allow_any_name: false,
+            allow_subdomains: true,
+            allow_bare_domains: true,
+            allowed_domains: "arc.test,foo.bar",
+            key_type: "rsa",
+            key_bits: 2048,
+            // Backend-specific extras we don't model directly:
+            signature_bits: 256,
+            key_usage: ["DigitalSignature", "KeyEncipherment"],
+          },
+        },
+      };
+    });
+    const pki = new OpenBaoPkiEngine(new OpenBaoClient({ addr: "http://bao:8200", token: "t", fetchFn }));
+    const role = await pki.readRole("server");
+    expect(role.name).toBe("server");
+    expect(role.ttlSeconds).toBe(3600);
+    expect(role.maxTtlSeconds).toBe(72 * 3600); // "72h" → seconds
+    expect(role.allowAnyName).toBe(false);
+    expect(role.allowSubdomains).toBe(true);
+    expect(role.allowBareDomains).toBe(true);
+    expect(role.allowedDomains).toEqual(["arc.test", "foo.bar"]);
+    expect(role.keyType).toBe("rsa");
+    expect(role.keyBits).toBe(2048);
+    expect(role.extra?.signature_bits).toBe(256);
+    expect(role.extra?.key_usage).toEqual(["DigitalSignature", "KeyEncipherment"]);
+  });
 });

@@ -1134,6 +1134,158 @@ export class VaultClient {
     return base64ToBytes(r.data.plaintext);
   }
 
+  // -- Engine A · PKI ---------------------------------------------------------
+  //
+  // Thin client over arc-server's PKI dispatcher. Issuing a cert is a write of
+  // `<mount>/issue/<role>`; OpenBao mints the keypair server-side and returns the leaf,
+  // the issuing CA, the chain, and the private key. The private key only crosses the
+  // wire once — the caller MUST persist it or the cert is unusable. arc surfaces the
+  // material in the issue-ceremony dialog with a clear copy-or-lose warning.
+
+  /** Names of every configured PKI role on the mount. */
+  async pkiListRoles(mount: string): Promise<string[]> {
+    const r = await this.http<{ data: { keys?: string[] } }>(
+      "GET",
+      `/v1/${joinMount(mount)}roles?list=true`,
+    );
+    return r.data.keys ?? [];
+  }
+
+  /** Read a role's config (TTL ceilings, allowed CN/SAN patterns, key params). */
+  async pkiReadRole(mount: string, name: string): Promise<PkiRoleWire> {
+    const r = await this.http<{ data: Record<string, unknown> & { name?: string } }>(
+      "GET",
+      `/v1/${joinMount(mount)}roles/${normaliseKvPath(name)}`,
+    );
+    const d = r.data;
+    const known = new Set([
+      "name",
+      "ttl",
+      "max_ttl",
+      "allow_any_name",
+      "allow_subdomains",
+      "allow_bare_domains",
+      "allowed_domains",
+      "key_type",
+      "key_bits",
+    ]);
+    const out: PkiRoleWire = { name: typeof d.name === "string" ? d.name : name };
+    if (typeof d.ttl === "number") out.ttlSeconds = d.ttl;
+    if (typeof d.max_ttl === "number") out.maxTtlSeconds = d.max_ttl;
+    if (typeof d.allow_any_name === "boolean") out.allowAnyName = d.allow_any_name;
+    if (typeof d.allow_subdomains === "boolean") out.allowSubdomains = d.allow_subdomains;
+    if (typeof d.allow_bare_domains === "boolean") out.allowBareDomains = d.allow_bare_domains;
+    if (Array.isArray(d.allowed_domains)) {
+      out.allowedDomains = d.allowed_domains.filter((x): x is string => typeof x === "string");
+    } else if (typeof d.allowed_domains === "string") {
+      out.allowedDomains = d.allowed_domains.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    if (typeof d.key_type === "string") out.keyType = d.key_type;
+    if (typeof d.key_bits === "number") out.keyBits = d.key_bits;
+    const extra: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(d)) if (!known.has(k)) extra[k] = v;
+    if (Object.keys(extra).length > 0) out.extra = extra;
+    return out;
+  }
+
+  /** Serial numbers of every cert the CA has minted. Empty list when nothing's been issued. */
+  async pkiListCertificates(mount: string): Promise<string[]> {
+    const r = await this.http<{ data: { keys?: string[] } }>(
+      "GET",
+      `/v1/${joinMount(mount)}certs?list=true`,
+    );
+    return r.data.keys ?? [];
+  }
+
+  /** PEM + revocation status for one cert by serial. */
+  async pkiReadCertificate(
+    mount: string,
+    serialNumber: string,
+  ): Promise<{ certificate: string; revocationTime?: number }> {
+    const r = await this.http<{ data: { certificate: string; revocation_time?: number } }>(
+      "GET",
+      `/v1/${joinMount(mount)}cert/${normaliseKvPath(serialNumber)}`,
+    );
+    const out: { certificate: string; revocationTime?: number } = { certificate: r.data.certificate };
+    if (typeof r.data.revocation_time === "number" && r.data.revocation_time > 0) {
+      out.revocationTime = r.data.revocation_time;
+    }
+    return out;
+  }
+
+  /** PEM-encoded CA issuer cert at `<mount>/ca/pem`. */
+  async pkiReadCa(mount: string): Promise<string> {
+    const r = await this.http<{ data: { certificate: string } }>(
+      "GET",
+      `/v1/${joinMount(mount)}ca/pem`,
+    );
+    return r.data.certificate;
+  }
+
+  /** PEM-encoded CA chain at `<mount>/ca_chain` (concatenated, in trust order). */
+  async pkiReadCaChain(mount: string): Promise<string> {
+    const r = await this.http<{ data: { ca_chain: string } }>(
+      "GET",
+      `/v1/${joinMount(mount)}ca_chain`,
+    );
+    return r.data.ca_chain;
+  }
+
+  /**
+   * Mint a leaf cert under a role. The private key in the response is the **only** copy
+   * the engine will ever surface — persist it now or the cert is unusable.
+   */
+  async pkiIssueCertificate(
+    mount: string,
+    role: string,
+    req: {
+      commonName: string;
+      ttlSeconds?: number;
+      altNames?: readonly string[];
+      ipSans?: readonly string[];
+      uriSans?: readonly string[];
+    },
+  ): Promise<PkiIssuedCertificateWire> {
+    const body: Record<string, unknown> = { common_name: req.commonName };
+    if (req.ttlSeconds !== undefined) body.ttl = `${req.ttlSeconds}s`;
+    if (req.altNames !== undefined) body.alt_names = [...req.altNames].join(",");
+    if (req.ipSans !== undefined) body.ip_sans = [...req.ipSans].join(",");
+    if (req.uriSans !== undefined) body.uri_sans = [...req.uriSans].join(",");
+    const r = await this.http<{
+      data: {
+        certificate: string;
+        issuing_ca: string;
+        ca_chain: string[];
+        private_key: string;
+        private_key_type: string;
+        serial_number: string;
+        expiration: number;
+      };
+    }>("POST", `/v1/${joinMount(mount)}issue/${normaliseKvPath(role)}`, body);
+    return {
+      certificate: r.data.certificate,
+      issuingCa: r.data.issuing_ca,
+      caChain: r.data.ca_chain ?? [],
+      privateKey: r.data.private_key,
+      privateKeyType: r.data.private_key_type,
+      serialNumber: r.data.serial_number,
+      expiration: r.data.expiration,
+    };
+  }
+
+  /** Revoke a cert by serial. Returns the engine's recorded revocation timestamp. */
+  async pkiRevokeCertificate(
+    mount: string,
+    serialNumber: string,
+  ): Promise<{ revocationTime: number }> {
+    const r = await this.http<{ data: { revocation_time: number } }>(
+      "POST",
+      `/v1/${joinMount(mount)}revoke`,
+      { serial_number: serialNumber },
+    );
+    return { revocationTime: r.data.revocation_time };
+  }
+
   // -- Workflows (Phase 1: JIT-access / approval workflows) -------------------
 
   /** List workflows configured on a vault. Admin+ only on the server side. */
@@ -1875,6 +2027,35 @@ function joinMount(mount: string): string {
 /** Strip leading/trailing slashes from a KV key path; OpenBao rejects empty segments. */
 function normaliseKvPath(path: string): string {
   return path.replace(/^\/+|\/+$/g, "");
+}
+
+/** Wire-shape of {@link VaultClient.pkiReadRole}. Mirrors `PkiRole` from `@arc/secrets-engine`
+ *  but declared locally so the SDK stays free of engine-side imports. */
+export interface PkiRoleWire {
+  name: string;
+  ttlSeconds?: number;
+  maxTtlSeconds?: number;
+  allowAnyName?: boolean;
+  allowSubdomains?: boolean;
+  allowBareDomains?: boolean;
+  allowedDomains?: string[];
+  keyType?: string;
+  keyBits?: number;
+  /** Backend-specific fields surfaced as-is so the UI can render them generically. */
+  extra?: Record<string, unknown>;
+}
+
+/** Wire-shape of {@link VaultClient.pkiIssueCertificate}. The `privateKey` is the only
+ *  copy the engine will ever surface — persist it now or the cert is unusable. */
+export interface PkiIssuedCertificateWire {
+  certificate: string;
+  issuingCa: string;
+  caChain: string[];
+  privateKey: string;
+  privateKeyType: string;
+  serialNumber: string;
+  /** Unix epoch seconds (engine-supplied) when the cert's NotAfter is. */
+  expiration: number;
 }
 
 /** Posture + version metadata for a transit key — wire-shape of {@link VaultClient.transitReadKey}. */

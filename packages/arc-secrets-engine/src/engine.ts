@@ -10,6 +10,7 @@ import type {
   PkiIssueRequest,
   PkiIssuedCertificate,
   PkiRevocation,
+  PkiRole,
   PkiSignedCertificate,
   PkiSignRequest,
 } from "./types";
@@ -144,6 +145,10 @@ export interface PkiEngine extends SecretsEngine {
   revokeCertificate(serialNumber: string): Promise<PkiRevocation>;
   readCertificate(serialNumber: string): Promise<PkiCertificate>;
   listCertificates(): Promise<string[]>;
+  /** Names of every configured role on the mount, or `[]` when none / mount empty. */
+  listRoles(): Promise<string[]>;
+  /** Role config — TTL ceilings, allowed CN/SAN patterns, key params, etc. */
+  readRole(roleName: string): Promise<PkiRole>;
   /** PEM-encoded issuer cert at `<mount>/ca/pem`. */
   readCaCertificate(): Promise<string>;
   /** PEM-encoded CA chain at `<mount>/ca_chain`. */

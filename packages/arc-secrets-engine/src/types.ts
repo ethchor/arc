@@ -65,6 +65,35 @@ export interface PkiRevocation {
   revocationTime: number;
 }
 
+/**
+ * Surface of a PKI role config that's useful for an operator UI. Roles are CA-admin
+ * config that gates what `issue/<role>` will mint — TTL ceilings, allowed CN/SAN
+ * patterns, etc. The set of recognised fields matches Vault/OpenBao's HTTP API; backend-
+ * specific extras (`signature_bits`, `key_usage`, …) are left in `extra` so the UI can
+ * surface them generically without a type change every time OpenBao adds a knob.
+ */
+export interface PkiRole {
+  name: string;
+  /** Default TTL (seconds) used when the issue request omits its own. */
+  ttlSeconds?: number;
+  /** Hard ceiling on `ttl` for any cert issued under this role. */
+  maxTtlSeconds?: number;
+  /** When `true`, the role can mint a cert with a CN outside its allowed domains. */
+  allowAnyName?: boolean;
+  /** When `true`, `<sub>.<domain>` (any depth) is acceptable. */
+  allowSubdomains?: boolean;
+  /** When `true`, the bare apex domain is acceptable. */
+  allowBareDomains?: boolean;
+  /** Comma- or array-allowed CN/SAN domains; normalised to an array here. */
+  allowedDomains?: string[];
+  /** Allowed key type (`rsa`, `ec`, `ed25519`, `any`). */
+  keyType?: string;
+  /** RSA modulus / EC curve size, in bits. */
+  keyBits?: number;
+  /** Fields we don't recognise yet — surfaced as-is in the UI's details accordion. */
+  extra?: Record<string, unknown>;
+}
+
 export interface MountConfig {
   /** Mount path; normalized to a single trailing slash on registration. */
   path: string;

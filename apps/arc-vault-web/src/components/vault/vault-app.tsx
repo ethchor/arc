@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, FileClock, KeyRound, RotateCw, Shield } from "lucide-react";
+import { Clock, FileClock, KeyRound, RotateCw } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import type { JsonValue, TotpAlgorithm } from "@arc/types";
 import { toast } from "sonner";
@@ -33,6 +33,7 @@ import { DevicesDialog } from "@/components/vault/devices-dialog";
 import { InfoView } from "@/components/vault/info-view";
 import { KvView } from "@/components/vault/kv-view";
 import { TransitView } from "@/components/vault/transit-view";
+import { PkiView } from "@/components/vault/pki-view";
 import type { LoginInput } from "@/components/vault/item-dialog";
 import type { NoteInput } from "@/components/vault/note-dialog";
 import type { SecretInput } from "@/components/vault/secret-dialog";
@@ -528,15 +529,7 @@ export function VaultApp() {
           />
         )}
         {section === "transit" && <TransitView getClient={getClient} />}
-        {section === "pki" && (
-          <PreviewScreen
-            eyebrow="Engine A · infrastructure"
-            title="PKI"
-            description="CA chain, roles, an issue-certificate flow, the issued-certs table, and revoke with serial/expiry."
-            icon={Shield}
-            engine="Engine A"
-          />
-        )}
+        {section === "pki" && <PkiView getClient={getClient} />}
 
         {section === "vault" && (
           <VaultView
