@@ -551,9 +551,11 @@ function LeaseRow({
       <KeyRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[12px] font-medium" title={lease.leaseId}>
-            {lease.role}
-          </span>
+          <IconTip label="Lease ID" hint={lease.leaseId} side="top">
+            <span className="font-mono text-[12px] font-medium">
+              {lease.role}
+            </span>
+          </IconTip>
           <span className="font-mono text-[11px] text-muted-foreground">
             {lease.mount}
           </span>
@@ -577,9 +579,11 @@ function LeaseRow({
               renewable
             </Badge>
           ) : null}
-          <span className="font-mono text-[10px] text-muted-foreground" title={lease.leaseId}>
-            {lease.leaseId.slice(0, 12)}…
-          </span>
+          <IconTip label="Lease ID" hint={lease.leaseId} side="top">
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {lease.leaseId.slice(0, 12)}…
+            </span>
+          </IconTip>
         </div>
       </div>
       <div className="flex items-center gap-1">

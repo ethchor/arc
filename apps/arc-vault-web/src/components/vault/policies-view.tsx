@@ -20,10 +20,13 @@ const CAPS: { cap: string; roles: Role[] }[] = [
 
 export function PoliciesView({ role }: { role?: string }) {
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold">Policies</h1>
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+    <div className="space-y-5">
+      <div className="space-y-1">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          Govern · policies
+        </span>
+        <h1 className="font-display text-2xl font-medium tracking-tight">Policies</h1>
+        <p className="flex max-w-prose flex-wrap items-center gap-2 text-sm text-muted-foreground">
           Role-based capabilities for this vault. Your role:
           <Badge variant="secondary" className="capitalize">
             {role ?? "—"}
@@ -68,7 +71,7 @@ export function PoliciesView({ role }: { role?: string }) {
           </table>
         </CardContent>
       </Card>
-      <div className="flex gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+      <div className="flex gap-2 rounded-[var(--radius-md)] border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
         <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
         <p className="text-muted-foreground">
           Write, invite, and management actions are <strong>server-enforced</strong> by role. Read

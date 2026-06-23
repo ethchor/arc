@@ -268,9 +268,11 @@ function LeaseRow({
       <EngineIcon type={lease.engineType} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[12px] font-medium" title={lease.id}>
-            {lease.id.slice(0, 14)}…
-          </span>
+          <IconTip label="Lease ID" hint={lease.id} side="top">
+            <span className="font-mono text-[12px] font-medium">
+              {lease.id.slice(0, 14)}…
+            </span>
+          </IconTip>
           <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
             {lease.engineType}
           </Badge>
