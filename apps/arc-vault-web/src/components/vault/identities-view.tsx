@@ -15,6 +15,7 @@ import type { AgentIdentity } from "@arc/sdk";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { IconTip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -187,13 +188,18 @@ function AgentRow({
             {style.label}
           </Badge>
           {agent.attestation?.kind === "spiffe" ? (
-            <Badge
-              variant="outline"
-              className="gap-1 border-sky-500/30 font-normal text-sky-200"
-              title={agent.attestation.subject ?? undefined}
+            <IconTip
+              label="SPIFFE attestation"
+              hint={agent.attestation.subject ?? "no subject"}
+              side="top"
             >
-              <ShieldCheck className="h-3 w-3" /> SPIFFE
-            </Badge>
+              <Badge
+                variant="outline"
+                className="gap-1 border-sky-500/30 font-normal text-sky-200"
+              >
+                <ShieldCheck className="h-3 w-3" /> SPIFFE
+              </Badge>
+            </IconTip>
           ) : (
             <Badge variant="outline" className="gap-1 border-zinc-500/30 font-normal text-zinc-400">
               <ShieldOff className="h-3 w-3" /> No attestation

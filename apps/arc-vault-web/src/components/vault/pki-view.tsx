@@ -523,9 +523,11 @@ function CertsTab({ mount, getClient }: { mount: string; getClient: () => VaultC
             return (
               <li key={serial} className="flex items-center gap-3 px-3 py-2.5">
                 <KeyRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={serial}>
-                  {serial}
-                </span>
+                <IconTip label="Serial number" hint={serial} side="top">
+                  <span className="min-w-0 flex-1 truncate font-mono text-[12px]">
+                    {serial}
+                  </span>
+                </IconTip>
                 {revoked ? (
                   <Badge variant="secondary" className="bg-[var(--danger-subtle)] text-[var(--danger-fg)]">
                     revoked · {relativeAgo(new Date(status!.revokedAt! * 1000).toISOString())}

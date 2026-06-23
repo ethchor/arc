@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { FileClock, RotateCw } from "lucide-react";
+import { RotateCw } from "lucide-react";
 import type { AuditEvent } from "@arc/sdk";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,35 +77,37 @@ export function AuditView({
   }, [vaultId, fetchPage]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <FileClock className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-base font-semibold">Audit log</h2>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-1">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            Govern · audit
+          </span>
+          <h1 className="font-display text-2xl font-medium tracking-tight">Audit log</h1>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Metadata-only record of activity on this vault. Item contents and key material
+            never appear here — only who did what and when. Newest first.
+          </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => fetchPage()} disabled={busy}>
           <RotateCw className="h-4 w-4" /> Refresh
         </Button>
       </div>
-      <p className="text-sm text-muted-foreground">
-        Metadata-only record of activity on this vault. Item contents and key material
-        never appear here — only who did what and when. Newest first.
-      </p>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm">
+        <div className="rounded-[var(--radius-md)] border border-destructive/30 bg-destructive/10 p-3 text-sm">
           {error}
         </div>
       )}
 
       {!error && events.length === 0 && !busy && (
-        <p className="rounded-md border bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+        <p className="rounded-[var(--radius-md)] border bg-muted/40 p-6 text-center text-sm text-muted-foreground">
           No audit events yet. Activity on this vault will show up here.
         </p>
       )}
 
       {events.length > 0 && (
-        <div className="overflow-hidden rounded-md border">
+        <div className="overflow-hidden rounded-[var(--radius-lg)] border">
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-muted-foreground">
               <tr>
