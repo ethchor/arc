@@ -67,6 +67,17 @@ export class PluginSecretsEngine implements DynamicSecretsEngine {
     this.leases.revoke(leaseId);
   }
 
+  /**
+   * Plugin SDKs don't expose a uniform `listRoles` today — role discovery is plugin-
+   * specific (some hard-code, some read from their config). Return `[]` for now; the
+   * dispatcher renders this as an honest "no roles discoverable" empty state. Plugins
+   * that want to surface roles in the operator UI can opt-in once arc-plugin-sdk gains
+   * a discovery method.
+   */
+  async listRoles(): Promise<string[]> {
+    return [];
+  }
+
   private requireLease(leaseId: string): Lease {
     const lease = this.leases.get(leaseId);
     if (!lease) throw new LeaseError("not_found", `no lease ${leaseId}`);

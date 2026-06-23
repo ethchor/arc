@@ -293,6 +293,20 @@ export class EnginesService {
       }
       throw new NotFoundException({ errors: [`unsupported PKI path: ${relativePath}`] });
     }
+    // Dynamic-secrets engines (database, plugin-backed cloud/scm/db) also expose
+    // `<mount>/roles?list=true` so the operator UI can populate its issue-credential
+    // picker without hard-coding role names. Routing is by capability — if the engine
+    // didn't implement `listRoles` we 404 below rather than throw a TypeError.
+    if (
+      (query.list === "true" || query.list === "1") &&
+      relativePath === "roles" &&
+      isDynamicSecretsEngine(engine) &&
+      hasListRoles(engine)
+    ) {
+      this.requirePluginCapability(mountPath, "list");
+      const keys = await engine.listRoles();
+      return { data: { keys } };
+    }
     // Any dynamic-secrets engine — including plugin-backed mounts — exposes credentials
     // through `<mount>/creds/<role>`. Routing is by capability (DynamicSecretsEngine
     // shape), not by `type` string, so plugins don't need to claim "database".
@@ -652,6 +666,14 @@ export class EnginesService {
 function isDynamicSecretsEngine(engine: SecretsEngine): engine is DynamicSecretsEngine {
   const probe = engine as Partial<DynamicSecretsEngine>;
   return typeof probe.issue === "function" && typeof probe.renew === "function";
+}
+
+/** Plugin-backed dynamic engines may pre-date the `listRoles` contract addition; probe
+ *  before invoking so an older plugin returns 404 (handled below) rather than TypeError. */
+function hasListRoles(engine: DynamicSecretsEngine): engine is DynamicSecretsEngine & {
+  listRoles: () => Promise<string[]>;
+} {
+  return typeof (engine as { listRoles?: unknown }).listRoles === "function";
 }
 
 /**

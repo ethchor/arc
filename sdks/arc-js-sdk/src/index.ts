@@ -1286,6 +1286,69 @@ export class VaultClient {
     return { revocationTime: r.data.revocation_time };
   }
 
+  // -- Engine A · Dynamic credentials -----------------------------------------
+  //
+  // Mints short-lived credentials (DB users, AWS STS, GitHub App tokens, …) and tracks
+  // them via arc's lease registry rather than the upstream backend id. Callers see
+  // arc-internal lease UUIDs through every call; the backend's lease id stays server-side.
+
+  /** Names of every role configured on a dynamic-secrets mount. */
+  async credsListRoles(mount: string): Promise<string[]> {
+    const r = await this.http<{ data: { keys?: string[] } }>(
+      "GET",
+      `/v1/${joinMount(mount)}roles?list=true`,
+    );
+    return r.data.keys ?? [];
+  }
+
+  /**
+   * Mint a credential under a role. Returns the credential fields the engine produced
+   * (e.g. `{ username, password }` for databases, STS tuples for AWS) plus the new lease.
+   * The lease's `leaseId` is arc-internal — pass it to {@link credsRenewLease} /
+   * {@link credsRevokeLease}, not the backend's id.
+   */
+  async credsIssue(mount: string, role: string): Promise<IssuedCredentialWire> {
+    const r = await this.http<{
+      data: Record<string, unknown>;
+      lease_id: string;
+      lease_duration: number;
+      renewable: boolean;
+    }>("GET", `/v1/${joinMount(mount)}creds/${normaliseKvPath(role)}`);
+    return {
+      data: r.data,
+      leaseId: r.lease_id,
+      leaseDurationSeconds: r.lease_duration,
+      renewable: r.renewable,
+    };
+  }
+
+  /**
+   * Extend a lease's TTL via `POST /v1/sys/leases/renew`. `increment` is seconds; omit
+   * to ask for the lease's current ttl as the increment (the engine clamps to its max).
+   */
+  async credsRenewLease(
+    leaseId: string,
+    increment?: number,
+  ): Promise<{ leaseId: string; leaseDurationSeconds: number; renewable: boolean }> {
+    const body: Record<string, unknown> = { lease_id: leaseId };
+    if (increment !== undefined) body.increment = increment;
+    const r = await this.http<{
+      lease_id: string;
+      lease_duration: number;
+      renewable: boolean;
+    }>("POST", "/v1/sys/leases/renew", body);
+    return {
+      leaseId: r.lease_id,
+      leaseDurationSeconds: r.lease_duration,
+      renewable: r.renewable,
+    };
+  }
+
+  /** Revoke a lease via `POST /v1/sys/leases/revoke`. 204 on success. */
+  async credsRevokeLease(leaseId: string): Promise<void> {
+    await this.http("POST", "/v1/sys/leases/revoke", { lease_id: leaseId });
+  }
+
   // -- Workflows (Phase 1: JIT-access / approval workflows) -------------------
 
   /** List workflows configured on a vault. Admin+ only on the server side. */
@@ -2027,6 +2090,16 @@ function joinMount(mount: string): string {
 /** Strip leading/trailing slashes from a KV key path; OpenBao rejects empty segments. */
 function normaliseKvPath(path: string): string {
   return path.replace(/^\/+|\/+$/g, "");
+}
+
+/** Wire-shape of {@link VaultClient.credsIssue}. The engine-side payload (DB user/password,
+ *  AWS STS triplet, etc.) lands in `data` as opaque key/values; the `leaseId` is
+ *  arc-internal and is what `credsRenewLease` / `credsRevokeLease` accept. */
+export interface IssuedCredentialWire {
+  data: Record<string, unknown>;
+  leaseId: string;
+  leaseDurationSeconds: number;
+  renewable: boolean;
 }
 
 /** Wire-shape of {@link VaultClient.pkiReadRole}. Mirrors `PkiRole` from `@arc/secrets-engine`
