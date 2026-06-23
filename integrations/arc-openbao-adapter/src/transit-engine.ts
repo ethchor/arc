@@ -5,7 +5,9 @@ import type {
   TransitDecryptOptions,
   TransitEncryptOptions,
   TransitEngine,
+  TransitKeyInfo,
 } from "@arc/secrets-engine";
+import { OpenBaoError } from "./client";
 import type { OpenBaoClient, OpenBaoResponse } from "./client";
 
 const strip = (path: string): string => path.replace(/^\/+/, "");
@@ -79,6 +81,66 @@ export class OpenBaoTransitEngine implements TransitEngine {
       throw new TransitProtocolError("expected `latest_version` in transit/keys response");
     }
     return { latestVersion: latest };
+  }
+
+  /**
+   * `LIST <mount>/keys` — OpenBao returns `{ data: { keys: ["name1", "name2"] } }`. A
+   * mount with zero keys 404s (Vault parity); we normalise that to an empty array so the
+   * operator UI can render its empty state without a try/catch.
+   */
+  async listKeys(): Promise<string[]> {
+    try {
+      const res = await this.client.list(`${this.mount}keys`);
+      const keys = (res.data as { keys?: unknown } | undefined)?.keys;
+      return Array.isArray(keys) ? (keys as string[]) : [];
+    } catch (err) {
+      if (err instanceof OpenBaoError && err.status === 404) return [];
+      throw err;
+    }
+  }
+
+  /**
+   * `GET <mount>/keys/<name>` — posture + version metadata. Field names normalise to camel
+   * case; backend-specific fields (`keys` blob, `imported_key`, `auto_rotate_period`, …)
+   * are intentionally dropped so the type stays portable across backends with similar
+   * surfaces. Never returns key material.
+   */
+  async readKey(keyName: string): Promise<TransitKeyInfo> {
+    const res = await this.client.read(`${this.mount}keys/${strip(keyName)}`);
+    const data = (res.data ?? {}) as {
+      name?: string;
+      type?: string;
+      latest_version?: number;
+      min_decryption_version?: number;
+      min_encryption_version?: number;
+      deletion_allowed?: boolean;
+      exportable?: boolean;
+      supports_derivation?: boolean;
+      keys?: Record<string, number | string>;
+    };
+    const out: TransitKeyInfo = {
+      name: data.name ?? keyName,
+      type: data.type ?? "",
+      latestVersion: Number(data.latest_version ?? 0),
+      minDecryptionVersion: Number(data.min_decryption_version ?? 0),
+      minEncryptionVersion: Number(data.min_encryption_version ?? 0),
+      deletionAllowed: Boolean(data.deletion_allowed),
+      exportable: Boolean(data.exportable),
+    };
+    if (typeof data.supports_derivation === "boolean") out.supportsDerivation = data.supports_derivation;
+    if (data.keys) {
+      // For most asymmetric/symmetric modes OpenBao puts an ISO 8601 string here; for raw
+      // AES it may put a Unix epoch *number* (seconds). Normalise to ISO strings.
+      const versionCreatedAt: Record<string, string> = {};
+      for (const [k, v] of Object.entries(data.keys)) {
+        if (typeof v === "string") versionCreatedAt[k] = v;
+        else if (typeof v === "number" && Number.isFinite(v)) {
+          versionCreatedAt[k] = new Date(v * 1000).toISOString();
+        }
+      }
+      if (Object.keys(versionCreatedAt).length > 0) out.versionCreatedAt = versionCreatedAt;
+    }
+    return out;
   }
 }
 
