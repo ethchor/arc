@@ -15,6 +15,7 @@ export type {
   PkiSignedCertificate,
   PkiCertificate,
   PkiRevocation,
+  PkiRole,
 } from "./types";
 export type {
   DynamicSecretsEngine,

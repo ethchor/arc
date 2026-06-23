@@ -5,9 +5,11 @@ import type {
   PkiIssueRequest,
   PkiIssuedCertificate,
   PkiRevocation,
+  PkiRole,
   PkiSignedCertificate,
   PkiSignRequest,
 } from "@arc/secrets-engine";
+import { OpenBaoError } from "./client";
 import type { OpenBaoClient } from "./client";
 
 const strip = (path: string): string => path.replace(/^\/+/, "");
@@ -67,9 +69,69 @@ export class OpenBaoPkiEngine implements PkiEngine {
   }
 
   async listCertificates(): Promise<string[]> {
-    const res = await this.client.list(`${this.mount}certs`);
-    const keys = (res.data as { keys?: unknown } | undefined)?.keys;
-    return Array.isArray(keys) ? (keys as string[]) : [];
+    try {
+      const res = await this.client.list(`${this.mount}certs`);
+      const keys = (res.data as { keys?: unknown } | undefined)?.keys;
+      return Array.isArray(keys) ? (keys as string[]) : [];
+    } catch (err) {
+      // OpenBao returns 404 when a mount has no certs yet (Vault parity). Normalise to [].
+      if (err instanceof OpenBaoError && err.status === 404) return [];
+      throw err;
+    }
+  }
+
+  async listRoles(): Promise<string[]> {
+    try {
+      const res = await this.client.list(`${this.mount}roles`);
+      const keys = (res.data as { keys?: unknown } | undefined)?.keys;
+      return Array.isArray(keys) ? (keys as string[]) : [];
+    } catch (err) {
+      if (err instanceof OpenBaoError && err.status === 404) return [];
+      throw err;
+    }
+  }
+
+  /**
+   * `GET <mount>/roles/<name>` — role config. Maps the documented fields to
+   * {@link PkiRole}; anything we don't recognise (`signature_bits`, `key_usage`,
+   * `allowed_uri_sans`, …) is collected into `extra` so the UI can surface the full
+   * config without a contract change for every OpenBao knob.
+   */
+  async readRole(roleName: string): Promise<PkiRole> {
+    const res = await this.client.read(`${this.mount}roles/${strip(roleName)}`);
+    const data = (res.data ?? {}) as Record<string, unknown>;
+    const known = new Set([
+      "ttl",
+      "max_ttl",
+      "allow_any_name",
+      "allow_subdomains",
+      "allow_bare_domains",
+      "allowed_domains",
+      "key_type",
+      "key_bits",
+    ]);
+    const role: PkiRole = { name: roleName };
+    const ttl = toSeconds(data.ttl);
+    if (ttl !== undefined) role.ttlSeconds = ttl;
+    const maxTtl = toSeconds(data.max_ttl);
+    if (maxTtl !== undefined) role.maxTtlSeconds = maxTtl;
+    if (typeof data.allow_any_name === "boolean") role.allowAnyName = data.allow_any_name;
+    if (typeof data.allow_subdomains === "boolean") role.allowSubdomains = data.allow_subdomains;
+    if (typeof data.allow_bare_domains === "boolean") role.allowBareDomains = data.allow_bare_domains;
+    const domains = data.allowed_domains;
+    if (typeof domains === "string") {
+      role.allowedDomains = domains.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+    } else if (Array.isArray(domains)) {
+      role.allowedDomains = domains.filter((d): d is string => typeof d === "string");
+    }
+    if (typeof data.key_type === "string") role.keyType = data.key_type;
+    if (typeof data.key_bits === "number") role.keyBits = data.key_bits;
+    const extra: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (!known.has(k)) extra[k] = v;
+    }
+    if (Object.keys(extra).length > 0) role.extra = extra;
+    return role;
   }
 
   async readCaCertificate(): Promise<string> {
@@ -135,6 +197,23 @@ function parseSigned(raw: Record<string, unknown> | undefined): PkiSignedCertifi
 function toStringArray(v: unknown): string[] {
   if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
   return [];
+}
+
+/**
+ * OpenBao returns role TTLs as either a number (seconds since some versions normalise it
+ * server-side) or a Vault TTL string (`"24h"`, `"60m"`, `"3600s"`, bare integer). Parse
+ * both forms back into a seconds integer; return `undefined` for anything we can't parse
+ * so the caller leaves the field unset rather than fabricating a value.
+ */
+function toSeconds(raw: unknown): number | undefined {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw >= 0 ? raw : undefined;
+  if (typeof raw !== "string" || raw.length === 0) return undefined;
+  const m = /^(\d+)\s*(s|m|h|d)?$/i.exec(raw.trim());
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  const unit = (m[2] ?? "s").toLowerCase();
+  const mult = unit === "s" ? 1 : unit === "m" ? 60 : unit === "h" ? 3600 : 86400;
+  return n * mult;
 }
 
 export class PkiProtocolError extends Error {
