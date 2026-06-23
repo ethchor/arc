@@ -52,6 +52,8 @@ export interface DynamicSecretsEngine extends SecretsEngine {
   issue(role: string, opts?: IssueOptions): Promise<IssuedCredential>;
   renew(leaseId: string, incrementSeconds?: number): Promise<Lease>;
   revoke(leaseId: string): Promise<void>;
+  /** Names of every configured role under this mount. `[]` when the mount has none yet. */
+  listRoles(): Promise<string[]>;
 }
 
 /**

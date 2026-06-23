@@ -4,6 +4,7 @@ import type {
   IssueOptions,
   IssuedCredential,
 } from "@arc/secrets-engine";
+import { OpenBaoError } from "./client";
 import type { OpenBaoClient } from "./client";
 
 const strip = (path: string): string => path.replace(/^\/+/, "");
@@ -75,6 +76,22 @@ export class OpenBaoDatabaseEngine implements DynamicSecretsEngine {
       await this.client.write("sys/leases/revoke", { lease_id: lease.backendLeaseId });
     }
     this.leases.revoke(leaseId);
+  }
+
+  /**
+   * `LIST <mount>/roles` — every configured Vault DB role on this mount. A mount with
+   * no roles 404s upstream; we normalise to `[]` so the UI's empty state path is one
+   * branch rather than a try/catch.
+   */
+  async listRoles(): Promise<string[]> {
+    try {
+      const res = await this.client.list(`${this.mount}roles`);
+      const keys = (res.data as { keys?: unknown } | undefined)?.keys;
+      return Array.isArray(keys) ? (keys as string[]) : [];
+    } catch (err) {
+      if (err instanceof OpenBaoError && err.status === 404) return [];
+      throw err;
+    }
   }
 
   private requireLease(leaseId: string): Lease {

@@ -209,4 +209,24 @@ describe("OpenBaoDatabaseEngine.revoke", () => {
     await db.issue("app");
     expect(issueUrl).toBe("http://bao:8200/v1/db-prod/creds/app");
   });
+
+  it("listRoles LISTs <mount>/roles and folds a 404 (empty mount) into []", async () => {
+    const ok = fakeFetch((url, init) => {
+      expect(init.method).toBe("LIST");
+      expect(url).toBe("http://bao:8200/v1/database/roles");
+      return { status: 200, body: { data: { keys: ["app-prod", "app-stage"] } } };
+    });
+    const db1 = new OpenBaoDatabaseEngine(
+      new OpenBaoClient({ addr: "http://bao:8200", token: "t", fetchFn: ok }),
+      new LeaseManager(),
+    );
+    expect(await db1.listRoles()).toEqual(["app-prod", "app-stage"]);
+
+    const empty = fakeFetch(() => ({ status: 404, body: { errors: [] } }));
+    const db2 = new OpenBaoDatabaseEngine(
+      new OpenBaoClient({ addr: "http://bao:8200", token: "t", fetchFn: empty }),
+      new LeaseManager(),
+    );
+    expect(await db2.listRoles()).toEqual([]);
+  });
 });

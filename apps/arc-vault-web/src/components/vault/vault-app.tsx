@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, FileClock, KeyRound, RotateCw } from "lucide-react";
+import { Clock, FileClock, RotateCw } from "lucide-react";
 import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import type { JsonValue, TotpAlgorithm } from "@arc/types";
 import { toast } from "sonner";
@@ -22,7 +22,6 @@ import {
   type Density,
   type Persona,
 } from "@/components/vault/console-shell";
-import { PreviewScreen } from "@/components/vault/preview-screen";
 import { DevicesView } from "@/components/vault/devices-view";
 import { HomeView } from "@/components/vault/home-view";
 import { SecurityView } from "@/components/vault/security-view";
@@ -34,6 +33,7 @@ import { InfoView } from "@/components/vault/info-view";
 import { KvView } from "@/components/vault/kv-view";
 import { TransitView } from "@/components/vault/transit-view";
 import { PkiView } from "@/components/vault/pki-view";
+import { CredsView } from "@/components/vault/creds-view";
 import type { LoginInput } from "@/components/vault/item-dialog";
 import type { NoteInput } from "@/components/vault/note-dialog";
 import type { SecretInput } from "@/components/vault/secret-dialog";
@@ -519,15 +519,7 @@ export function VaultApp() {
         )}
         {section === "devices" && <DevicesView getClient={getClient} />}
         {section === "kv" && <KvView getClient={getClient} />}
-        {section === "creds" && (
-          <PreviewScreen
-            eyebrow="Engine A · infrastructure"
-            title="Dynamic credentials"
-            description="Per-mount roles (AWS STS, GCP, GitHub App, database…) with an issue-credential ceremony and live lease TTL."
-            icon={KeyRound}
-            engine="Engine A"
-          />
-        )}
+        {section === "creds" && <CredsView getClient={getClient} />}
         {section === "transit" && <TransitView getClient={getClient} />}
         {section === "pki" && <PkiView getClient={getClient} />}
 
