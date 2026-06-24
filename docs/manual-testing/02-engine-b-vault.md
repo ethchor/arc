@@ -130,7 +130,75 @@ Need a second account:
 > asserts that no `ct`/`tag`/`n` ciphertext substring and no plaintext key/value appears
 > in the audit metadata. This invariant is enforced programmatically, not by convention.
 
-## J. Auto-lock + never-persist-keys
+## J. Security dashboard (weak / reused / old / exposed)
+
+Every check below runs **on this device** over already-decrypted items — the server
+never sees plaintext, hashes, or this report (`apps/arc-vault-web/src/lib/security.ts`).
+
+1. From an unlocked vault click **Security** in the left nav. The score ring + four stat
+   cards render: Security score, Need attention, 2FA coverage, Strong & unique.
+2. With one strong random login + nothing else, score reads **100** and "Nothing flagged".
+3. Edit your `GitHub` login → set password to `vimu@123`. Save. Return to **Security**.
+   - The item appears under **Needs attention** with reason "Fair — could be stronger".
+   - Weak bucket = 1, Strong & unique = 0, score drops.
+   - **Regression note**: the classifier was charset-entropy only before #99. `vimu@123`
+     used to score "Strong"; the structure-aware rewrite now flags the word-plus-suffix
+     template correctly. If this slips back to Strong, #99 has regressed.
+4. Create a second login with the **same password** — the reused bucket goes to 2.
+5. Items whose login has lived in the vault for **>1 year** flag as `old` (mid) and
+   **>2 years** as `old` (high). Verify by writing one with an artificially old
+   `updatedAt` via the SDK if you have one handy; otherwise this is automatic over time.
+
+## K. Breach exposure (opt-in HIBP, k-anonymity)
+
+The single network call this screen ever makes. Disabled until pressed.
+
+1. Security → **Check for breaches**.
+2. DevTools → Network: the only outbound is `GET https://api.pwnedpasswords.com/range/XXXXX`
+   where `XXXXX` is the first **5 hex chars of the SHA-1** of each unique password — never
+   the password, never the full hash. `Add-Padding: true` header sent so the response
+   length doesn't leak the real match count.
+3. Verdict folds into the report: exposed logins show under **Needs attention** with
+   "Found in N known breaches" + the score drops further (breach has the heaviest weight).
+4. CSP check: `next.config.mjs` and `apps/arc-vault-desktop/src-tauri/tauri.conf.json`
+   must both allowlist `https://api.pwnedpasswords.com` in `connect-src` — otherwise the
+   call is silently blocked by CSP, not a runtime error. If the verdict never returns,
+   that's the first thing to check (#102).
+
+## L. Fix-weak wizard
+
+Walks the queue of flagged items, rotating each password under the existing save path —
+no new write surface (`apps/arc-vault-web/src/components/vault/fix-weak-wizard.tsx`).
+
+1. With at least one weak / reused / exposed login flagged: header → **Fix all**.
+2. Each step pre-fills a freshly generated strong password (`generatePassword()`); shows
+   the live strength meter; offers **Save & next** / **Skip** / regenerate.
+3. **Save & next** calls the same `saveLogin` path as `ItemDialog`'s editor — preserves
+   the item's other fields and only swaps the password. The item drops out of the bucket
+   on the next pull, score climbs.
+4. **Skip** advances without touching the item.
+5. Completion step reports `Rotated N, skipped M`.
+6. Per-row **Fix** on a single flagged row runs the wizard for just that item; clicking
+   the **row title** still jumps to the item in the vault (full edit, not just rotate).
+
+## M. Home — device posture
+
+The Home card "Your devices" used to be a placeholder linking to the Devices screen;
+since #104 it loads `client.listDevices()` + `client.listPasskeys()` and shows real
+numbers + an inactivity nudge.
+
+1. From an unlocked vault click **Home**.
+2. **Your devices** card shows three stats: total **devices**, **trusted** count,
+   registered **passkeys**.
+3. Counts match the dedicated **Devices** screen (open it side-by-side to confirm).
+4. To exercise the inactivity nudge: enroll a second device, then revoke the touch
+   timestamp manually (`UPDATE vault_devices SET last_seen_at = NOW() - INTERVAL '41 days'
+   WHERE id = …`). On next Home reload, the amber **"N inactive 40+ days"** nudge
+   appears with a "in Devices" link.
+5. Untrusted-only — trusted devices are exempt from the policy (DevicesView's
+   `isInactive`), so a trusted device 90 days stale won't trip the nudge.
+
+## N. Auto-lock + never-persist-keys
 
 1. With the vault unlocked: leave the browser idle for the configured idle timeout
    (default 5 min in the web app).
@@ -142,7 +210,7 @@ Need a second account:
 > IndexedDB. You'll see auth-token metadata + UI prefs only. No master key, no identity
 > priv, no VK.
 
-## K. CLI smoke (optional)
+## O. CLI smoke (optional)
 
 Same flow from the command line:
 

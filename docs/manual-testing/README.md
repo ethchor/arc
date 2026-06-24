@@ -16,12 +16,13 @@ authenticators, the live OpenBao backend, and the cross-engine UX.
 | `01-bootstrap.md` | Clone → install → build → run the full stack locally |
 | `02-engine-b-vault.md` | Engine-B (E2E vault) — enroll, unlock, items, folders, sharing, rotation, devices, recovery, audit |
 | `03-passkey-unlock.md` | Register a passkey → unlock with it (server + SDK shipped, web UI pending) |
-| `04-engine-a-openbao.md` | Engine-A (OpenBao-backed) — KV v2, transit, PKI, database dynamic creds |
+| `04-engine-a-openbao.md` | Engine-A (OpenBao-backed) — KV v2, transit, PKI, database dynamic creds (HTTP/CLI) |
 | `05-plugin-host.md` | Mount the AWS / GCP / GitHub plugins programmatically + dispatch through `/v1` |
 | `06-grants-acl.md` | Per-mount ACL — bootstrap root, create policies, attach/detach, default-deny |
 | `07-cli.md` | `arc-vault` CLI: login, enroll, create-vault, set/get, TOTP |
 | `08-e2e-scripts.md` | Cross-engine flows (e.g. "store a DB password in Engine B + mint a DB cred via Engine A") |
 | `09-troubleshooting.md` | Common failures and how to diagnose them |
+| `10-operator-engines.md` | Engine-A through the **operator UI** — KV browser, Transit playground, PKI issue/revoke, dynamic creds ceremony, server-wide Leases (PRs #108–#112) |
 
 ## Quick-start (TL;DR)
 
@@ -48,11 +49,16 @@ Everything else, in order of "what to try first":
 
 1. [`01-bootstrap.md`](01-bootstrap.md) — get the stack running
 2. [`02-engine-b-vault.md`](02-engine-b-vault.md) — the consumer vault flow (always-works,
-   no docker required)
+   no docker required) — now covers the **Security dashboard**, **breach exposure** (HIBP
+   k-anonymity), **fix-weak wizard**, and **Home device posture**
 3. [`04-engine-a-openbao.md`](04-engine-a-openbao.md) — once OpenBao is up, infra-secrets
-4. [`05-plugin-host.md`](05-plugin-host.md), [`06-grants-acl.md`](06-grants-acl.md) — the
+   through the HTTP / CLI surface
+4. [`10-operator-engines.md`](10-operator-engines.md) — the same engines through the
+   **operator web UI**: KV browser, Transit playground, PKI issuance, dynamic creds,
+   server-wide Leases
+5. [`05-plugin-host.md`](05-plugin-host.md), [`06-grants-acl.md`](06-grants-acl.md) — the
    platform pieces
-5. [`08-e2e-scripts.md`](08-e2e-scripts.md) — verify the two engines feel like one product
+6. [`08-e2e-scripts.md`](08-e2e-scripts.md) — verify the two engines feel like one product
 
 For a feature-by-feature checklist (good for release validation):
 [`checklist.md`](checklist.md).
