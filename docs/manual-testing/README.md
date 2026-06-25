@@ -60,5 +60,9 @@ Everything else, in order of "what to try first":
    platform pieces
 6. [`08-e2e-scripts.md`](08-e2e-scripts.md) — verify the two engines feel like one product
 
+> **Going to prod?** Read [`../production-hardening.md`](../production-hardening.md)
+> first — the env-var contract, boot-time fail-closed gates, and the per-variable
+> reference. This guide is for QA; that doc is for ops.
+
 For a feature-by-feature checklist (good for release validation):
 [`checklist.md`](checklist.md).
