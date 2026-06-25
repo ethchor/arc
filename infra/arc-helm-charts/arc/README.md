@@ -3,6 +3,12 @@
 Deploys [arc](https://github.com/ethchor/arc) — Engine-A (OpenBao-backed infra secrets) +
 Engine-B (Bitwarden-class E2E vault) — to a Kubernetes cluster.
 
+> **Before installing in a non-dev cluster**: read
+> [`docs/production-hardening.md`](../../../docs/production-hardening.md) for the env-var
+> contract (what arc-server requires + what it fails-closed on). This chart bakes most of
+> it in but a few values still need your real-domain inputs (`ARC_PASSKEY_RP_ID`,
+> `CORS_ORIGINS`, `ARC_ROOT_USERS`).
+
 ## TL;DR
 
 ```bash
