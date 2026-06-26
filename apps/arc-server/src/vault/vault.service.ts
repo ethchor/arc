@@ -486,6 +486,10 @@ export class VaultService {
       const vault = await mgr.findOne(VaultEntity, { where: { id: vaultId } });
       if (!vault) throw new NotFoundException("vault not found");
       vault.currentKeyVersion = dto.newKeyVersion;
+      // The vault name is sealed under the VK, so the client re-seals it under the new key and
+      // sends it here; without this the name breaks on every rotation. `undefined` (older
+      // clients) leaves the stored name as-is.
+      if (dto.encName !== undefined) vault.encName = dto.encName;
 
       for (const g of dto.grants) {
         await mgr.save(

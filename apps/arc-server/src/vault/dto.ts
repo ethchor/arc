@@ -186,6 +186,14 @@ export class RotateKeyDto {
   @IsInt() @Min(1) newKeyVersion!: number;
   @IsArray() grants!: Array<{ granteeUserId: number; wrappedVaultKey: EnvelopeJson; signature?: EnvelopeJson }>;
   @IsArray() rewrappedItemKeys!: Array<{ itemId: string; wrappedItemKey: EnvelopeJson }>;
+  /**
+   * The vault name re-encrypted under the NEW vault key + key version. `encName` is sealed
+   * directly under the VK (not an item key), so a rotation that bumps the key version without
+   * re-sealing it leaves the name undecryptable — it then silently falls back to the vault
+   * *type* in the UI. Optional + nullable: absent leaves the stored name untouched; `null`
+   * is only meaningful if a future flow clears a name.
+   */
+  @IsOptional() @IsObject() encName?: EnvelopeJson | null;
 }
 
 // --- Passkey unlock (docs/13) ---

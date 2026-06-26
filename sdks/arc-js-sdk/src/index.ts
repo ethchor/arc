@@ -1821,10 +1821,22 @@ export class VaultClient {
       }),
     }));
 
+    // The vault name is sealed directly under the VK, so a rotation that only re-wraps item
+    // keys + grants would leave it undecryptable (the UI then silently shows the vault *type*
+    // instead). Re-seal it under the new key. The name is read with the *current* key (the
+    // server hasn't bumped the version yet). A name that no longer decrypts here (broken by an
+    // earlier rotation) can't be recovered — it's left for the user to re-set.
+    const currentName = (await this.listVaults()).find((v) => v.id === vaultId)?.name;
+    const encName =
+      currentName !== undefined && currentName !== ""
+        ? encryptVaultName(newVk, currentName, newKeyVersion)
+        : undefined;
+
     await this.http("POST", `/vaults/${vaultId}/rotate-key`, {
       newKeyVersion,
       grants,
       rewrappedItemKeys,
+      ...(encName ? { encName } : {}),
     });
     this.vkCache.set(vaultId, { vk: newVk, keyVersion: newKeyVersion });
     return { keyVersion: newKeyVersion };
