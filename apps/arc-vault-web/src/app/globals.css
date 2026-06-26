@@ -311,6 +311,7 @@
     --surface-sunken: #EEF1F5;
     --surface-inset: #F3F5F8;
     --surface-raised: #FFFFFF;
+    --surface-hover: #EFF2F6;   /* row/control hover fill (light) */
 
     --success: #1F9D57;  --success-fg: #155F36;  --success-subtle: #E7F8EE;
     --warning: #DD8214;  --warning-fg: #934E12;  --warning-subtle: #FDF3E7;
@@ -345,6 +346,7 @@
     --surface-sunken: #080B11;
     --surface-inset: #0F131B;
     --surface-raised: #141821;
+    --surface-hover: #1A1F2A;   /* row/control hover fill (dark) */
 
     --success: #36C97B;  --success-fg: #6FD39B;  --success-subtle: rgba(54, 201, 123, 0.13);
     --warning: #EC9B2E;  --warning-fg: #F0B25A;  --warning-subtle: rgba(236, 155, 46, 0.14);
