@@ -23,9 +23,9 @@ import { GrantsService } from "../src/grants/grants.service";
 
 const PW = "correct horse battery staple";
 const profile = "test" as const;
-const hybridPubFrom = (s: ReturnType<typeof enroll>["session"]) => ({ x25519Pub: s.identityPub, mlkemPub: s.identityPubMlkem });
+const hybridPubFrom = (s: Awaited<ReturnType<typeof enroll>>["session"]) => ({ x25519Pub: s.identityPub, mlkemPub: s.identityPubMlkem });
 
-function enrollDtoFrom(e: ReturnType<typeof enroll>) {
+function enrollDtoFrom(e: Awaited<ReturnType<typeof enroll>>) {
   return {
     saltMk: e.keyset.saltMk, saltAuth: e.keyset.saltAuth, argonParams: e.keyset.argonParams,
     authHash: e.keyset.authHash, identityPublicKey: e.keyset.identityPublicKey,
@@ -88,7 +88,7 @@ describe("Engine-C agent self-authentication (ADR-005)", () => {
   }
 
   it("agent authenticates with its signing key and submits its own intents; token carries the act claim", async () => {
-    const E = enroll(PW, { profile });
+    const E = await enroll(PW, { profile });
     const a = await login("agentauth-owner@example.com");
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
     const { agentId, signing } = await registerAgent(a.token, "self-auth-bot");
@@ -130,7 +130,7 @@ describe("Engine-C agent self-authentication (ADR-005)", () => {
 
   it("an agent token can only submit its own intents", async () => {
     const a = await login("agentauth-owner2@example.com");
-    await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(enroll(PW, { profile }))).expect(201);
+    await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(await enroll(PW, { profile }))).expect(201);
     const one = await registerAgent(a.token, "agent-one");
     const two = await registerAgent(a.token, "agent-two");
     const tokenOne = await agentToken(one.agentId, one.signing.priv);
@@ -151,7 +151,7 @@ describe("Engine-C agent self-authentication (ADR-005)", () => {
 
   it("a wrong-key challenge signature is rejected", async () => {
     const a = await login("agentauth-owner3@example.com");
-    await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(enroll(PW, { profile }))).expect(201);
+    await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(await enroll(PW, { profile }))).expect(201);
     const { agentId } = await registerAgent(a.token, "badsig-bot");
     const ch = await request(server).post(`/vault/agents/${agentId}/auth/challenge`).expect(201);
     const wrong = generateSigningKeyPair();
@@ -178,7 +178,7 @@ describe("Engine-C agent self-authentication (ADR-005)", () => {
 
     beforeAll(async () => {
       const a = await login("agentauth-confine@example.com");
-      await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(enroll(PW, { profile }))).expect(201);
+      await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(await enroll(PW, { profile }))).expect(201);
       ownerToken = a.token;
       const reg = await registerAgent(a.token, "confine-bot");
       agentId = reg.agentId;
@@ -239,7 +239,7 @@ describe("Engine-C agent self-authentication (ADR-005)", () => {
    * agent fails with `agent_token_revoked` until the agent re-authenticates".
    */
   it("HIGH-C — closing a task bumps tokenEpoch and revokes outstanding agent JWTs", async () => {
-    const E = enroll(PW, { profile });
+    const E = await enroll(PW, { profile });
     const a = await login("highc-revoke@example.com");
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
     const { agentId, signing } = await registerAgent(a.token, "revoke-bot");

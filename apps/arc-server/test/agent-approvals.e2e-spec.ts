@@ -24,9 +24,9 @@ import { FakeAuthenticator, ORIGIN, RP_ID, stubEnvelope } from "./helpers/fake-a
 const PW = "correct horse battery staple";
 const profile = "test" as const;
 
-const hybridPubFrom = (s: ReturnType<typeof enroll>["session"]) => ({ x25519Pub: s.identityPub, mlkemPub: s.identityPubMlkem });
+const hybridPubFrom = (s: Awaited<ReturnType<typeof enroll>>["session"]) => ({ x25519Pub: s.identityPub, mlkemPub: s.identityPubMlkem });
 
-function enrollDtoFrom(e: ReturnType<typeof enroll>) {
+function enrollDtoFrom(e: Awaited<ReturnType<typeof enroll>>) {
   return {
     saltMk: e.keyset.saltMk, saltAuth: e.keyset.saltAuth, argonParams: e.keyset.argonParams,
     authHash: e.keyset.authHash, identityPublicKey: e.keyset.identityPublicKey,
@@ -88,7 +88,7 @@ describe("Engine-C push-consent for elevated ops (ADR-005 Phase 4)", () => {
 
   /** Full elevated fixture: owner enrolled + passkey, agent, ceilings, elevated delegation, open task. */
   async function setup(email: string, label: string) {
-    const E = enroll(PW, { profile });
+    const E = await enroll(PW, { profile });
     const a = await login(email);
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
     const authn = await registerPasskey(a.token);

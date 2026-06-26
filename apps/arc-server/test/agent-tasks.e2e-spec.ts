@@ -23,12 +23,12 @@ import { GrantsService } from "../src/grants/grants.service";
 const PW = "correct horse battery staple";
 const profile = "test" as const;
 
-const hybridPubFrom = (s: ReturnType<typeof enroll>["session"]) => ({
+const hybridPubFrom = (s: Awaited<ReturnType<typeof enroll>>["session"]) => ({
   x25519Pub: s.identityPub,
   mlkemPub: s.identityPubMlkem,
 });
 
-function enrollDtoFrom(e: ReturnType<typeof enroll>) {
+function enrollDtoFrom(e: Awaited<ReturnType<typeof enroll>>) {
   return {
     saltMk: e.keyset.saltMk,
     saltAuth: e.keyset.saltAuth,
@@ -111,7 +111,7 @@ describe("Engine-C signed intents + task chain (ADR-005 Phase 3)", () => {
 
   /** Full fixture: delegator enrolled, agent registered, ceilings seeded, read delegation created. */
   async function setup(email: string, label: string) {
-    const E = enroll(PW, { profile });
+    const E = await enroll(PW, { profile });
     const a = await login(email);
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
     const keys = freshAgentKeys();

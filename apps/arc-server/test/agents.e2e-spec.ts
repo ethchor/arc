@@ -20,12 +20,12 @@ import { GrantsService } from "../src/grants/grants.service";
 const PW = "correct horse battery staple";
 const profile = "test" as const;
 
-const hybridPubFrom = (s: ReturnType<typeof enroll>["session"]) => ({
+const hybridPubFrom = (s: Awaited<ReturnType<typeof enroll>>["session"]) => ({
   x25519Pub: s.identityPub,
   mlkemPub: s.identityPubMlkem,
 });
 
-function enrollDtoFrom(e: ReturnType<typeof enroll>) {
+function enrollDtoFrom(e: Awaited<ReturnType<typeof enroll>>) {
   return {
     saltMk: e.keyset.saltMk,
     saltAuth: e.keyset.saltAuth,
@@ -103,7 +103,7 @@ describe("Engine-C agent identity + delegation (ADR-005)", () => {
   }
 
   it("register → delegate → effective-scope intersection is enforced", async () => {
-    const E = enroll(PW, { profile });
+    const E = await enroll(PW, { profile });
     const a = await login("delegator@example.com");
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
 
@@ -165,7 +165,7 @@ describe("Engine-C agent identity + delegation (ADR-005)", () => {
   });
 
   it("a delegation cannot exceed the delegator's own authority (no escalation)", async () => {
-    const E = enroll(PW, { profile });
+    const E = await enroll(PW, { profile });
     const a = await login("delegator2@example.com");
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
 
@@ -210,7 +210,7 @@ describe("Engine-C agent identity + delegation (ADR-005)", () => {
   });
 
   it("rejects a delegation signed by the wrong key / claiming a different delegator", async () => {
-    const E = enroll(PW, { profile });
+    const E = await enroll(PW, { profile });
     const a = await login("delegator3@example.com");
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
     const keys = freshAgentKeys();
@@ -253,7 +253,7 @@ describe("Engine-C agent identity + delegation (ADR-005)", () => {
   });
 
   it("autonomous mode is deny-by-default and opt-in; revoke + budget close the door", async () => {
-    const E = enroll(PW, { profile });
+    const E = await enroll(PW, { profile });
     const a = await login("delegator4@example.com");
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
     const keys = freshAgentKeys();
@@ -315,7 +315,7 @@ describe("Engine-C agent identity + delegation (ADR-005)", () => {
   });
 
   it("audit rows carry agent attribution (actorKind/agentId/delegationId)", async () => {
-    const E = enroll(PW, { profile });
+    const E = await enroll(PW, { profile });
     const a = await login("delegator5@example.com");
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
     const keys = freshAgentKeys();
@@ -361,7 +361,7 @@ describe("Engine-C agent identity + delegation (ADR-005)", () => {
   });
 
   it("verifies + records a SPIFFE attestation at registration; rejects a malformed one", async () => {
-    const E = enroll(PW, { profile });
+    const E = await enroll(PW, { profile });
     const a = await login("attested@example.com");
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(E)).expect(201);
     const keys = freshAgentKeys();

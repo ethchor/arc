@@ -29,28 +29,28 @@ const PW = "correct horse battery staple";
 const profile = "test" as const; // fast Argon2id params for tests only
 
 describe("enroll + unlock", () => {
-  it("unlocks with the correct password and recovers the same keys", () => {
-    const e = enroll(PW, { profile });
-    const s = unlock(PW, e.keyset);
+  it("unlocks with the correct password and recovers the same keys", async () => {
+    const e = await enroll(PW, { profile });
+    const s = await unlock(PW, e.keyset);
     expect(toHex(s.identityPriv)).toBe(toHex(e.session.identityPriv));
     expect(toHex(s.signingPriv)).toBe(toHex(e.session.signingPriv));
   });
 
-  it("fails to unlock with a wrong password", () => {
-    const e = enroll(PW, { profile });
-    expect(() => unlock("wrong password", e.keyset)).toThrow();
+  it("fails to unlock with a wrong password", async () => {
+    const e = await enroll(PW, { profile });
+    await expect(unlock("wrong password", e.keyset)).rejects.toThrow();
   });
 
-  it("computes an authHash matching the enrolled one", () => {
-    const e = enroll(PW, { profile });
-    expect(computeAuthHash(PW, e.keyset)).toBe(e.keyset.authHash);
+  it("computes an authHash matching the enrolled one", async () => {
+    const e = await enroll(PW, { profile });
+    expect(await computeAuthHash(PW, e.keyset)).toBe(e.keyset.authHash);
   });
 });
 
 describe("master-password recovery (ADR-006)", () => {
-  it("re-enrolls under a new password with every public key + key version unchanged", () => {
-    const e = enroll("old-master-password", { profile: "test" });
-    const r = recover(e.recoveryKey, e.keyset, "brand-new-master-password", { profile: "test" });
+  it("re-enrolls under a new password with every public key + key version unchanged", async () => {
+    const e = await enroll("old-master-password", { profile: "test" });
+    const r = await recover(e.recoveryKey, e.keyset, "brand-new-master-password", { profile: "test" });
 
     // Pubs + key version are byte-identical — recovery never rotates the identity.
     expect(r.keyset.identityPublicKey).toBe(e.keyset.identityPublicKey);
@@ -68,33 +68,33 @@ describe("master-password recovery (ADR-006)", () => {
     expect(toHex(r.session.signingPriv)).toBe(toHex(e.session.signingPriv));
   });
 
-  it("the new keyset unlocks with the new password, not the old one", () => {
-    const e = enroll("old-pw", { profile: "test" });
-    const r = recover(e.recoveryKey, e.keyset, "new-pw", { profile: "test" });
+  it("the new keyset unlocks with the new password, not the old one", async () => {
+    const e = await enroll("old-pw", { profile: "test" });
+    const r = await recover(e.recoveryKey, e.keyset, "new-pw", { profile: "test" });
 
-    const s = unlock("new-pw", r.keyset);
+    const s = await unlock("new-pw", r.keyset);
     expect(toHex(s.identityPriv)).toBe(toHex(e.session.identityPriv));
-    expect(() => unlock("old-pw", r.keyset)).toThrow();
+    await expect(unlock("old-pw", r.keyset)).rejects.toThrow();
   });
 
-  it("the rotated recovery key recovers again; the old one no longer matches", () => {
-    const e = enroll("pw1", { profile: "test" });
-    const r1 = recover(e.recoveryKey, e.keyset, "pw2", { profile: "test" });
+  it("the rotated recovery key recovers again; the old one no longer matches", async () => {
+    const e = await enroll("pw1", { profile: "test" });
+    const r1 = await recover(e.recoveryKey, e.keyset, "pw2", { profile: "test" });
     // The new recovery key works against the new keyset…
-    const r2 = recover(r1.recoveryKey, r1.keyset, "pw3", { profile: "test" });
+    const r2 = await recover(r1.recoveryKey, r1.keyset, "pw3", { profile: "test" });
     expect(toHex(r2.session.identityPriv)).toBe(toHex(e.session.identityPriv));
     // …and the old recovery key no longer opens the re-wrapped envelopes.
-    expect(() => recover(e.recoveryKey, r1.keyset, "pw4", { profile: "test" })).toThrow();
+    await expect(recover(e.recoveryKey, r1.keyset, "pw4", { profile: "test" })).rejects.toThrow();
   });
 
-  it("refuses a keyset with no recovery-wrapped signing key", () => {
-    const e = enroll("pw", { profile: "test" });
+  it("refuses a keyset with no recovery-wrapped signing key", async () => {
+    const e = await enroll("pw", { profile: "test" });
     const legacy = { ...e.keyset, encSigningPrivRecovery: undefined };
-    expect(() => recover(e.recoveryKey, legacy, "new", { profile: "test" })).toThrow(/ADR-006/);
+    await expect(recover(e.recoveryKey, legacy, "new", { profile: "test" })).rejects.toThrow(/ADR-006/);
   });
 
-  it("recovers both the X25519 and ML-KEM-768 identity privs from the recovery key", () => {
-    const e = enroll(PW, { profile });
+  it("recovers both the X25519 and ML-KEM-768 identity privs from the recovery key", async () => {
+    const e = await enroll(PW, { profile });
     const recovered = recoverIdentityPriv(e.recoveryKey, e.keyset);
     expect(toHex(recovered.x25519)).toBe(toHex(e.session.identityPriv));
     expect(toHex(recovered.mlkem)).toBe(toHex(e.session.identityPrivMlkem));
@@ -102,8 +102,8 @@ describe("master-password recovery (ADR-006)", () => {
 });
 
 describe("items", () => {
-  it("encrypts and decrypts an item under a VK", () => {
-    const e = enroll(PW, { profile });
+  it("encrypts and decrypts an item under a VK", async () => {
+    const e = await enroll(PW, { profile });
     const { vk, keyVersion } = e.personalVaultKey;
     const ref: ItemRef = { vaultId: "v1", itemId: "i1", version: 1, keyVersion };
     const item = {
@@ -114,8 +114,8 @@ describe("items", () => {
     expect(decryptItem(vk, ref, encryptItem(vk, ref, item))).toEqual(item);
   });
 
-  it("rejects decryption with a mismatched item ref (AAD binding)", () => {
-    const e = enroll(PW, { profile });
+  it("rejects decryption with a mismatched item ref (AAD binding)", async () => {
+    const e = await enroll(PW, { profile });
     const { vk } = e.personalVaultKey;
     const ref: ItemRef = { vaultId: "v1", itemId: "i1", version: 1, keyVersion: 1 };
     const enc = encryptItem(vk, ref, { a: "b" });
@@ -125,16 +125,16 @@ describe("items", () => {
 });
 
 describe("passkey unlock (PRF-wrapped identity key)", () => {
-  it("unwraps the identity key with the same PRF output and rejects a different one", () => {
-    const e = enroll(PW, { profile });
+  it("unwraps the identity key with the same PRF output and rejects a different one", async () => {
+    const e = await enroll(PW, { profile });
     const prf = randomBytes(32); // simulated WebAuthn PRF output
     const wrapped = wrapIdentityForPasskey(e.session.identityPriv, prf);
     expect(toHex(unwrapIdentityFromPasskey(wrapped, prf))).toBe(toHex(e.session.identityPriv));
     expect(() => unwrapIdentityFromPasskey(wrapped, randomBytes(32))).toThrow();
   });
 
-  it("wraps + unwraps the ML-KEM identity priv with its own AAD label", () => {
-    const e = enroll(PW, { profile });
+  it("wraps + unwraps the ML-KEM identity priv with its own AAD label", async () => {
+    const e = await enroll(PW, { profile });
     const prf = randomBytes(32);
     const wrapped = wrapIdentityMlkemForPasskey(e.session.identityPrivMlkem, prf);
     expect(toHex(unwrapIdentityMlkemFromPasskey(wrapped, prf))).toBe(
@@ -146,16 +146,16 @@ describe("passkey unlock (PRF-wrapped identity key)", () => {
     expect(() => unwrapIdentityFromPasskey(wrapped, prf)).toThrow();
   });
 
-  it("wraps + unwraps the signing priv with its own AAD label", () => {
-    const e = enroll(PW, { profile });
+  it("wraps + unwraps the signing priv with its own AAD label", async () => {
+    const e = await enroll(PW, { profile });
     const prf = randomBytes(32);
     const wrapped = wrapSigningForPasskey(e.session.signingPriv, prf);
     expect(toHex(unwrapSigningFromPasskey(wrapped, prf))).toBe(toHex(e.session.signingPriv));
     expect(() => unwrapIdentityFromPasskey(wrapped, prf)).toThrow();
   });
 
-  it("rejects a wrong PRF on all three wrappers (corrupted authenticator)", () => {
-    const e = enroll(PW, { profile });
+  it("rejects a wrong PRF on all three wrappers (corrupted authenticator)", async () => {
+    const e = await enroll(PW, { profile });
     const good = randomBytes(32);
     const bad = randomBytes(32);
     const w1 = wrapIdentityForPasskey(e.session.identityPriv, good);
@@ -203,9 +203,9 @@ describe("VK rotation (IK re-wrap, payload untouched)", () => {
 });
 
 describe("item-share write-back (ADR-007 edit-back extension)", () => {
-  it("grantee proposes a new version; granter opens it with their identity priv", () => {
-    const granter = enroll(PW, { profile });
-    const grantee = enroll("grantee pw", { profile });
+  it("grantee proposes a new version; granter opens it with their identity priv", async () => {
+    const granter = await enroll(PW, { profile });
+    const grantee = await enroll("grantee pw", { profile });
     void grantee; // grantee's own keys aren't needed for the proposal — only the granter's pub
     const ref: ItemRef = { vaultId: "v1", itemId: "i1", version: 4, keyVersion: 2 };
     const proposal = { type: "login", title: "GitHub", fields: { password: "rotated!" } };
@@ -223,9 +223,9 @@ describe("item-share write-back (ADR-007 edit-back extension)", () => {
     expect(opened).toEqual(proposal);
   });
 
-  it("a third party cannot open the proposal; AAD binds it to the item coordinates", () => {
-    const granter = enroll(PW, { profile });
-    const stranger = enroll("stranger pw", { profile });
+  it("a third party cannot open the proposal; AAD binds it to the item coordinates", async () => {
+    const granter = await enroll(PW, { profile });
+    const stranger = await enroll("stranger pw", { profile });
     const ref: ItemRef = { vaultId: "v1", itemId: "i1", version: 4, keyVersion: 2 };
     const pending = encryptShareWriteBack(
       { x25519Pub: granter.session.identityPub, mlkemPub: granter.session.identityPubMlkem },
@@ -252,9 +252,9 @@ describe("item-share write-back (ADR-007 edit-back extension)", () => {
 });
 
 describe("vault key grants (post-quantum hybrid)", () => {
-  it("wraps a VK to a member's hybrid identity; member opens, non-member cannot", () => {
-    const admin = enroll(PW, { profile });
-    const member = enroll("a different password", { profile });
+  it("wraps a VK to a member's hybrid identity; member opens, non-member cannot", async () => {
+    const admin = await enroll(PW, { profile });
+    const member = await enroll("a different password", { profile });
     const vk = createVaultKey(1);
     const grant = wrapVaultKeyFor(vk.vk, {
       x25519Pub: member.session.identityPub,

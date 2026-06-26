@@ -18,11 +18,11 @@ import {
   ZERO_CHAIN,
 } from "@arc/crypto";
 
-const hybridPubFrom = (s: ReturnType<typeof enroll>["session"]) => ({
+const hybridPubFrom = (s: Awaited<ReturnType<typeof enroll>>["session"]) => ({
   x25519Pub: s.identityPub,
   mlkemPub: s.identityPubMlkem,
 });
-const hybridPrivFrom = (s: ReturnType<typeof enroll>["session"]) => ({
+const hybridPrivFrom = (s: Awaited<ReturnType<typeof enroll>>["session"]) => ({
   x25519Priv: s.identityPriv,
   mlkemPriv: s.identityPrivMlkem,
 });
@@ -31,7 +31,7 @@ import { AppModule } from "../src/app.module";
 const PW = "correct horse battery staple";
 const profile = "test" as const;
 
-function enrollDtoFrom(e: ReturnType<typeof enroll>) {
+function enrollDtoFrom(e: Awaited<ReturnType<typeof enroll>>) {
   return {
     saltMk: e.keyset.saltMk,
     saltAuth: e.keyset.saltAuth,
@@ -75,16 +75,16 @@ describe("vault e2e (zero-knowledge round trip)", () => {
 
   it("runs the full enroll -> unlock -> sync -> conflict -> share flow", async () => {
     // --- user A enrolls; re-enroll is refused (anti-takeover) ---
-    const A = enroll(PW, { profile });
+    const A = await enroll(PW, { profile });
     const a = await login("a@example.com");
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(A)).expect(201);
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(A)).expect(409);
 
     // --- fetch keyset, derive authHash, unlock (wrong password rejected) ---
     const ks = (await request(server).get("/vault/keyset").set(auth(a.token)).expect(200)).body;
-    const authHash = computeAuthHash(PW, ks as Keyset);
+    const authHash = await computeAuthHash(PW, ks as Keyset);
     await request(server).post("/vault/unlock").set(auth(a.token)).send({ authHash }).expect(201);
-    const wrong = computeAuthHash("not the password", ks as Keyset);
+    const wrong = await computeAuthHash("not the password", ks as Keyset);
     await request(server).post("/vault/unlock").set(auth(a.token)).send({ authHash: wrong }).expect(401);
 
     // --- list vaults; open the personal VK from the stored grant ---
@@ -162,7 +162,7 @@ describe("vault e2e (zero-knowledge round trip)", () => {
     ).toBe(true);
 
     // --- share to user B as viewer; B decrypts the same item ---
-    const B = enroll("a different password", { profile });
+    const B = await enroll("a different password", { profile });
     const b = await login("b@example.com");
     await request(server).post("/vault/enroll").set(auth(b.token)).send(enrollDtoFrom(B)).expect(201);
 

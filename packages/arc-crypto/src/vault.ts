@@ -2,6 +2,7 @@ import {
   ARGON_PROFILES,
   type ArgonProfile,
   type ArgonProfileName,
+  type Argon2idFn,
   deriveAuthHash,
   deriveMasterKey,
   derivePasskeyWrapKey,
@@ -115,17 +116,17 @@ export const privAad = (keyName: string, keyVersion: number, wrap?: string): str
   );
 
 /** Full client-side enrollment (docs/06 §6.2). Returns ciphertext keyset + in-memory session. */
-export function enroll(
+export async function enroll(
   masterPassword: string,
-  opts: { profile?: ArgonProfileName } = {},
-): EnrollResult {
+  opts: { profile?: ArgonProfileName; argon2?: Argon2idFn } = {},
+): Promise<EnrollResult> {
   const params = ARGON_PROFILES[opts.profile ?? "desktop"];
   const saltMk = randomBytes(SALT_BYTES);
   const saltAuth = randomBytes(SALT_BYTES);
 
-  const mk = deriveMasterKey(masterPassword, saltMk, params);
+  const mk = await deriveMasterKey(masterPassword, saltMk, params, opts.argon2);
   const { authSeed, wk } = splitMasterKey(mk);
-  const authHash = deriveAuthHash(authSeed, saltAuth, params);
+  const authHash = await deriveAuthHash(authSeed, saltAuth, params, opts.argon2);
 
   const identity = generateIdentityKeyPair();
   const hybrid = generateHybridIdentityKeyPair();
@@ -204,10 +205,14 @@ export function enroll(
 }
 
 /** Derive the auth proof to send to the server (rate-limit gate only). */
-export function computeAuthHash(masterPassword: string, keyset: Keyset): string {
-  const mk = deriveMasterKey(masterPassword, fromB64u(keyset.saltMk), keyset.argonParams);
+export async function computeAuthHash(
+  masterPassword: string,
+  keyset: Keyset,
+  argon2?: Argon2idFn,
+): Promise<string> {
+  const mk = await deriveMasterKey(masterPassword, fromB64u(keyset.saltMk), keyset.argonParams, argon2);
   const { authSeed } = splitMasterKey(mk);
-  const authHash = deriveAuthHash(authSeed, fromB64u(keyset.saltAuth), keyset.argonParams);
+  const authHash = await deriveAuthHash(authSeed, fromB64u(keyset.saltAuth), keyset.argonParams, argon2);
   wipe(mk, authSeed);
   return toB64u(authHash);
 }
@@ -216,8 +221,12 @@ export function computeAuthHash(masterPassword: string, keyset: Keyset): string 
  * Unlock with the master password (docs/06 §6.3). Correctness is gated by the AEAD
  * unwrap of the private keys — not by authHash, which is a server-side rate-limit signal.
  */
-export function unlock(masterPassword: string, keyset: Keyset): Session {
-  const mk = deriveMasterKey(masterPassword, fromB64u(keyset.saltMk), keyset.argonParams);
+export async function unlock(
+  masterPassword: string,
+  keyset: Keyset,
+  argon2?: Argon2idFn,
+): Promise<Session> {
+  const mk = await deriveMasterKey(masterPassword, fromB64u(keyset.saltMk), keyset.argonParams, argon2);
   const { wk } = splitMasterKey(mk);
   wipe(mk);
   const identityPriv = aeadOpen(
@@ -294,12 +303,12 @@ export interface RecoverResult {
  * keysets enrolled before that can't be cleanly recovered (the signing key would have to be
  * rotated, which this function deliberately refuses rather than silently changing a pub).
  */
-export function recover(
+export async function recover(
   recoveryKeyEncoded: string,
   keyset: Keyset,
   newMasterPassword: string,
-  opts: { profile?: ArgonProfileName } = {},
-): RecoverResult {
+  opts: { profile?: ArgonProfileName; argon2?: Argon2idFn } = {},
+): Promise<RecoverResult> {
   if (!keyset.encSigningPrivRecovery) {
     throw new Error(
       "keyset has no recovery-wrapped signing key (enrolled before ADR-006); cannot cleanly recover",
@@ -329,9 +338,9 @@ export function recover(
   const params = ARGON_PROFILES[opts.profile ?? "desktop"];
   const saltMk = randomBytes(SALT_BYTES);
   const saltAuth = randomBytes(SALT_BYTES);
-  const mk = deriveMasterKey(newMasterPassword, saltMk, params);
+  const mk = await deriveMasterKey(newMasterPassword, saltMk, params, opts.argon2);
   const { authSeed, wk } = splitMasterKey(mk);
-  const authHash = deriveAuthHash(authSeed, saltAuth, params);
+  const authHash = await deriveAuthHash(authSeed, saltAuth, params, opts.argon2);
 
   const encIdentityPriv = aeadSeal(wk, identityPriv, privAad("identity-priv", keyVersion));
   const encIdentityPrivMlkem = aeadSeal(wk, identityPrivMlkem, privAad("identity-priv-mlkem", keyVersion));
