@@ -21,6 +21,9 @@ import {
   generateSigningKeyPair,
   type JsonValue,
   type Keyset,
+  type EnrollResult,
+  type Session as CryptoSession,
+  type RecoverResult,
   mlkemPubFromPriv,
   openItemKeyShare,
   openVaultKeyGrant,
@@ -63,6 +66,9 @@ import {
 
 export type VaultType = "personal" | "team" | "org";
 
+/** Default per-request HTTP timeout (ms). Overridable via {@link VaultClientOptions.requestTimeoutMs}. */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
 /**
  * Re-exports of the closed UI-affordance allowlists from `@arc/types`. Callers building a
  * vault picker can iterate `VAULT_ICONS` / `VAULT_COLORS` to render the options without
@@ -104,12 +110,67 @@ export interface AgentKeyset {
   };
 }
 
+/** Argon2id profile selector (mirrors `@arc/crypto`'s `ArgonProfileName`). */
+export type ArgonProfile = "desktop" | "mobile" | "test";
+
+/**
+ * Pluggable runner for the password-stretching crypto. `enroll`/`unlock`/`recover` each run
+ * Argon2id at the desktop profile (256 MiB, multiple passes); in a browser that is a
+ * multi-second **synchronous** block on the main thread — the tab freezes while the UI's
+ * loader keeps spinning (the spinner is a CSS animation, so it animates on regardless).
+ * Injecting an engine lets the web app run the work in a Web Worker, off the main thread,
+ * while Node / CLI / tests keep the default in-process engine. Every return value is plain
+ * data (typed arrays + POJOs), so a worker can hand it back across `postMessage` unchanged.
+ */
+export interface CryptoEngine {
+  enroll(masterPassword: string, opts: { profile?: ArgonProfile }): Promise<EnrollResult>;
+  computeAuthHash(masterPassword: string, keyset: Keyset): Promise<string>;
+  unlock(masterPassword: string, keyset: Keyset): Promise<CryptoSession>;
+  recover(
+    recoveryKey: string,
+    keyset: Keyset,
+    newMasterPassword: string,
+    opts: { profile?: ArgonProfile },
+  ): Promise<RecoverResult>;
+}
+
+/**
+ * Default {@link CryptoEngine}: runs the crypto synchronously in the current thread/process.
+ * Correct everywhere; only the browser main thread cares about the blocking cost, which is
+ * what the Worker-backed engine in the web app addresses.
+ */
+export const inProcessCryptoEngine: CryptoEngine = {
+  async enroll(masterPassword, opts) {
+    return cryptoEnroll(masterPassword, opts);
+  },
+  async computeAuthHash(masterPassword, keyset) {
+    return computeAuthHash(masterPassword, keyset);
+  },
+  async unlock(masterPassword, keyset) {
+    return cryptoUnlock(masterPassword, keyset);
+  },
+  async recover(recoveryKey, keyset, newMasterPassword, opts) {
+    return cryptoRecover(recoveryKey, keyset, newMasterPassword, opts);
+  },
+};
+
 export interface VaultClientOptions {
   baseUrl: string;
   /** Override fetch (tests / non-global environments). */
   fetchImpl?: typeof fetch;
   /** Argon2id profile for enroll/unlock (default desktop). */
   profile?: "desktop" | "mobile" | "test";
+  /**
+   * Runner for the Argon2id-heavy crypto (enroll/unlock/recover). Defaults to
+   * {@link inProcessCryptoEngine}. The web app injects a Web Worker-backed engine so password
+   * stretching doesn't freeze the UI thread.
+   */
+  crypto?: CryptoEngine;
+  /**
+   * Per-request HTTP timeout in ms (via `AbortController`). Without it a hung request spins
+   * forever with no feedback. Default 30000; set 0 to disable.
+   */
+  requestTimeoutMs?: number;
 }
 
 export class VaultApiError extends Error {
@@ -338,11 +399,14 @@ export class VaultClient {
   private deviceMlkemPub?: Uint8Array;
   private readonly vkCache = new Map<string, { vk: Uint8Array; keyVersion: number }>();
   private readonly fetchImpl: typeof fetch;
+  /** Argon2id runner — in-process by default; the web app injects a Web Worker engine. */
+  private readonly crypto: CryptoEngine;
 
   constructor(private readonly opts: VaultClientOptions) {
     // Bind to globalThis: native fetch throws "Illegal invocation" if called with a
     // non-global `this` (which happens when stored as an instance property).
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
+    this.crypto = opts.crypto ?? inProcessCryptoEngine;
   }
 
   setToken(token: string): void {
@@ -390,15 +454,35 @@ export class VaultClient {
   }
 
   private async http<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await this.fetchImpl(this.opts.baseUrl + path, {
-      method,
-      headers: {
-        "content-type": "application/json",
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await res.text();
+    // Bound every request with an AbortController so a server that accepts the connection
+    // but never responds surfaces as a timeout error instead of an infinite hang (the SDK
+    // had no timeout before). Default 30s; `requestTimeoutMs: 0` opts out.
+    const timeoutMs = this.opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const controller = timeoutMs > 0 ? new AbortController() : undefined;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+    let res: Awaited<ReturnType<typeof fetch>>;
+    let text: string;
+    try {
+      res = await this.fetchImpl(this.opts.baseUrl + path, {
+        method,
+        headers: {
+          "content-type": "application/json",
+          ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller?.signal,
+      });
+      text = await res.text();
+    } catch (err) {
+      if (controller?.signal.aborted) {
+        throw new VaultApiError(0, {
+          error: `request to ${path} timed out after ${timeoutMs}ms`,
+        });
+      }
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     const parsed = text ? JSON.parse(text) : null;
     if (!res.ok) throw new VaultApiError(res.status, parsed);
     return parsed as T;
@@ -413,7 +497,7 @@ export class VaultClient {
   }
 
   async enroll(masterPassword: string): Promise<{ recoveryKey: string }> {
-    const e = cryptoEnroll(masterPassword, { profile: this.opts.profile });
+    const e = await this.crypto.enroll(masterPassword, { profile: this.opts.profile });
     const ownerGrant = wrapVaultKeyFor(e.personalVaultKey.vk, {
       x25519Pub: e.session.identityPub,
       mlkemPub: e.session.identityPubMlkem,
@@ -448,9 +532,9 @@ export class VaultClient {
 
   async unlock(masterPassword: string): Promise<void> {
     const ks = await this.http<Keyset>("GET", "/vault/keyset");
-    const authHash = computeAuthHash(masterPassword, ks);
+    const authHash = await this.crypto.computeAuthHash(masterPassword, ks);
     await this.http("POST", "/vault/unlock", { authHash });
-    const s = cryptoUnlock(masterPassword, { ...ks, authHash });
+    const s = await this.crypto.unlock(masterPassword, { ...ks, authHash });
     this.session = {
       identityPriv: s.identityPriv,
       identityPub: s.identityPub,
@@ -477,7 +561,9 @@ export class VaultClient {
     if (!ks.encSigningPrivRecovery) {
       throw new Error("this account was enrolled before recovery support; cannot recover");
     }
-    const r = cryptoRecover(recoveryKey, ks, newMasterPassword, { profile: this.opts.profile });
+    const r = await this.crypto.recover(recoveryKey, ks, newMasterPassword, {
+      profile: this.opts.profile,
+    });
     await this.http("POST", "/vault/keyset/recover", {
       saltMk: r.keyset.saltMk,
       saltAuth: r.keyset.saltAuth,
