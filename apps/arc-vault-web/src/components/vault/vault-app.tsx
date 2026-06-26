@@ -588,6 +588,13 @@ export function VaultApp() {
               await getClient().addMember(selected, userId, role, pub);
               toast.success("Access granted");
             }}
+            onShareItem={(itemId, granteeUserId, opts) =>
+              guard(async () => {
+                if (!selected) return;
+                await getClient().shareItem(selected, itemId, granteeUserId, opts);
+                toast.success("Item shared");
+              })
+            }
           />
         )}
 

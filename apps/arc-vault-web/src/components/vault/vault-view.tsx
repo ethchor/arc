@@ -47,6 +47,7 @@ import {
   type IdentityLookup,
   type Role,
 } from "@/components/vault/share-dialog";
+import { ShareItemDialog } from "@/components/vault/share-item-dialog";
 import { TotpDialog, type TotpInput } from "@/components/vault/totp-dialog";
 import type { TotpData } from "@/lib/items";
 import { asLogin, asNote, asSecret, asTotp, itemSubtitle, itemTitle } from "@/lib/items";
@@ -95,6 +96,12 @@ export interface VaultViewProps {
     userId: number,
     role: Role,
     identity: { identityPubB64: string; identityPubMlkemB64: string },
+  ) => Promise<void>;
+  /** Share a single item with one user (ADR-007). Omit to keep per-item sharing disabled. */
+  onShareItem?: (
+    itemId: string,
+    granteeUserId: number,
+    opts: { permission: "view" | "edit"; expiresAtMs?: number },
   ) => Promise<void>;
 }
 
@@ -572,7 +579,11 @@ function DetailPane(props: VaultViewProps) {
   return (
     <section className="min-h-0 flex-1 overflow-y-auto bg-[var(--surface-sunken)] md:min-w-0">
       <div className="mx-auto max-w-[560px] px-7 py-7">
-        <DetailHero item={active} />
+        <DetailHero
+          item={active}
+          onShareLookup={props.onShareLookup}
+          onShareItem={props.onShareItem}
+        />
         <DetailFields item={active} />
         <DetailFooter
           item={active}
@@ -589,7 +600,15 @@ function DetailPane(props: VaultViewProps) {
   );
 }
 
-function DetailHero({ item }: { item: PulledItem }) {
+function DetailHero({
+  item,
+  onShareLookup,
+  onShareItem,
+}: {
+  item: PulledItem;
+  onShareLookup?: VaultViewProps["onShareLookup"];
+  onShareItem?: VaultViewProps["onShareItem"];
+}) {
   const totp = asTotp(item);
   const note = asNote(item);
   const secret = asSecret(item);
@@ -617,13 +636,31 @@ function DetailHero({ item }: { item: PulledItem }) {
       {/* Disabled placeholders ("coming next"). The tooltip lives on a focusable span
           wrapper because a disabled button swallows pointer events, so Radix can't see the
           hover on the button itself. */}
-      <IconTip label="Share item" hint="Coming soon — share a single item, not the whole vault.">
-        <span tabIndex={0} className="inline-flex">
-          <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Share item" disabled>
-            <Share2 className="h-4 w-4" />
-          </Button>
-        </span>
-      </IconTip>
+      {onShareLookup && onShareItem ? (
+        <ShareItemDialog
+          onLookup={onShareLookup}
+          onShare={(userId, permission, expiresAtMs) =>
+            onShareItem(item.id, userId, { permission, expiresAtMs })
+          }
+          tooltip={{
+            label: "Share item",
+            hint: "Share just this item with another user — they never get the vault key.",
+          }}
+          trigger={
+            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Share item">
+              <Share2 className="h-4 w-4" />
+            </Button>
+          }
+        />
+      ) : (
+        <IconTip label="Share item" hint="Coming soon — share a single item, not the whole vault.">
+          <span tabIndex={0} className="inline-flex">
+            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Share item" disabled>
+              <Share2 className="h-4 w-4" />
+            </Button>
+          </span>
+        </IconTip>
+      )}
       <IconTip label="More actions" hint="Coming soon — move, duplicate, and item history.">
         <span tabIndex={0} className="inline-flex">
           <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="More actions" disabled>
