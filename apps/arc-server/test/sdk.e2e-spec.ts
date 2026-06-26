@@ -85,6 +85,21 @@ describe("vault SDK e2e (consumer + service account)", () => {
     expect(blob).not.toContain("ciphertext");
   });
 
+  it("vault name survives a key rotation (regression: encName was sealed under the old VK)", async () => {
+    const C = new VaultClient({ baseUrl, profile: "test" });
+    await C.devLogin("naming@example.com");
+    await C.enroll("master-password-N");
+
+    const v = await C.createVault("team", "Engineering");
+    expect((await C.listVaults()).find((x) => x.id === v.id)?.name).toBe("Engineering");
+
+    // Rotating re-keys the vault. Before the fix the name was left sealed under the old VK,
+    // so it stopped decrypting and the UI fell back to the vault type ("team"). It must
+    // round-trip the rotation unchanged.
+    await C.rotateForAllMembers(v.id);
+    expect((await C.listVaults()).find((x) => x.id === v.id)?.name).toBe("Engineering");
+  });
+
   it("service account: a machine identity reads a granted vault with no master password", async () => {
     const owner = new VaultClient({ baseUrl, profile: "test" });
     await owner.devLogin("owner@example.com");
