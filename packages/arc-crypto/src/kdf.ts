@@ -24,14 +24,29 @@ export type ArgonProfileName = keyof typeof ARGON_PROFILES;
 
 const DKLEN = 32;
 
+/**
+ * Pluggable Argon2id implementation. Defaults to the bundled pure-JS `@noble/hashes` impl;
+ * the web worker injects a WASM impl (`hash-wasm`) that's ~10–50× faster and produces
+ * **byte-identical** output (proven in `argon2-wasm-parity.test.ts`, the safety gate — if
+ * the two ever diverge, a vault enrolled with one can't be unlocked with the other).
+ */
+export type Argon2idFn = (
+  password: Uint8Array,
+  salt: Uint8Array,
+  params: { m: number; t: number; p: number; dkLen: number },
+) => Promise<Uint8Array> | Uint8Array;
+
+const defaultArgon2id: Argon2idFn = (pw, salt, p) => argon2id(pw, salt, p);
+
 /** MK = Argon2id(master password, salt_mk). */
-export function deriveMasterKey(
+export async function deriveMasterKey(
   password: string | Uint8Array,
   saltMk: Uint8Array,
   params: ArgonProfile,
-): Uint8Array {
+  argon2: Argon2idFn = defaultArgon2id,
+): Promise<Uint8Array> {
   const pw = typeof password === "string" ? utf8(password) : password;
-  return argon2id(pw, saltMk, { m: params.m, t: params.t, p: params.p, dkLen: DKLEN });
+  return argon2(pw, saltMk, { m: params.m, t: params.t, p: params.p, dkLen: DKLEN });
 }
 
 /** Split MK into the auth seed and the wrapping key via two HKDF branches (docs/03 §3.3). */
@@ -44,12 +59,13 @@ export function splitMasterKey(mk: Uint8Array): { authSeed: Uint8Array; wk: Uint
 }
 
 /** Client-side authHash = Argon2id(auth seed, salt_auth). Sent to the server (rate-limit gate). */
-export function deriveAuthHash(
+export async function deriveAuthHash(
   authSeed: Uint8Array,
   saltAuth: Uint8Array,
   params: ArgonProfile,
-): Uint8Array {
-  return argon2id(authSeed, saltAuth, { m: params.m, t: params.t, p: params.p, dkLen: DKLEN });
+  argon2: Argon2idFn = defaultArgon2id,
+): Promise<Uint8Array> {
+  return argon2(authSeed, saltAuth, { m: params.m, t: params.t, p: params.p, dkLen: DKLEN });
 }
 
 export function deriveRecoveryWrapKey(recoveryRaw: Uint8Array): Uint8Array {

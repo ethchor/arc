@@ -8,12 +8,12 @@ import { AppModule } from "../src/app.module";
 const PW = "correct horse battery staple";
 const profile = "test" as const;
 
-const hybridPubFrom = (s: ReturnType<typeof enroll>["session"]) => ({
+const hybridPubFrom = (s: Awaited<ReturnType<typeof enroll>>["session"]) => ({
   x25519Pub: s.identityPub,
   mlkemPub: s.identityPubMlkem,
 });
 
-function enrollDtoFrom(e: ReturnType<typeof enroll>) {
+function enrollDtoFrom(e: Awaited<ReturnType<typeof enroll>>) {
   return {
     saltMk: e.keyset.saltMk,
     saltAuth: e.keyset.saltAuth,
@@ -56,7 +56,7 @@ describe("vault UI affordances (icon + color)", () => {
   const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
 
   it("persists icon + color on create and round-trips through listVaults", async () => {
-    const A = enroll(PW, { profile });
+    const A = await enroll(PW, { profile });
     const a = await login("alice-ui@example.com");
     await request(server).post("/vault/enroll").set(auth(a.token)).send(enrollDtoFrom(A)).expect(201);
 
@@ -82,7 +82,7 @@ describe("vault UI affordances (icon + color)", () => {
   });
 
   it("rejects icons + colors that aren't on the allowlist with 400", async () => {
-    const B = enroll(PW, { profile });
+    const B = await enroll(PW, { profile });
     const b = await login("bob-ui@example.com");
     await request(server).post("/vault/enroll").set(auth(b.token)).send(enrollDtoFrom(B)).expect(201);
 
@@ -110,7 +110,7 @@ describe("vault UI affordances (icon + color)", () => {
   });
 
   it("PATCH /vaults/:id/ui updates icon + color; null clears; admin role required", async () => {
-    const C = enroll(PW, { profile });
+    const C = await enroll(PW, { profile });
     const c = await login("carol-ui@example.com");
     await request(server).post("/vault/enroll").set(auth(c.token)).send(enrollDtoFrom(C)).expect(201);
 
