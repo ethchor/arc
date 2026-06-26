@@ -441,6 +441,11 @@ export class VaultClient {
     this.vkCache.clear();
   }
 
+  /** The authenticated account's user id (set by {@link devLogin}); undefined before sign-in. */
+  get currentUserId(): number | undefined {
+    return this.userId;
+  }
+
   get identityPublicKeyB64(): string | undefined {
     return this.session ? toB64u(this.session.identityPub) : undefined;
   }
@@ -1558,6 +1563,18 @@ export class VaultClient {
         mlkemPub: fromB64u(recipient.identityPubMlkemB64),
       }),
     });
+  }
+
+  /**
+   * Revoke a member's access. Drops their membership + key grants server-side, then **re-keys**
+   * the vault (rotates to the remaining active members) so the removed member loses access to
+   * any *future* data — forward security, the zero-knowledge way. Data they already synced
+   * can't be cryptographically un-seen; this cuts everything going forward. Returns the new key
+   * version. Owner/admin only; the server refuses to remove yourself or the last owner.
+   */
+  async removeMember(vaultId: string, userId: number): Promise<{ keyVersion: number }> {
+    await this.http("DELETE", `/vaults/${vaultId}/members/${userId}`);
+    return this.rotateForAllMembers(vaultId);
   }
 
   async pull(vaultId: string, since = 0): Promise<{ items: PulledItem[]; cursor: number }> {

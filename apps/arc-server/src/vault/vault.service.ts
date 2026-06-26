@@ -365,7 +365,35 @@ export class VaultService {
   async listMembers(userId: number, vaultId: string) {
     await this.requireRole(vaultId, userId, "viewer");
     const mems = await this.memberships.find({ where: { vaultId } });
-    return mems.map((m) => ({ userId: m.userId, role: m.role, status: m.status }));
+    // Revoked members no longer hold access; the screen lists identities that *can* decrypt.
+    return mems
+      .filter((m) => m.status !== "revoked")
+      .map((m) => ({ userId: m.userId, role: m.role, status: m.status }));
+  }
+
+  /**
+   * Revoke a member's access: mark the membership revoked and delete their VK grants so the
+   * server can never hand them the key again. Forward secrecy (they can't open *future* data)
+   * comes from the client re-keying the vault right after this returns. Owner/admin only;
+   * refuses to remove yourself or the last owner (which would orphan the vault).
+   */
+  async removeMember(userId: number, vaultId: string, targetUserId: number) {
+    await this.requireRole(vaultId, userId, "admin");
+    if (!Number.isInteger(targetUserId)) throw new BadRequestException({ error: "invalid_user" });
+    if (targetUserId === userId) throw new BadRequestException({ error: "cannot_remove_self" });
+    const target = await this.memberships.findOne({ where: { vaultId, userId: targetUserId } });
+    if (!target || target.status === "revoked") throw new NotFoundException("member not found");
+    if (target.role === "owner") {
+      const owners = await this.memberships.count({
+        where: { vaultId, role: "owner", status: "active" },
+      });
+      if (owners <= 1) throw new BadRequestException({ error: "cannot_remove_last_owner" });
+    }
+    target.status = "revoked";
+    await this.memberships.save(target);
+    await this.grants.delete({ vaultId, granteeUserId: targetUserId });
+    await this.writeAudit(vaultId, userId, "member_revoked", String(targetUserId));
+    return { ok: true };
   }
 
   async addMember(userId: number, vaultId: string, dto: AddMemberDto) {

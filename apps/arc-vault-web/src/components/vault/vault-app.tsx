@@ -596,6 +596,16 @@ export function VaultApp() {
             <AccessView
               vaultId={selected}
               loadMembers={() => getClient().listMembers(selected)}
+              currentUserId={getClient().currentUserId}
+              onRevoke={
+                canManage
+                  ? (userId) =>
+                      guard(async () => {
+                        await getClient().removeMember(selected, userId);
+                        toast.success("Access revoked — vault re-keyed");
+                      })
+                  : undefined
+              }
               actions={
                 <>
                   {canManage && (
