@@ -1,4 +1,5 @@
 import { VaultClient } from "@arc/sdk";
+import { createWorkerCryptoEngine } from "@/lib/crypto/worker-crypto-engine";
 
 // The VaultClient — and therefore every unlocked key (WK, identity/signing privs, VKs) —
 // lives ONLY in this module-scoped variable. It is never written to localStorage,
@@ -6,7 +7,13 @@ import { VaultClient } from "@arc/sdk";
 let client: VaultClient | null = null;
 
 export function initClient(baseUrl: string): VaultClient {
-  client = new VaultClient({ baseUrl });
+  // Run the Argon2id-heavy enroll/unlock/recover in a Web Worker so it doesn't freeze the UI
+  // thread (the spinner kept animating while the tab was blocked). Guard on `Worker` so any
+  // non-browser context falls back to the SDK's in-process engine.
+  client = new VaultClient({
+    baseUrl,
+    crypto: typeof Worker !== "undefined" ? createWorkerCryptoEngine() : undefined,
+  });
   return client;
 }
 
