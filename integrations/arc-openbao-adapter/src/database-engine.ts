@@ -38,7 +38,7 @@ export class OpenBaoDatabaseEngine implements DynamicSecretsEngine {
     const res = await this.client.read(`${this.mount}creds/${strip(role)}`);
     const ttlFromBackend = Number(res.lease_duration ?? 0);
     const ttlSeconds = opts.ttlSeconds ?? (ttlFromBackend > 0 ? ttlFromBackend : 3600);
-    const lease = this.leases.issue({
+    const lease = await this.leases.issue({
       mount: this.mount,
       ttlSeconds,
       maxTtlSeconds: ttlSeconds,
@@ -51,7 +51,7 @@ export class OpenBaoDatabaseEngine implements DynamicSecretsEngine {
   }
 
   async renew(leaseId: string, incrementSeconds?: number): Promise<Lease> {
-    const lease = this.requireLease(leaseId);
+    const lease = await this.requireLease(leaseId);
     if (!lease.renewable) {
       throw new LeaseError("not_renewable", `lease ${leaseId} is not renewable`);
     }
@@ -68,14 +68,14 @@ export class OpenBaoDatabaseEngine implements DynamicSecretsEngine {
   }
 
   async revoke(leaseId: string): Promise<void> {
-    const lease = this.requireLease(leaseId);
+    const lease = await this.requireLease(leaseId);
     if (lease.backendLeaseId) {
       // OpenBao accepts both `PUT sys/leases/revoke/<id>` and `POST sys/leases/revoke
       // {lease_id}`; we use the body form so URL-encoding the backend id (it contains
       // slashes) doesn't bite us.
       await this.client.write("sys/leases/revoke", { lease_id: lease.backendLeaseId });
     }
-    this.leases.revoke(leaseId);
+    await this.leases.revoke(leaseId);
   }
 
   /**
@@ -94,8 +94,8 @@ export class OpenBaoDatabaseEngine implements DynamicSecretsEngine {
     }
   }
 
-  private requireLease(leaseId: string): Lease {
-    const lease = this.leases.get(leaseId);
+  private async requireLease(leaseId: string): Promise<Lease> {
+    const lease = await this.leases.get(leaseId);
     if (!lease) throw new LeaseError("not_found", `no lease ${leaseId}`);
     return lease;
   }

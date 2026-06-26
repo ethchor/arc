@@ -143,7 +143,7 @@ describe("@arc/plugin-azure end-to-end through PluginsService + EnginesService",
       BadRequestException,
     );
     await enginesService.revokeLease(issued.lease_id as string);
-    expect(config.leases.state(issued.lease_id as string)).toBe("revoked");
+    expect(await config.leases.state(issued.lease_id as string)).toBe("revoked");
     expect(aad.calls).toHaveLength(1); // no extra AAD round-trip for revoke
   });
 });
@@ -183,7 +183,7 @@ describe("@arc/plugin-gitlab end-to-end through PluginsService + EnginesService"
 
     const issued = await enginesService.get("gitlab/creds/r", {});
     await enginesService.revokeLease(issued.lease_id as string);
-    expect(config.leases.state(issued.lease_id as string)).toBe("revoked");
+    expect(await config.leases.state(issued.lease_id as string)).toBe("revoked");
     expect(gl.revokeCalls).toHaveLength(1);
     expect(gl.revokeCalls[0]!.projectId).toBe("9");
   });
@@ -221,7 +221,7 @@ describe("@arc/plugin-bitbucket end-to-end through PluginsService + EnginesServi
 
     const issued = await enginesService.get("bitbucket/creds/r", {});
     await enginesService.revokeLease(issued.lease_id as string);
-    expect(config.leases.state(issued.lease_id as string)).toBe("revoked");
+    expect(await config.leases.state(issued.lease_id as string)).toBe("revoked");
     expect(bb.revokeCalls).toHaveLength(1);
     expect(bb.revokeCalls[0]!.workspace).toBe("acme");
     expect(bb.revokeCalls[0]!.tokenUuid).toMatch(/^\{uuid-/);

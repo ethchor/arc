@@ -28,7 +28,7 @@ class FakeDatabaseEngine implements DynamicSecretsEngine {
   constructor(private readonly leases: LeaseManager) {}
 
   async issue(role: string): Promise<IssuedCredential> {
-    const lease = this.leases.issue({
+    const lease = await this.leases.issue({
       mount: this.mount,
       ttlSeconds: 60,
       maxTtlSeconds: 600,
@@ -43,7 +43,7 @@ class FakeDatabaseEngine implements DynamicSecretsEngine {
   }
 
   async revoke(leaseId: string): Promise<void> {
-    this.leases.revoke(leaseId);
+    await this.leases.revoke(leaseId);
   }
 
   /** Required by {@link DynamicSecretsEngine} since #111 added role discovery. Tests that
@@ -113,7 +113,7 @@ describe("EnginesService — database/creds + sys/leases lifecycle", () => {
     const leaseId = issued.lease_id as string;
 
     await service.revokeLease(leaseId);
-    expect(leases.state(leaseId)).toBe("revoked");
+    expect(await leases.state(leaseId)).toBe("revoked");
 
     // Renewing a revoked lease surfaces as a 400 — LeaseError is translated.
     await expect(service.renewLease(leaseId)).rejects.toBeInstanceOf(BadRequestException);
@@ -128,7 +128,7 @@ describe("EnginesService — database/creds + sys/leases lifecycle", () => {
     const { service, leases } = makeService();
     // Mint a lease directly at the KV mount (no engine.issue path here — simulating a
     // misrouted lease so we can hit the "engine does not support leasing" branch).
-    const lease = leases.issue({ mount: "secret/", ttlSeconds: 60 });
+    const lease = await leases.issue({ mount: "secret/", ttlSeconds: 60 });
     await expect(service.renewLease(lease.id)).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.revokeLease(lease.id)).rejects.toBeInstanceOf(BadRequestException);
   });

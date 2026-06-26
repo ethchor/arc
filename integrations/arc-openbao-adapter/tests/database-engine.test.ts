@@ -46,7 +46,7 @@ describe("OpenBaoDatabaseEngine.issue", () => {
     expect(issued.lease.ttlSeconds).toBe(3600);
     expect(issued.lease.renewable).toBe(true);
     expect(issued.lease.backendLeaseId).toBe("database/creds/app/abcdef");
-    expect(leases.get(issued.lease.id)?.id).toBe(issued.lease.id);
+    expect((await leases.get(issued.lease.id))?.id).toBe(issued.lease.id);
   });
 
   it("falls back to a 1h default TTL when the backend omits lease_duration", async () => {
@@ -110,12 +110,11 @@ describe("OpenBaoDatabaseEngine.renew", () => {
       new OpenBaoClient({ addr: "http://bao:8200", fetchFn }),
       leases,
     );
-    const i = await db.issue("app", { ttlSeconds: 60 });
+    // Issue with a 600s ttl (so maxTtl=600) — a renew of +120s then sits comfortably under
+    // the hard ceiling instead of being clamped. (The store returns copies now, so the old
+    // "mutate the stored lease's maxTtlSeconds" trick no longer works — and shouldn't.)
+    const i = await db.issue("app", { ttlSeconds: 600 });
     expect(issued).toBe(true);
-
-    // Allow arc to extend beyond its issued ttl: lease ceiling = ttl, so override here.
-    const lease = leases.get(i.lease.id)!;
-    (lease as { maxTtlSeconds: number }).maxTtlSeconds = 600;
 
     const renewed = await db.renew(i.lease.id, 120);
     expect(renewed.id).toBe(i.lease.id);
@@ -182,7 +181,7 @@ describe("OpenBaoDatabaseEngine.revoke", () => {
     const i = await db.issue("app");
     await db.revoke(i.lease.id);
     expect(revokeCalled).toBe(true);
-    expect(leases.state(i.lease.id)).toBe("revoked");
+    expect(await leases.state(i.lease.id)).toBe("revoked");
   });
 
   it("respects a custom mount path on issue + revoke", async () => {

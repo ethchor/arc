@@ -1,4 +1,6 @@
 import { Logger, Module } from "@nestjs/common";
+import { TypeOrmModule, getRepositoryToken } from "@nestjs/typeorm";
+import type { Repository } from "typeorm";
 import { LeaseManager } from "@arc/leasing";
 import {
   MountRegistry,
@@ -15,7 +17,10 @@ import {
   OpenBaoPkiEngine,
   OpenBaoTransitEngine,
 } from "@arc/openbao-adapter";
+import { VaultLeaseEntity } from "../database/entities";
 import { EnginesController } from "./engines.controller";
+import { LeaseSweepService } from "./lease-sweep.service";
+import { TypeOrmLeaseStore } from "./typeorm-lease-store";
 import {
   ENGINES_CONFIG,
   EnginesService,
@@ -31,16 +36,19 @@ import {
  * Mounts default to the same paths OpenBao's dev mode uses, so an existing Vault SDK
  * pointed at `secret/...` or `transit/...` works against arc-server unchanged.
  */
-export function buildEnginesConfig(): EnginesConfig {
+export function buildEnginesConfig(leaseRepo: Repository<VaultLeaseEntity>): EnginesConfig {
   const logger = new Logger("EnginesModule");
   const addr = process.env.BAO_ADDR;
   const token = process.env.BAO_TOKEN;
   const namespace = process.env.BAO_NAMESPACE;
   const registry = new MountRegistry();
   const enginesByMount = new Map<string, SecretsEngine>();
-  // One lease registry for the whole Engine-A surface so a single sys/leases/revoke
-  // works no matter which engine minted the credential.
-  const leases = new LeaseManager();
+  // One lease registry for the whole Engine-A surface so a single sys/leases/revoke works no
+  // matter which engine minted the credential. Backed by Postgres (#113) via the injected
+  // repository so leases survive restart and stay consistent across replicas — renew/revoke
+  // take a row lock. The same wiring runs against sql.js in dev/test (no row lock there, but
+  // single-connection serialization is enough).
+  const leases = new LeaseManager({ store: new TypeOrmLeaseStore(leaseRepo) });
 
   const manifestCapsByMount = new Map<string, ReadonlySet<string> | null>();
 
@@ -74,10 +82,16 @@ export function buildEnginesConfig(): EnginesConfig {
 }
 
 @Module({
+  imports: [TypeOrmModule.forFeature([VaultLeaseEntity])],
   controllers: [EnginesController],
   providers: [
-    { provide: ENGINES_CONFIG, useFactory: buildEnginesConfig },
+    {
+      provide: ENGINES_CONFIG,
+      useFactory: buildEnginesConfig,
+      inject: [getRepositoryToken(VaultLeaseEntity)],
+    },
     EnginesService,
+    LeaseSweepService,
   ],
   exports: [EnginesService, ENGINES_CONFIG],
 })
