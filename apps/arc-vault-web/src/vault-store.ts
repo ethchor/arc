@@ -6,13 +6,14 @@ import { createWorkerCryptoEngine } from "@/lib/crypto/worker-crypto-engine";
 // sessionStorage, IndexedDB, or any React state that could serialize (docs/12 §12.1).
 let client: VaultClient | null = null;
 
-export function initClient(baseUrl: string): VaultClient {
+export function initClient(baseUrl: string, onUnauthorized?: () => void): VaultClient {
   // Run the Argon2id-heavy enroll/unlock/recover in a Web Worker so it doesn't freeze the UI
   // thread (the spinner kept animating while the tab was blocked). Guard on `Worker` so any
   // non-browser context falls back to the SDK's in-process engine.
   client = new VaultClient({
     baseUrl,
     crypto: typeof Worker !== "undefined" ? createWorkerCryptoEngine() : undefined,
+    onUnauthorized,
   });
   return client;
 }

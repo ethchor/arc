@@ -103,6 +103,11 @@ export function VaultApp() {
   const [section, setSection] = React.useState<ConsoleSection>("vault");
   const [persona, setPersona] = React.useState<Persona>("person");
   const [density, setDensity] = React.useState<Density>("comfortable");
+  // The SDK invokes its `onUnauthorized` hook from *outside* React (inside a request), so it
+  // reads through a ref that always points at the current `doLock`/`phase` closure. The
+  // boolean ref de-dupes the burst of 401s a single expiry triggers across concurrent calls.
+  const unauthorizedHandlerRef = React.useRef<() => void>(() => {});
+  const sessionExpiredRef = React.useRef(false);
 
   React.useEffect(() => {
     const stored = Number(localStorage.getItem("arc-vault-autolock"));
@@ -119,7 +124,9 @@ export function VaultApp() {
     try {
       await fn();
     } catch (e) {
-      toast.error(errorMessage(e));
+      // A 401 is handled centrally by the onUnauthorized hook (lock + back to sign-in); don't
+      // also toast the raw "API error 401".
+      if ((e as { status?: number } | null)?.status !== 401) toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -146,7 +153,8 @@ export function VaultApp() {
 
   const signIn = (baseUrl: string, email: string) =>
     guard(async () => {
-      initClient(baseUrl);
+      sessionExpiredRef.current = false; // fresh session — re-arm the 401 handler
+      initClient(baseUrl, () => unauthorizedHandlerRef.current());
       await getClient().devLogin(email);
       setPhase("account");
     });
@@ -345,6 +353,30 @@ export function VaultApp() {
     setSection("vault");
     setPersona("person");
   };
+
+  // Keep the SDK's 401 hook pointed at the latest closures. On a 401 we lock + return to
+  // sign-in exactly once and toast; subsequent 401s from concurrent in-flight calls are
+  // de-duped by the boolean ref (re-armed on the next sign-in).
+  unauthorizedHandlerRef.current = () => {
+    if (sessionExpiredRef.current || phase === "login") return;
+    sessionExpiredRef.current = true;
+    doLock();
+    toast.error("Your session expired. Please sign in again.");
+  };
+
+  // Safety net: a 401 from an *unguarded* load (a panel mounting, etc.) would otherwise be an
+  // uncaught rejection → Next error overlay. The hook above already handled it, so swallow the
+  // rejection and make sure we've locked.
+  React.useEffect(() => {
+    const onRejection = (e: PromiseRejectionEvent) => {
+      if ((e.reason as { status?: number } | null)?.status === 401) {
+        e.preventDefault();
+        unauthorizedHandlerRef.current();
+      }
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => window.removeEventListener("unhandledrejection", onRejection);
+  }, []);
 
   // Poll for device approval while waiting (docs/06 §6.3).
   React.useEffect(() => {
