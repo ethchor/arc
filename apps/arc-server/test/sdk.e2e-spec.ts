@@ -100,6 +100,32 @@ describe("vault SDK e2e (consumer + service account)", () => {
     expect((await C.listVaults()).find((x) => x.id === v.id)?.name).toBe("Engineering");
   });
 
+  it("revoke member: removeMember drops the membership and re-keys the vault", async () => {
+    const owner = new VaultClient({ baseUrl, profile: "test" });
+    await owner.devLogin("revoker@example.com");
+    await owner.enroll("master-owner");
+
+    const member = new VaultClient({ baseUrl, profile: "test" });
+    await member.devLogin("revokee@example.com");
+    await member.enroll("master-member");
+
+    const v = await owner.createVault("team", "Shared");
+    const mk = await owner.getUserIdentityKeyByEmail("revokee@example.com");
+    await owner.addMember(v.id, mk.userId, "editor", {
+      identityPubB64: mk.identityPublicKey,
+      identityPubMlkemB64: mk.identityPublicKeyMlkem,
+    });
+    expect((await owner.listMembers(v.id)).map((m) => m.userId)).toContain(mk.userId);
+
+    // Revoke re-keys the vault (keyVersion bumps) and drops the member from the access list.
+    const { keyVersion } = await owner.removeMember(v.id, mk.userId);
+    expect(keyVersion).toBe(2);
+    expect((await owner.listMembers(v.id)).map((m) => m.userId)).not.toContain(mk.userId);
+
+    // Can't revoke yourself (would orphan the vault / break the follow-on re-key).
+    await expect(owner.removeMember(v.id, owner.currentUserId!)).rejects.toThrow();
+  });
+
   it("service account: a machine identity reads a granted vault with no master password", async () => {
     const owner = new VaultClient({ baseUrl, profile: "test" });
     await owner.devLogin("owner@example.com");

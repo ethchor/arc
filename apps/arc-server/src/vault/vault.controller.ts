@@ -153,6 +153,16 @@ export class VaultController {
     return this.vault.addMember(u.userId, id, dto);
   }
 
+  /** Revoke a member's access. The client re-keys the vault afterward (forward secrecy). */
+  @Delete("vaults/:id/members/:userId")
+  removeMember(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("userId") userId: string,
+  ) {
+    return this.vault.removeMember(u.userId, id, Number(userId));
+  }
+
   @Post("vaults/:id/rotate-key")
   rotateKey(@CurrentUser() u: CurrentUserData, @Param("id") id: string, @Body() dto: RotateKeyDto) {
     return this.vault.rotateKey(u.userId, id, dto);
