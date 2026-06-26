@@ -171,6 +171,12 @@ export interface VaultClientOptions {
    * forever with no feedback. Default 30000; set 0 to disable.
    */
   requestTimeoutMs?: number;
+  /**
+   * Invoked whenever a request returns `401 Unauthorized` (e.g. the session token expired),
+   * just before the {@link VaultApiError} is thrown. Lets the app respond centrally — lock and
+   * return the user to sign-in — instead of every call site crashing on an uncaught 401.
+   */
+  onUnauthorized?: () => void;
 }
 
 export class VaultApiError extends Error {
@@ -484,6 +490,15 @@ export class VaultClient {
       if (timer) clearTimeout(timer);
     }
     const parsed = text ? JSON.parse(text) : null;
+    if (res.status === 401) {
+      // Central hook so the app can lock + re-auth once, instead of every call site throwing
+      // an uncaught 401. Best-effort: a throwing handler must not mask the API error.
+      try {
+        this.opts.onUnauthorized?.();
+      } catch {
+        /* ignore */
+      }
+    }
     if (!res.ok) throw new VaultApiError(res.status, parsed);
     return parsed as T;
   }
