@@ -291,7 +291,7 @@ export class PluginsService implements OnApplicationBootstrap {
   async unmount(name: string): Promise<boolean> {
     const mount = this.mountByName.get(name);
     if (!mount) return false;
-    this.config.leases.revokePrefix(mount);
+    await this.config.leases.revokePrefix(mount);
     this.config.registry.unmount(mount);
     this.config.enginesByMount.delete(mount);
     this.config.manifestCapsByMount.delete(mount);

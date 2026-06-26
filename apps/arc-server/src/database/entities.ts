@@ -1034,6 +1034,63 @@ export class VaultWorkflowEntity {
   updatedAt!: Date;
 }
 
+/**
+ * Persisted lease registry (#113). Mirrors `@arc/leasing`'s `Lease` shape so the arc
+ * `LeaseManager` can be backed by Postgres instead of process memory — leases now survive a
+ * server restart and stay consistent across replicas (renew/revoke take a row lock). Epoch-ms
+ * timestamps are stored as `bigint`; the transformer coerces the driver's string-bigint back
+ * to a JS number on read (Postgres returns bigint as string to avoid precision loss; epoch-ms
+ * is well within `Number.MAX_SAFE_INTEGER`).
+ */
+const epochMsColumn = {
+  to: (v: number | null | undefined): number | null => v ?? null,
+  from: (v: string | number | null): number | null => (v == null ? null : Number(v)),
+};
+
+@Entity("vault_leases")
+@Index(["mount", "revokedAt"]) // active-by-mount lookups (revokePrefix, the operator list)
+@Index(["taskId"]) // ADR-005 cascade revoke on task close
+export class VaultLeaseEntity {
+  /** The arc-internal lease id — assigned by `LeaseManager.idGen`, not the DB. */
+  @PrimaryColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "text" })
+  mount!: string;
+
+  /** Opaque backend (OpenBao / plugin) lease id; null for leases with no backend handle. */
+  @Column({ type: "text", nullable: true })
+  backendLeaseId!: string | null;
+
+  @Column({ type: "int" })
+  ttlSeconds!: number;
+
+  @Column({ type: "int" })
+  maxTtlSeconds!: number;
+
+  @Column({ type: "boolean" })
+  renewable!: boolean;
+
+  @Column({ type: "bigint", transformer: epochMsColumn })
+  issuedAt!: number;
+
+  /** Indexed for the sweep janitor + the active-lease ordering. */
+  @Index()
+  @Column({ type: "bigint", transformer: epochMsColumn })
+  expiresAt!: number;
+
+  @Column({ type: "bigint", nullable: true, transformer: epochMsColumn })
+  revokedAt!: number | null;
+
+  /** Engine-C task binding (ADR-005); null for human-issued leases. */
+  @Column({ type: "text", nullable: true })
+  taskId!: string | null;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+}
+
 export const entities = [
   UserEntity,
   VaultUserKeysEntity,
@@ -1058,4 +1115,5 @@ export const entities = [
   VaultPendingApprovalEntity,
   VaultItemShareEntity,
   VaultWorkflowEntity,
+  VaultLeaseEntity,
 ];

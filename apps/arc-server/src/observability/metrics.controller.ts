@@ -34,7 +34,7 @@ export class MetricsController {
     // hold their stale value forever.
     if (this.engines) {
       this.metrics.activeLeases.reset();
-      for (const [engine, count] of this.engines.activeLeasesByEngine()) {
+      for (const [engine, count] of await this.engines.activeLeasesByEngine()) {
         this.metrics.activeLeases.labels(engine).set(count);
       }
     }

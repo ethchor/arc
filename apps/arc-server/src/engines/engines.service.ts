@@ -49,6 +49,22 @@ export interface EnginesConfig {
   manifestCapsByMount: Map<string, ReadonlySet<string> | null>;
 }
 
+/** Wire shape of one lease row in `GET /v1/sys/leases`. `state` is derived, not stored. */
+export interface LeaseWire {
+  id: string;
+  mount: string;
+  engineType: string;
+  backendLeaseId?: string;
+  ttlSeconds: number;
+  maxTtlSeconds: number;
+  renewable: boolean;
+  issuedAt: number;
+  expiresAt: number;
+  revokedAt?: number;
+  state: "active" | "expired" | "revoked";
+  taskId?: string;
+}
+
 /**
  * Routes Engine-A requests through the {@link MountRegistry} to the engine adapter mounted
  * at the resolved path. The controller is purposely thin; everything interesting (dispatch
@@ -344,26 +360,14 @@ export class EnginesService {
    * `expiresAt`, otherwise `active`. Times are wire-ISO-friendly (epoch ms numbers
    * preserved as-is; the client converts).
    */
-  listLeases(): Array<{
-    id: string;
-    mount: string;
-    engineType: string;
-    backendLeaseId?: string;
-    ttlSeconds: number;
-    maxTtlSeconds: number;
-    renewable: boolean;
-    issuedAt: number;
-    expiresAt: number;
-    revokedAt?: number;
-    state: "active" | "expired" | "revoked";
-    taskId?: string;
-  }> {
+  async listLeases(): Promise<LeaseWire[]> {
     const now = Date.now();
-    const out = this.config.leases.list().map((l) => {
+    const all = await this.config.leases.list();
+    const out = all.map((l) => {
       const engine = this.config.enginesByMount.get(l.mount);
       const state: "active" | "expired" | "revoked" =
         l.revokedAt !== undefined ? "revoked" : l.expiresAt <= now ? "expired" : "active";
-      const wire: ReturnType<typeof this.listLeases>[number] = {
+      const wire: LeaseWire = {
         id: l.id,
         mount: l.mount,
         engineType: engine?.type ?? "unknown",
@@ -395,7 +399,7 @@ export class EnginesService {
    * how to drive the upstream `sys/leases/renew` against OpenBao if needed.
    */
   async renewLease(leaseId: string, incrementSeconds?: number): Promise<Record<string, unknown>> {
-    const lease = this.config.leases.get(leaseId);
+    const lease = await this.config.leases.get(leaseId);
     if (!lease) throw new NotFoundException({ errors: [`no lease ${leaseId}`] });
     const engine = this.config.enginesByMount.get(lease.mount);
     if (!engine) {
@@ -427,7 +431,7 @@ export class EnginesService {
 
   /** `PUT /v1/sys/leases/revoke/<id>` / `POST /v1/sys/leases/revoke {lease_id}`. */
   async revokeLease(leaseId: string): Promise<void> {
-    const lease = this.config.leases.get(leaseId);
+    const lease = await this.config.leases.get(leaseId);
     if (!lease) throw new NotFoundException({ errors: [`no lease ${leaseId}`] });
     const engine = this.config.enginesByMount.get(lease.mount);
     if (!engine) {
@@ -462,10 +466,10 @@ export class EnginesService {
    * right before each `/metrics` scrape so the `arc_active_leases` gauge reflects the
    * current LeaseManager state. Empty when no leases have been issued.
    */
-  activeLeasesByEngine(): Map<string, number> {
+  async activeLeasesByEngine(): Promise<Map<string, number>> {
     const now = Date.now();
     const counts = new Map<string, number>();
-    for (const lease of this.config.leases.list()) {
+    for (const lease of await this.config.leases.list()) {
       if (lease.revokedAt !== undefined) continue;
       if (lease.expiresAt <= now) continue;
       const engine = this.config.enginesByMount.get(lease.mount);
