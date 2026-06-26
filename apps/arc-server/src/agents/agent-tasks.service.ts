@@ -373,7 +373,7 @@ export class AgentTasksService {
       d.revokedAt = now;
       await this.delegations.save(d);
     }
-    const revokedLeases = this.engines.leases.revokeByTaskId(taskId);
+    const revokedLeases = await this.engines.leases.revokeByTaskId(taskId);
 
     // HIGH-C (audit): bump the agent's tokenEpoch so every outstanding agent JWT —
     // including the one currently driving this call from a side process — fails on the

@@ -84,8 +84,8 @@ export class EnginesController {
    * doesn't resolve to a mount — leases are server-wide.
    */
   @Get("sys/leases")
-  listLeases() {
-    return { data: { leases: this.engines.listLeases() } };
+  async listLeases() {
+    return { data: { leases: await this.engines.listLeases() } };
   }
 
   /**

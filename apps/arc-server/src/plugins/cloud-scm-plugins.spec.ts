@@ -114,7 +114,7 @@ describe("@arc/plugin-gcp end-to-end through PluginsService + EnginesService", (
 
     expect(await plugins.unmount("arc-plugin-gcp")).toBe(true);
     expect((await enginesService.listMounts()).map((m) => m.path)).not.toContain("gcp/");
-    expect(config.leases.state(issued.lease_id as string)).toBe("revoked");
+    expect(await config.leases.state(issued.lease_id as string)).toBe("revoked");
   });
 
   it("rejects invalid GCP config at mount time without leaving the plugin half-registered", async () => {
@@ -177,7 +177,7 @@ describe("@arc/plugin-github end-to-end through PluginsService + EnginesService"
       BadRequestException,
     );
     await enginesService.revokeLease(issued.lease_id as string);
-    expect(config.leases.state(issued.lease_id as string)).toBe("revoked");
+    expect(await config.leases.state(issued.lease_id as string)).toBe("revoked");
     // revoke didn't round-trip to GitHub — the only GH call was the issue.
     expect(gh.calls).toHaveLength(1);
   });

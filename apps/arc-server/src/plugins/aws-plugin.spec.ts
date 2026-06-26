@@ -120,7 +120,7 @@ describe("@arc/plugin-aws end-to-end through PluginsService + EnginesService", (
 
     const issued = await enginesService.get("aws/creds/app", {});
     await enginesService.revokeLease(issued.lease_id as string);
-    expect(config.leases.state(issued.lease_id as string)).toBe("revoked");
+    expect(await config.leases.state(issued.lease_id as string)).toBe("revoked");
     // The plugin doesn't call AWS for revoke — only the one issue STS call.
     expect(sts.calls).toHaveLength(1);
   });
@@ -145,6 +145,6 @@ describe("@arc/plugin-aws end-to-end through PluginsService + EnginesService", (
 
     expect(await plugins.unmount("arc-plugin-aws")).toBe(true);
     expect((await enginesService.listMounts()).map((m) => m.path)).not.toContain("aws/");
-    expect(config.leases.state(issued.lease_id as string)).toBe("revoked");
+    expect(await config.leases.state(issued.lease_id as string)).toBe("revoked");
   });
 });

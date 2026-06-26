@@ -35,6 +35,11 @@ class FakeAwsPlugin implements SecretsPlugin {
   revoked: string[] = [];
   private counter = 0;
 
+  /** `issueTtl` sets the default ttl (and therefore the lease's maxTtl) when the dispatch
+   *  path doesn't pass one — lets a test issue with enough headroom that a later renew
+   *  lands under the hard cap instead of being clamped. */
+  constructor(private readonly issueTtl = 120) {}
+
   async configure(input: unknown): Promise<void> {
     if ((input as { fail?: boolean })?.fail) throw new Error("config rejected");
     this.configured = true;
@@ -44,7 +49,7 @@ class FakeAwsPlugin implements SecretsPlugin {
     return {
       data: { access_key: `AKIA-${req.role}-${this.counter}`, secret: `secret-${this.counter}` },
       leaseId: `plugin/${this.meta.name}/${req.role}/${this.counter}`,
-      ttlSeconds: req.ttlSeconds ?? 120,
+      ttlSeconds: req.ttlSeconds ?? this.issueTtl,
       renewable: true,
     };
   }
@@ -93,18 +98,15 @@ describe("PluginsService — register + mount + dispatch", () => {
 
   it("renewLease delegates to the plugin and surfaces the new ttl on the wire", async () => {
     const { enginesService, plugins } = buildHarness();
-    const plugin = new FakeAwsPlugin();
+    // Issue with a 240s ttl so maxTtlSeconds=240 and the plugin's renew (also 240) sits at
+    // the cap rather than over it. This isolates "wire-shape matches plugin renew result"
+    // from cap-clamping behavior, which is tested separately in @arc/leasing. (The store
+    // returns copies now, so the old "mutate the stored lease's maxTtlSeconds" trick no
+    // longer works — and shouldn't.)
+    const plugin = new FakeAwsPlugin(240);
     await plugins.mountSecretsPlugin(plugin, "aws/");
 
     const issued = await enginesService.get("aws/creds/web", {});
-    // Plugin issues with ttlSeconds=120 (matches the lease's maxTtlSeconds), so a
-    // renew to 240 would exceed the cap; bump the lease's cap up so the renew can land.
-    // This isolates "wire-shape matches plugin renew result" from cap behavior, which is
-    // tested separately in @arc/leasing.
-    const lease = (enginesService as unknown as { config: { leases: { get(id: string): { maxTtlSeconds: number } | undefined } } })
-      .config.leases.get(issued.lease_id as string);
-    if (lease) (lease as { maxTtlSeconds: number }).maxTtlSeconds = 600;
-
     const renewed = await enginesService.renewLease(issued.lease_id as string);
     expect(renewed.lease_id).toBe(issued.lease_id);
     expect(renewed.lease_duration).toBeGreaterThanOrEqual(239);
@@ -121,7 +123,7 @@ describe("PluginsService — register + mount + dispatch", () => {
 
     expect(plugin.revoked).toHaveLength(1);
     expect(plugin.revoked[0]).toMatch(/^plugin\/fake-aws\/web\/\d+$/);
-    expect(config.leases.state(issued.lease_id as string)).toBe("revoked");
+    expect(await config.leases.state(issued.lease_id as string)).toBe("revoked");
   });
 
   it("unmount drops the registry entry, revokes outstanding leases, and removes the plugin", async () => {
@@ -137,8 +139,8 @@ describe("PluginsService — register + mount + dispatch", () => {
     expect((await enginesService.listMounts()).map((m) => m.path)).toEqual([]);
 
     // Every outstanding lease at that mount was revoked by `revokePrefix`.
-    expect(config.leases.state(a.lease_id as string)).toBe("revoked");
-    expect(config.leases.state(b.lease_id as string)).toBe("revoked");
+    expect(await config.leases.state(a.lease_id as string)).toBe("revoked");
+    expect(await config.leases.state(b.lease_id as string)).toBe("revoked");
 
     // Idempotent.
     expect(await plugins.unmount("fake-aws")).toBe(false);
