@@ -327,6 +327,33 @@ export function VaultApp() {
       toast.success("Deleted");
     });
 
+  // Per-item "More actions". Move re-saves the item under a new folderId (an update, so it
+  // keeps its id + history); Duplicate re-saves the decrypted data as a brand-new item.
+  const moveItem = (item: PulledItem, folderId: string | null) =>
+    guard(async () => {
+      if (!selected || item.data == null) return;
+      const type = (item.data as { type?: string }).type;
+      await getClient().putItem(selected, item.data, {
+        id: item.id,
+        baseVersion: item.version,
+        type,
+        folderId,
+      });
+      await openVault(selected);
+      setActiveItem(item.id);
+      toast.success("Moved");
+    });
+
+  const duplicateItem = (item: PulledItem) =>
+    guard(async () => {
+      if (!selected || item.data == null) return;
+      const type = (item.data as { type?: string }).type;
+      const dup = await getClient().putItem(selected, item.data, { type, folderId: item.folderId });
+      await openVault(selected);
+      setActiveItem(dup.id);
+      toast.success("Item duplicated");
+    });
+
   const rotateVaultKey = () =>
     guard(async () => {
       if (!selected) return;
@@ -595,6 +622,8 @@ export function VaultApp() {
                 toast.success("Item shared");
               })
             }
+            onMoveItem={moveItem}
+            onDuplicateItem={duplicateItem}
           />
         )}
 
