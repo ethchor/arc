@@ -194,6 +194,11 @@ export class RotateKeyDto {
    * is only meaningful if a future flow clears a name.
    */
   @IsOptional() @IsObject() encName?: EnvelopeJson | null;
+  /**
+   * Folder names re-encrypted under the NEW key + version — same reason as `encName` (folder
+   * names are also sealed directly under the VK). Absent leaves folders untouched.
+   */
+  @IsOptional() @IsArray() folders?: Array<{ id: string; encName: EnvelopeJson }>;
 }
 
 // --- Passkey unlock (docs/13) ---

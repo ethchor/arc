@@ -1864,11 +1864,19 @@ export class VaultClient {
         ? encryptVaultName(newVk, currentName, newKeyVersion)
         : undefined;
 
+    // Folder names are sealed under the VK the same way — re-seal each under the new key.
+    // `listFolders` decrypts with the current key and falls back to the folder id when a name
+    // doesn't decrypt; skip those (an already-broken name can't be recovered).
+    const folders = (await this.listFolders(vaultId))
+      .filter((f) => f.name && f.name !== f.id)
+      .map((f) => ({ id: f.id, encName: encryptFolderName(newVk, f.name, newKeyVersion) }));
+
     await this.http("POST", `/vaults/${vaultId}/rotate-key`, {
       newKeyVersion,
       grants,
       rewrappedItemKeys,
       ...(encName ? { encName } : {}),
+      ...(folders.length ? { folders } : {}),
     });
     this.vkCache.set(vaultId, { vk: newVk, keyVersion: newKeyVersion });
     return { keyVersion: newKeyVersion };
