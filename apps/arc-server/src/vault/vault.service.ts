@@ -544,6 +544,16 @@ export class VaultService {
         await mgr.save(item);
       }
 
+      // Folder names are sealed under the VK too — re-seal them under the new key so they
+      // don't break on rotation (same fix as the vault name above).
+      for (const f of dto.folders ?? []) {
+        const folder = await mgr.findOne(VaultFolderEntity, { where: { id: f.id, vaultId } });
+        if (folder) {
+          folder.encName = f.encName;
+          await mgr.save(folder);
+        }
+      }
+
       await mgr.save(vault);
       await this.writeAudit(vaultId, userId, "vault_key_rotated", String(dto.newKeyVersion));
       return { ok: true, keyVersion: dto.newKeyVersion };

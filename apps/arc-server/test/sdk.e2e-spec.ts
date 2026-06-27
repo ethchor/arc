@@ -100,6 +100,19 @@ describe("vault SDK e2e (consumer + service account)", () => {
     expect((await C.listVaults()).find((x) => x.id === v.id)?.name).toBe("Engineering");
   });
 
+  it("folder names survive a key rotation (same VK-sealed root cause as vault names)", async () => {
+    const C = new VaultClient({ baseUrl, profile: "test" });
+    await C.devLogin("folders@example.com");
+    await C.enroll("master-password-F");
+
+    const v = await C.createVault("team", "Has Folders");
+    await C.createFolder(v.id, "Work");
+    expect((await C.listFolders(v.id)).map((f) => f.name)).toContain("Work");
+
+    await C.rotateForAllMembers(v.id);
+    expect((await C.listFolders(v.id)).map((f) => f.name)).toContain("Work");
+  });
+
   it("revoke member: removeMember drops the membership and re-keys the vault", async () => {
     const owner = new VaultClient({ baseUrl, profile: "test" });
     await owner.devLogin("revoker@example.com");
