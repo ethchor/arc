@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   ChevronDown,
+  Copy,
   ExternalLink,
   FileText,
   Folder,
@@ -103,6 +104,10 @@ export interface VaultViewProps {
     granteeUserId: number,
     opts: { permission: "view" | "edit"; expiresAtMs?: number },
   ) => Promise<void>;
+  /** Move an item to a folder (per-item "More actions"). Omit to keep the menu disabled. */
+  onMoveItem?: (item: PulledItem, folderId: string | null) => Promise<void>;
+  /** Duplicate an item into the same folder. */
+  onDuplicateItem?: (item: PulledItem) => Promise<void>;
 }
 
 export function VaultView(props: VaultViewProps) {
@@ -583,6 +588,9 @@ function DetailPane(props: VaultViewProps) {
           item={active}
           onShareLookup={props.onShareLookup}
           onShareItem={props.onShareItem}
+          folders={folders}
+          onMoveItem={props.onMoveItem}
+          onDuplicateItem={props.onDuplicateItem}
         />
         <DetailFields item={active} />
         <DetailFooter
@@ -604,10 +612,16 @@ function DetailHero({
   item,
   onShareLookup,
   onShareItem,
+  folders,
+  onMoveItem,
+  onDuplicateItem,
 }: {
   item: PulledItem;
   onShareLookup?: VaultViewProps["onShareLookup"];
   onShareItem?: VaultViewProps["onShareItem"];
+  folders?: VaultFolder[];
+  onMoveItem?: VaultViewProps["onMoveItem"];
+  onDuplicateItem?: VaultViewProps["onDuplicateItem"];
 }) {
   const totp = asTotp(item);
   const note = asNote(item);
@@ -661,13 +675,50 @@ function DetailHero({
           </span>
         </IconTip>
       )}
-      <IconTip label="More actions" hint="Coming soon — move, duplicate, and item history.">
-        <span tabIndex={0} className="inline-flex">
-          <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="More actions" disabled>
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </span>
-      </IconTip>
+      {onMoveItem && onDuplicateItem ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="More actions">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[200px]">
+            <DropdownMenuItem onSelect={() => onDuplicateItem(item)}>
+              <Copy className="h-3.5 w-3.5" /> Duplicate
+            </DropdownMenuItem>
+            {folders && folders.length > 0 ? (
+              <>
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  Move to folder
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  disabled={(item.folderId ?? null) === null}
+                  onSelect={() => onMoveItem(item, null)}
+                >
+                  <Folder className="h-3.5 w-3.5 opacity-60" /> No folder
+                </DropdownMenuItem>
+                {folders.map((f) => (
+                  <DropdownMenuItem
+                    key={f.id}
+                    disabled={item.folderId === f.id}
+                    onSelect={() => onMoveItem(item, f.id)}
+                  >
+                    <Folder className="h-3.5 w-3.5 opacity-60" /> {f.name}
+                  </DropdownMenuItem>
+                ))}
+              </>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <IconTip label="More actions" hint="Coming soon — move, duplicate, and item history.">
+          <span tabIndex={0} className="inline-flex">
+            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="More actions" disabled>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </span>
+        </IconTip>
+      )}
     </div>
   );
 }
