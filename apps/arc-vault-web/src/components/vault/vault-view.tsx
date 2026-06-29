@@ -8,6 +8,7 @@ import {
   FileText,
   Folder,
   FolderPlus,
+  History,
   KeyRound,
   KeySquare,
   Lock,
@@ -21,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { totpCode } from "@arc/crypto";
-import type { PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
+import type { ItemVersion, PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +50,7 @@ import {
   type Role,
 } from "@/components/vault/share-dialog";
 import { ShareItemDialog } from "@/components/vault/share-item-dialog";
+import { ItemHistoryDialog } from "@/components/vault/item-history-dialog";
 import { TotpDialog, type TotpInput } from "@/components/vault/totp-dialog";
 import type { TotpData } from "@/lib/items";
 import { asLogin, asNote, asSecret, asTotp, itemSubtitle, itemTitle } from "@/lib/items";
@@ -108,6 +110,10 @@ export interface VaultViewProps {
   onMoveItem?: (item: PulledItem, folderId: string | null) => Promise<void>;
   /** Duplicate an item into the same folder. */
   onDuplicateItem?: (item: PulledItem) => Promise<void>;
+  /** List an item's past versions (history). Omit to hide the "Version history" action. */
+  onListVersions?: (item: PulledItem) => Promise<ItemVersion[]>;
+  /** Restore an item to a past version (a forward edit). Paired with `onListVersions`. */
+  onRestoreVersion?: (item: PulledItem, version: number) => Promise<void>;
 }
 
 export function VaultView(props: VaultViewProps) {
@@ -591,6 +597,8 @@ function DetailPane(props: VaultViewProps) {
           folders={folders}
           onMoveItem={props.onMoveItem}
           onDuplicateItem={props.onDuplicateItem}
+          onListVersions={props.onListVersions}
+          onRestoreVersion={props.onRestoreVersion}
         />
         <DetailFields item={active} />
         <DetailFooter
@@ -615,6 +623,8 @@ function DetailHero({
   folders,
   onMoveItem,
   onDuplicateItem,
+  onListVersions,
+  onRestoreVersion,
 }: {
   item: PulledItem;
   onShareLookup?: VaultViewProps["onShareLookup"];
@@ -622,7 +632,10 @@ function DetailHero({
   folders?: VaultFolder[];
   onMoveItem?: VaultViewProps["onMoveItem"];
   onDuplicateItem?: VaultViewProps["onDuplicateItem"];
+  onListVersions?: VaultViewProps["onListVersions"];
+  onRestoreVersion?: VaultViewProps["onRestoreVersion"];
 }) {
+  const [historyOpen, setHistoryOpen] = React.useState(false);
   const totp = asTotp(item);
   const note = asNote(item);
   const secret = asSecret(item);
@@ -683,6 +696,11 @@ function DetailHero({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-[200px]">
+            {onListVersions && onRestoreVersion ? (
+              <DropdownMenuItem onSelect={() => setHistoryOpen(true)}>
+                <History className="h-3.5 w-3.5" /> Version history
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onSelect={() => onDuplicateItem(item)}>
               <Copy className="h-3.5 w-3.5" /> Duplicate
             </DropdownMenuItem>
@@ -719,6 +737,15 @@ function DetailHero({
           </span>
         </IconTip>
       )}
+      {onListVersions && onRestoreVersion ? (
+        <ItemHistoryDialog
+          item={item}
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          onList={onListVersions}
+          onRestore={onRestoreVersion}
+        />
+      ) : null}
     </div>
   );
 }
