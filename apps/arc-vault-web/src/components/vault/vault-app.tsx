@@ -354,6 +354,21 @@ export function VaultApp() {
       toast.success("Item duplicated");
     });
 
+  // Per-item version history. List is a plain read (the dialog renders its own loading/error
+  // state); Restore is a forward edit, so it goes through `guard` + refresh like the other
+  // mutations and re-selects the item to show its restored contents.
+  const listVersions = (item: PulledItem) =>
+    selected ? getClient().listItemVersions(selected, item.id) : Promise.resolve([]);
+
+  const restoreVersion = (item: PulledItem, version: number) =>
+    guard(async () => {
+      if (!selected) return;
+      await getClient().restoreItemVersion(selected, item.id, version);
+      await openVault(selected);
+      setActiveItem(item.id);
+      toast.success(`Restored version ${version}`);
+    });
+
   const rotateVaultKey = () =>
     guard(async () => {
       if (!selected) return;
@@ -624,6 +639,8 @@ export function VaultApp() {
             }
             onMoveItem={moveItem}
             onDuplicateItem={duplicateItem}
+            onListVersions={listVersions}
+            onRestoreVersion={restoreVersion}
           />
         )}
 
