@@ -268,6 +268,51 @@ export class VaultItemEntity {
   updatedAt!: Date;
 }
 
+/**
+ * Past versions of a vault item (history). On every *update*, `upsertItem` archives the prior
+ * snapshot here before overwriting the live row in {@link VaultItemEntity} — so the current
+ * version always lives in `vault_items` and history is "these rows + the live item". Each
+ * snapshot keeps the exact `(ciphertext, wrappedItemKey, vaultKeyVersion)` it was encrypted
+ * with, so the client can decrypt any past version; on key rotation those wrapped keys are
+ * re-wrapped to the new VK (history survives a rotation). Retention is capped per item.
+ */
+@Entity("vault_item_versions")
+@Index(["itemId", "version"], { unique: true })
+@Index(["vaultId"])
+export class VaultItemVersionEntity {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Index()
+  @Column({ type: "uuid" })
+  itemId!: string;
+
+  @Column({ type: "uuid" })
+  vaultId!: string;
+
+  @Column({ type: "int" })
+  version!: number;
+
+  @Column({ type: "simple-json" })
+  ciphertext!: EnvelopeJson;
+
+  @Column({ type: "simple-json" })
+  wrappedItemKey!: EnvelopeJson;
+
+  @Column({ type: "int" })
+  vaultKeyVersion!: number;
+
+  @Column({ type: "int" })
+  authorUserId!: number;
+
+  /** When this snapshot was the live version (the prior item's `updatedAt`). */
+  @Column({ type: "datetime" })
+  savedAt!: Date;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+}
+
 @Entity("vault_devices")
 @Index(["userId", "approved"])
 export class VaultDeviceEntity {
@@ -1116,4 +1161,5 @@ export const entities = [
   VaultItemShareEntity,
   VaultWorkflowEntity,
   VaultLeaseEntity,
+  VaultItemVersionEntity,
 ];

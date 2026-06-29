@@ -19,6 +19,7 @@ import { AgentIntentDigestUnique1718500000000 } from "./migrations/1718500000000
 import { AgentTokenEpoch1718600000000 } from "./migrations/1718600000000-agent-token-epoch";
 import { WorkflowsSchema1718700000000 } from "./migrations/1718700000000-workflows-schema";
 import { VaultLeasesSchema1718800000000 } from "./migrations/1718800000000-vault-leases-schema";
+import { VaultItemVersionsSchema1718900000000 } from "./migrations/1718900000000-vault-item-versions-schema";
 import { AgentsModule } from "./agents/agents.module";
 import { AuthModule } from "./auth/auth.module";
 import { AuthMethodsModule } from "./auth-methods/auth-methods.module";
@@ -47,6 +48,7 @@ const migrations = [
   AgentTokenEpoch1718600000000,
   WorkflowsSchema1718700000000,
   VaultLeasesSchema1718800000000,
+  VaultItemVersionsSchema1718900000000,
 ];
 
 /**
