@@ -21,6 +21,7 @@ import { PasskeySchema1717400000000 } from "../migrations/1717400000000-passkey-
 import { GrantsGroupsSchema1717500000000 } from "../migrations/1717500000000-grants-groups-schema";
 import { WorkflowsSchema1718700000000 } from "../migrations/1718700000000-workflows-schema";
 import { VaultLeasesSchema1718800000000 } from "../migrations/1718800000000-vault-leases-schema";
+import { VaultItemVersionsSchema1718900000000 } from "../migrations/1718900000000-vault-item-versions-schema";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -38,5 +39,6 @@ export default new DataSource({
     GrantsGroupsSchema1717500000000,
     WorkflowsSchema1718700000000,
     VaultLeasesSchema1718800000000,
+    VaultItemVersionsSchema1718900000000,
   ],
 });

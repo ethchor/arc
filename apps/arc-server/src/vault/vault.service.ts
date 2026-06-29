@@ -26,6 +26,7 @@ import {
   VaultHeadEntity,
   VaultItemEntity,
   VaultItemShareEntity,
+  VaultItemVersionEntity,
   VaultKeyGrantEntity,
   VaultMembershipEntity,
   VaultUserKeysEntity,
@@ -53,6 +54,8 @@ const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const ROLE_RANK: Record<MemberRole, number> = { viewer: 1, editor: 2, admin: 3, owner: 4 };
 const MAX_UNLOCK_FAILS = 5;
 const LOCKOUT_MS = 30_000;
+/** Per-item history retention: keep at most this many past versions (oldest pruned). */
+const ITEM_HISTORY_LIMIT = 20;
 
 interface AttemptState {
   fails: number;
@@ -452,6 +455,30 @@ export class VaultService {
         if (dto.baseVersion === undefined || item.version !== dto.baseVersion) {
           throw new ConflictException({ error: "conflict", current: this.toWireItem(item) });
         }
+        // History (#item-versions): archive the snapshot we're about to overwrite, then cap
+        // retention. The current version stays in `vault_items`; past versions live here.
+        await mgr.save(
+          mgr.create(VaultItemVersionEntity, {
+            itemId: item.id,
+            vaultId,
+            version: item.version,
+            ciphertext: item.ciphertext,
+            wrappedItemKey: item.wrappedItemKey,
+            vaultKeyVersion: item.vaultKeyVersion,
+            authorUserId: item.authorUserId,
+            savedAt: item.updatedAt,
+          }),
+        );
+        const archived = await mgr.find(VaultItemVersionEntity, {
+          where: { itemId: item.id },
+          order: { version: "DESC" },
+        });
+        if (archived.length > ITEM_HISTORY_LIMIT) {
+          await mgr.delete(
+            VaultItemVersionEntity,
+            archived.slice(ITEM_HISTORY_LIMIT).map((a) => a.id),
+          );
+        }
         vault.seqCounter += 1;
         item.ciphertext = dto.ciphertext;
         item.wrappedItemKey = dto.wrappedItemKey;
@@ -507,6 +534,41 @@ export class VaultService {
     });
   }
 
+  /** Past versions of one item (history), newest-first. The client decrypts each snapshot. */
+  async listItemVersions(userId: number, vaultId: string, itemId: string) {
+    await this.requireRole(vaultId, userId, "viewer");
+    const rows = await this.dataSource.getRepository(VaultItemVersionEntity).find({
+      where: { itemId, vaultId },
+      order: { version: "DESC" },
+    });
+    return rows.map((r) => ({
+      version: r.version,
+      ciphertext: r.ciphertext,
+      wrappedItemKey: r.wrappedItemKey,
+      vaultKeyVersion: r.vaultKeyVersion,
+      authorUserId: r.authorUserId,
+      savedAt: r.savedAt,
+    }));
+  }
+
+  /**
+   * Every archived version row in the vault — the minimal shape the client needs to re-wrap
+   * each snapshot's item key on rotation (so history survives a re-key). Admin only.
+   */
+  async listItemVersionsForRotation(userId: number, vaultId: string) {
+    await this.requireRole(vaultId, userId, "admin");
+    const rows = await this.dataSource.getRepository(VaultItemVersionEntity).find({
+      where: { vaultId },
+      select: ["id", "itemId", "wrappedItemKey", "vaultKeyVersion"],
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      itemId: r.itemId,
+      wrappedItemKey: r.wrappedItemKey,
+      vaultKeyVersion: r.vaultKeyVersion,
+    }));
+  }
+
   /** Rotate the vault key (docs/07 §7.5): bump version, add new grants, re-point IKs. */
   async rotateKey(userId: number, vaultId: string, dto: RotateKeyDto) {
     await this.requireRole(vaultId, userId, "admin");
@@ -551,6 +613,17 @@ export class VaultService {
         if (folder) {
           folder.encName = f.encName;
           await mgr.save(folder);
+        }
+      }
+
+      // Re-wrap archived history snapshots' item keys to the new VK, so item history survives
+      // a rotation (their wrapped keys live in the old VK epoch otherwise).
+      for (const rv of dto.rewrappedVersionKeys ?? []) {
+        const ver = await mgr.findOne(VaultItemVersionEntity, { where: { id: rv.id, vaultId } });
+        if (ver) {
+          ver.wrappedItemKey = rv.wrappedItemKey;
+          ver.vaultKeyVersion = dto.newKeyVersion;
+          await mgr.save(ver);
         }
       }
 

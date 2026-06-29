@@ -232,6 +232,18 @@ export interface PulledItem {
   updatedAt: string;
 }
 
+/** A past version of an item (history), decrypted on this device. */
+export interface ItemVersion {
+  /** The item version this snapshot represents (the live item's version is higher). */
+  version: number;
+  /** Decrypted payload, or `null` if the snapshot couldn't be decrypted on this device. */
+  data: JsonValue | null;
+  /** The user who saved this version. */
+  authorUserId: number;
+  /** ISO 8601 — when this version was the live one. */
+  savedAt: string;
+}
+
 /**
  * Item-level share (ADR-007). The recipient's view of the wire shape: enough to decrypt
  * (`wrappedIK` + `ciphertext` + AAD context) plus metadata for an inbox-style UI.
@@ -1633,6 +1645,58 @@ export class VaultClient {
     });
   }
 
+  /**
+   * Past versions of an item (history), newest-first, each decrypted on this device. A snapshot
+   * that can't be decrypted comes back with `data: null` (shouldn't happen — rotation re-wraps
+   * history — but it fails soft rather than throwing).
+   */
+  async listItemVersions(vaultId: string, itemId: string): Promise<ItemVersion[]> {
+    const vk = this.requireVk(vaultId);
+    const rows = await this.http<
+      Array<{
+        version: number;
+        ciphertext: Envelope;
+        wrappedItemKey: Envelope;
+        vaultKeyVersion: number;
+        authorUserId: number;
+        savedAt: string;
+      }>
+    >("GET", `/vaults/${vaultId}/items/${itemId}/versions`);
+    return rows.map((r) => {
+      let data: JsonValue | null = null;
+      try {
+        data = decryptItem(
+          vk.vk,
+          { vaultId, itemId, version: r.version, keyVersion: r.vaultKeyVersion },
+          { ciphertext: r.ciphertext, wrappedItemKey: r.wrappedItemKey },
+        );
+      } catch {
+        data = null;
+      }
+      return { version: r.version, data, authorUserId: r.authorUserId, savedAt: r.savedAt };
+    });
+  }
+
+  /**
+   * Restore an item to a past version's contents. This is a **forward** edit — it writes the old
+   * payload as a new version on top of the current one (respecting optimistic concurrency, and
+   * itself becoming a history entry) rather than rewinding. The item's type + folder are
+   * preserved by the server. Returns the new version.
+   */
+  async restoreItemVersion(
+    vaultId: string,
+    itemId: string,
+    version: number,
+  ): Promise<{ id: string; version: number; seq: number }> {
+    const target = (await this.listItemVersions(vaultId, itemId)).find((v) => v.version === version);
+    if (!target || target.data == null) {
+      throw new Error(`item version ${version} not found or could not be decrypted`);
+    }
+    const current = (await this.rawItems(vaultId)).find((r) => r.id === itemId && !r.deletedAt);
+    if (!current) throw new Error(`item ${itemId} not found`);
+    return this.putItem(vaultId, target.data, { id: itemId, baseVersion: current.version });
+  }
+
   async listFolders(vaultId: string): Promise<VaultFolder[]> {
     const vk = this.requireVk(vaultId);
     const rows = await this.http<Array<{ id: string; encName: Envelope }>>("GET", `/vaults/${vaultId}/folders`);
@@ -1871,12 +1935,29 @@ export class VaultClient {
       .filter((f) => f.name && f.name !== f.id)
       .map((f) => ({ id: f.id, encName: encryptFolderName(newVk, f.name, newKeyVersion) }));
 
+    // Re-wrap every archived item-history snapshot's item key to the new VK, so history
+    // survives the rotation (the ciphertext's AAD binds only the item version, not the key
+    // version, so it stays valid once its IK is re-wrapped).
+    const versionRows = await this.http<
+      Array<{ id: string; itemId: string; wrappedItemKey: Envelope; vaultKeyVersion: number }>
+    >("GET", `/vaults/${vaultId}/item-versions`);
+    const rewrappedVersionKeys = versionRows.map((v) => ({
+      id: v.id,
+      wrappedItemKey: rewrapItemKey(
+        current.vk,
+        newVk,
+        { vaultId, itemId: v.itemId, oldKeyVersion: v.vaultKeyVersion, newKeyVersion },
+        v.wrappedItemKey,
+      ),
+    }));
+
     await this.http("POST", `/vaults/${vaultId}/rotate-key`, {
       newKeyVersion,
       grants,
       rewrappedItemKeys,
       ...(encName ? { encName } : {}),
       ...(folders.length ? { folders } : {}),
+      ...(rewrappedVersionKeys.length ? { rewrappedVersionKeys } : {}),
     });
     this.vkCache.set(vaultId, { vk: newVk, keyVersion: newKeyVersion });
     return { keyVersion: newKeyVersion };

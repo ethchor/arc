@@ -113,6 +113,42 @@ describe("vault SDK e2e (consumer + service account)", () => {
     expect((await C.listFolders(v.id)).map((f) => f.name)).toContain("Work");
   });
 
+  it("item history: lists past versions, restores one, and survives a key rotation", async () => {
+    const C = new VaultClient({ baseUrl, profile: "test" });
+    await C.devLogin("history@example.com");
+    await C.enroll("master-password-H");
+    const v = await C.createVault("team", "Hist");
+
+    const c = await C.putItem(v.id, { type: "secret", key: "K", value: "v1" }, { type: "secret" });
+    const u2 = await C.putItem(
+      v.id,
+      { type: "secret", key: "K", value: "v2" },
+      { id: c.id, baseVersion: c.version, type: "secret" },
+    );
+    await C.putItem(
+      v.id,
+      { type: "secret", key: "K", value: "v3" },
+      { id: c.id, baseVersion: u2.version, type: "secret" },
+    );
+
+    // History = the two PAST versions (the live v3 stays in vault_items), newest-first.
+    const versions = await C.listItemVersions(v.id, c.id);
+    expect(versions.map((x) => x.version)).toEqual([2, 1]);
+    expect((versions[0]!.data as { value: string }).value).toBe("v2");
+    expect((versions[1]!.data as { value: string }).value).toBe("v1");
+
+    // Restore v1 → a new forward version carrying v1's payload.
+    await C.restoreItemVersion(v.id, c.id, 1);
+    const after = await C.pull(v.id, 0);
+    expect((after.items.find((i) => i.id === c.id)!.data as { value: string }).value).toBe("v1");
+
+    // History survives a key rotation — snapshots are re-wrapped to the new VK.
+    await C.rotateForAllMembers(v.id);
+    const post = await C.listItemVersions(v.id, c.id);
+    expect(post.every((x) => x.data !== null)).toBe(true);
+    expect(post.find((x) => x.version === 1)?.data).toMatchObject({ value: "v1" });
+  });
+
   it("revoke member: removeMember drops the membership and re-keys the vault", async () => {
     const owner = new VaultClient({ baseUrl, profile: "test" });
     await owner.devLogin("revoker@example.com");

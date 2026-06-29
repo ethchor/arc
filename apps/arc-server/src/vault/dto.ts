@@ -199,6 +199,12 @@ export class RotateKeyDto {
    * names are also sealed directly under the VK). Absent leaves folders untouched.
    */
   @IsOptional() @IsArray() folders?: Array<{ id: string; encName: EnvelopeJson }>;
+  /**
+   * Archived item-history snapshots' item keys re-wrapped under the NEW key. Keyed by the
+   * version row id. Without this, item history orphans at every rotation. Absent leaves them.
+   */
+  @IsOptional() @IsArray()
+  rewrappedVersionKeys?: Array<{ id: string; wrappedItemKey: EnvelopeJson }>;
 }
 
 // --- Passkey unlock (docs/13) ---

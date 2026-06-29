@@ -191,6 +191,22 @@ export class VaultController {
     return this.vault.deleteItem(u.userId, id, itemId);
   }
 
+  /** Past versions of one item (history). */
+  @Get("vaults/:id/items/:itemId/versions")
+  itemVersions(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+  ) {
+    return this.vault.listItemVersions(u.userId, id, itemId);
+  }
+
+  /** Every archived version in the vault — used by the client to re-wrap them on rotation. */
+  @Get("vaults/:id/item-versions")
+  allItemVersions(@CurrentUser() u: CurrentUserData, @Param("id") id: string) {
+    return this.vault.listItemVersionsForRotation(u.userId, id);
+  }
+
   // ----- Item-level shares (ADR-007) -----
 
   /**
