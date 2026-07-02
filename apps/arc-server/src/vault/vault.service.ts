@@ -466,27 +466,32 @@ export class VaultService {
         }
         // History (#item-versions): archive the snapshot we're about to overwrite, then cap
         // retention. The current version stays in `vault_items`; past versions live here.
-        await mgr.save(
-          mgr.create(VaultItemVersionEntity, {
-            itemId: item.id,
-            vaultId,
-            version: item.version,
-            ciphertext: item.ciphertext,
-            wrappedItemKey: item.wrappedItemKey,
-            vaultKeyVersion: item.vaultKeyVersion,
-            authorUserId: item.authorUserId,
-            savedAt: item.updatedAt,
-          }),
-        );
-        const archived = await mgr.find(VaultItemVersionEntity, {
-          where: { itemId: item.id },
-          order: { version: "DESC" },
-        });
-        if (archived.length > ITEM_HISTORY_LIMIT) {
-          await mgr.delete(
-            VaultItemVersionEntity,
-            archived.slice(ITEM_HISTORY_LIMIT).map((a) => a.id),
+        // SEC-M3 (#152): skip when the prior row was an erased tombstone (re-writing a deleted
+        // id un-deletes it, `item.deletedAt` cleared below). Its ciphertext was overwritten with
+        // an empty envelope on delete, so there is nothing meaningful to archive.
+        if (!item.deletedAt) {
+          await mgr.save(
+            mgr.create(VaultItemVersionEntity, {
+              itemId: item.id,
+              vaultId,
+              version: item.version,
+              ciphertext: item.ciphertext,
+              wrappedItemKey: item.wrappedItemKey,
+              vaultKeyVersion: item.vaultKeyVersion,
+              authorUserId: item.authorUserId,
+              savedAt: item.updatedAt,
+            }),
           );
+          const archived = await mgr.find(VaultItemVersionEntity, {
+            where: { itemId: item.id },
+            order: { version: "DESC" },
+          });
+          if (archived.length > ITEM_HISTORY_LIMIT) {
+            await mgr.delete(
+              VaultItemVersionEntity,
+              archived.slice(ITEM_HISTORY_LIMIT).map((a) => a.id),
+            );
+          }
         }
         vault.seqCounter += 1;
         item.ciphertext = dto.ciphertext;
@@ -527,7 +532,7 @@ export class VaultService {
 
   async deleteItem(userId: number, vaultId: string, itemId: string) {
     await this.requireRole(vaultId, userId, "editor");
-    return this.dataSource.transaction(async (mgr) => {
+    const { seq, blobKeys } = await this.dataSource.transaction(async (mgr) => {
       const vault = await mgr.findOne(VaultEntity, { where: { id: vaultId } });
       const item = await mgr.findOne(VaultItemEntity, { where: { id: itemId, vaultId } });
       if (!vault || !item) throw new NotFoundException("item not found");
@@ -536,16 +541,36 @@ export class VaultService {
       item.version += 1;
       item.seq = vault.seqCounter;
       item.authorUserId = userId;
+      // SEC-M3 (#152): a delete must actually erase the secret, not just flag it. Overwrite the
+      // live ciphertext + wrapped item key with an empty envelope (the encrypted bytes are then
+      // gone — no nullable-column migration needed), purge every archived version, and cascade-
+      // erase attachments — all in the same transaction. The deletedAt/seq tombstone is kept, and
+      // pull()/getItems short-circuit on deletedAt before ever reading ciphertext, so incremental
+      // sync is unaffected.
+      item.ciphertext = {};
+      item.wrappedItemKey = {};
       await mgr.save(vault);
       await mgr.save(item);
+      await mgr.delete(VaultItemVersionEntity, { itemId: item.id, vaultId });
+      const atts = await mgr.find(VaultAttachmentEntity, { where: { vaultId, itemId } });
+      await mgr.delete(VaultAttachmentEntity, { vaultId, itemId });
       await this.writeAudit(vaultId, userId, "item_deleted", item.id);
-      return { ok: true, seq: item.seq };
+      return { seq: item.seq, blobKeys: atts.map((a) => a.blobKey) };
     });
+    // The blob store (fs / S3) is external to the DB transaction — delete the ciphertext bytes
+    // best-effort after commit, the same posture as deleteAttachment.
+    for (const key of blobKeys) await this.blobs.delete(key).catch(() => undefined);
+    return { ok: true, seq };
   }
 
   /** Past versions of one item (history), newest-first. The client decrypts each snapshot. */
   async listItemVersions(userId: number, vaultId: string, itemId: string) {
     await this.requireRole(vaultId, userId, "viewer");
+    // SEC-M3 (#152): never serve history for a deleted item. Its version rows are purged on
+    // delete; refuse outright (rather than returning an empty list) so a deleted item is
+    // indistinguishable from a missing one and no erased ciphertext can be resurrected here.
+    const item = await this.items.findOne({ where: { id: itemId, vaultId } });
+    if (!item || item.deletedAt) throw new NotFoundException("item not found");
     const rows = await this.dataSource.getRepository(VaultItemVersionEntity).find({
       where: { itemId, vaultId },
       order: { version: "DESC" },
