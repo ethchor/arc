@@ -1,5 +1,8 @@
 use arc_vault_crypto::{random32, x25519_keypair};
-use arc_vault_desktop_core::{open_vek_from_device, CachedItem, CipherCache, DeviceKeyStore, MemoryKeyStore, Session};
+use arc_vault_desktop_core::{
+    open_vek_from_device, CachedItem, CipherCache, DeviceKeyStore, MemoryKeyStore, Session,
+    SessionError,
+};
 
 #[test]
 fn session_encrypts_decrypts_and_auto_locks() {
@@ -71,6 +74,41 @@ fn cipher_cache_round_trips_and_decrypts() {
         .unwrap();
     assert_eq!(&*pt, b"cached-secret");
     assert_eq!(cache.list("v1").unwrap().len(), 1);
+}
+
+// SEC-H4: the idle-lock watcher must actually zeroize the in-RAM keys on the unlocked→locked
+// edge, not just emit an event and rely on the (possibly hung/closed) WebView to call vault_lock.
+#[test]
+fn lock_watcher_tick_zeroizes_on_idle_transition() {
+    let mut s = Session::new(100, 0);
+    s.add_vault_key("v", random32(), 1, 0);
+
+    // Before the idle deadline: unlocked, no transition edge.
+    assert!(!s.lock_watcher_tick(50, false));
+
+    // Crossing the idle deadline is the unlocked→locked edge — it must call Session::lock().
+    assert!(s.lock_watcher_tick(200, false));
+
+    // The lock is now latched: a later user "touch" must NOT revive the session. Without the
+    // fix the raw is_locked() is purely time-based, so touch() resets last_active and the
+    // session would read unlocked again with the VEK still resident.
+    s.touch(300);
+    assert!(s.is_locked(300), "session revived after idle lock — lock() was not called");
+    assert_eq!(
+        s.encrypt_item("v", "i", 1, 300, b"secret").unwrap_err(),
+        SessionError::Locked,
+        "VEK still usable after idle lock — buffers were not zeroized",
+    );
+}
+
+#[test]
+fn lock_watcher_tick_edges_exactly_once() {
+    let mut s = Session::new(100, 0);
+    // First tick past the deadline is the edge (returns locked=true).
+    assert!(s.lock_watcher_tick(200, false));
+    // A subsequent tick reports locked=true but is not an edge, so the caller's
+    // `locked && !last_locked` gate emits/locks exactly once.
+    assert!(s.lock_watcher_tick(300, true));
 }
 
 #[test]
