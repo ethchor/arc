@@ -1,4 +1,11 @@
-import { AttestationService, SpiffeAttestationVerifier, type Jwk, type JwkSet } from "./attestation";
+import {
+  AttestationService,
+  SpiffeAttestationVerifier,
+  buildAttestationRequired,
+  buildSpiffeEnforce,
+  type Jwk,
+  type JwkSet,
+} from "./attestation";
 import type { AgentAttestation } from "@arc/types";
 import { X509Certificate, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -389,10 +396,70 @@ describe("AttestationService", () => {
     delete process.env.ARC_AGENT_ATTESTATION;
     delete process.env.ARC_SPIFFE_TRUST_DOMAINS;
     delete process.env.ARC_SPIFFE_ENFORCE;
+    process.env.NODE_ENV = "development"; // pin non-prod so this can't flip on the runner's env
     const s = new AttestationService();
     expect(s.required).toBe(false);
     expect(s.enforce).toBe(false);
     expect(s.verify(spiffe("spiffe://example.org/x")).ok).toBe(true);
+  });
+
+  // SEC-H7 (#149): attestation is secure-by-default in production.
+  describe("env-aware production default (SEC-H7)", () => {
+    it("buildSpiffeEnforce / buildAttestationRequired default ON under production when unset", () => {
+      delete process.env.ARC_SPIFFE_ENFORCE;
+      delete process.env.ARC_AGENT_ATTESTATION;
+      process.env.NODE_ENV = "production";
+      expect(buildSpiffeEnforce()).toBe(true);
+      expect(buildAttestationRequired()).toBe(true);
+    });
+
+    it("both default OFF in dev/test when unset", () => {
+      delete process.env.ARC_SPIFFE_ENFORCE;
+      delete process.env.ARC_AGENT_ATTESTATION;
+      process.env.NODE_ENV = "development";
+      expect(buildSpiffeEnforce()).toBe(false);
+      expect(buildAttestationRequired()).toBe(false);
+    });
+
+    it("an explicit value always wins, case-insensitively", () => {
+      process.env.NODE_ENV = "production";
+      process.env.ARC_SPIFFE_ENFORCE = "FALSE";
+      process.env.ARC_AGENT_ATTESTATION = "Optional";
+      expect(buildSpiffeEnforce()).toBe(false);
+      expect(buildAttestationRequired()).toBe(false);
+      process.env.NODE_ENV = "development";
+      process.env.ARC_SPIFFE_ENFORCE = "true";
+      process.env.ARC_AGENT_ATTESTATION = "required";
+      expect(buildSpiffeEnforce()).toBe(true);
+      expect(buildAttestationRequired()).toBe(true);
+    });
+
+    it("an invalid value falls back to the env-appropriate default", () => {
+      process.env.NODE_ENV = "production";
+      process.env.ARC_SPIFFE_ENFORCE = "yes"; // not true/false → prod default (enforce)
+      process.env.ARC_AGENT_ATTESTATION = "maybe"; // not required/optional → prod default (required)
+      expect(buildSpiffeEnforce()).toBe(true);
+      expect(buildAttestationRequired()).toBe(true);
+    });
+
+    it("a stock production deploy (enforce unset, no bundles) fails closed at boot", () => {
+      delete process.env.ARC_SPIFFE_ENFORCE;
+      delete process.env.ARC_SPIFFE_TRUST_BUNDLES;
+      delete process.env.ARC_SPIFFE_JWKS_BUNDLES;
+      process.env.NODE_ENV = "production";
+      // Old code defaulted enforce=false → silently recorded an unverified identity. Now the
+      // prod default turns enforce on, and installSpiffeVerifier refuses to boot without a bundle.
+      expect(() => new AttestationService()).toThrow(/ARC_SPIFFE_ENFORCE/);
+    });
+
+    it("explicit ARC_SPIFFE_ENFORCE=false + ARC_AGENT_ATTESTATION=optional opts out of the prod default", () => {
+      process.env.NODE_ENV = "production";
+      process.env.ARC_SPIFFE_ENFORCE = "false";
+      process.env.ARC_AGENT_ATTESTATION = "optional";
+      const s = new AttestationService();
+      expect(s.enforce).toBe(false);
+      expect(s.required).toBe(false);
+    });
   });
 
   it("treats kind:none as no attestation and unknown kinds as unsupported", () => {
