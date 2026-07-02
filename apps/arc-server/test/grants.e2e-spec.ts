@@ -254,6 +254,43 @@ describe("grants e2e — ARC_DEFAULT_POLICY=deny enforces per-mount ACL", () => 
     await grants.attach(String(session.userId), "secret-reader");
     await request(server).get("/v1/foo/creds/web").set(auth(session.token)).expect(403);
   });
+
+  it("SEC-H5 (#147): sys/leases access alone can't renew/revoke a lease of a mount the subject lacks policy on", async () => {
+    // A properly-scoped operator issues a lease at the foo/ plugin mount.
+    const operator = await login(server, "grants-lease-operator@example.com");
+    await grants.upsertPolicy({ name: "foo-lease-op", scopes: [scope("foo/", ["read", "delete"])] });
+    await grants.attach(String(operator.userId), "foo-lease-op");
+    const leaseId = (
+      await request(server).get("/v1/foo/creds/web").set(auth(operator.token)).expect(200)
+    ).body.lease_id as string;
+
+    // The attacker holds broad sys/leases caps — enough to PASS the CapabilityGuard on every
+    // lease endpoint — but has NO foo/ policy. Pre-fix this let it renew/revoke foo/'s lease
+    // (cross-mount DoS). The new per-mount check refuses all three forms at foo/ granularity;
+    // asserting the 403 body mentions `foo/` proves the denial is the mount check, not the guard.
+    const attacker = await login(server, "grants-lease-attacker@example.com");
+    await grants.upsertPolicy({
+      name: "sys-leases-only",
+      scopes: [scope("sys/leases/", ["create", "read", "update", "delete", "list"])],
+    });
+    await grants.attach(String(attacker.userId), "sys-leases-only");
+
+    const renew = await request(server)
+      .post("/v1/sys/leases/renew")
+      .set(auth(attacker.token))
+      .send({ lease_id: leaseId })
+      .expect(403);
+    expect(JSON.stringify(renew.body)).toMatch(/foo\//);
+    await request(server)
+      .put(`/v1/sys/leases/revoke/${leaseId}`)
+      .set(auth(attacker.token))
+      .expect(403);
+    await request(server)
+      .post("/v1/sys/leases/revoke")
+      .set(auth(attacker.token))
+      .send({ lease_id: leaseId })
+      .expect(403);
+  });
 });
 
 describe("grants e2e — ARC_DEFAULT_POLICY=allow (dev default) keeps existing tests working", () => {

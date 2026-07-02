@@ -12,7 +12,7 @@
  *   - "mount has no dynamic engine" — service refuses to renew/revoke a lease that lives at
  *     a non-dynamic mount (KV / transit / PKI today).
  */
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { LeaseManager, type Lease } from "@arc/leasing";
 import {
   MountRegistry,
@@ -21,6 +21,18 @@ import {
   type SecretsEngine,
 } from "@arc/secrets-engine";
 import { EnginesService, type EnginesConfig } from "./engines.service";
+import type { GrantsService } from "../grants/grants.service";
+
+/** Grants stub for the SEC-H5 tests: denies `decide` on the listed mounts, allows the rest. */
+function denyGrantsOn(...deniedMounts: string[]): GrantsService {
+  const denied = new Set(deniedMounts);
+  return {
+    decide: async (_subject: string, path: string) =>
+      denied.has(path)
+        ? { decision: "deny", reason: "no-matching-scope", policies: [] }
+        : { decision: "allow", reason: "scope-match", policies: [] },
+  } as unknown as GrantsService;
+}
 
 class FakeDatabaseEngine implements DynamicSecretsEngine {
   readonly type = "database" as const;
@@ -59,7 +71,9 @@ class FakeKvEngine implements SecretsEngine {
   readonly mount = "secret/";
 }
 
-function makeService(): { service: EnginesService; leases: LeaseManager; engine: FakeDatabaseEngine } {
+function makeService(
+  grants?: GrantsService,
+): { service: EnginesService; leases: LeaseManager; engine: FakeDatabaseEngine } {
   const registry = new MountRegistry();
   registry.mount({ path: "database/", type: "database" });
   registry.mount({ path: "secret/", type: "kv-v2" });
@@ -77,7 +91,7 @@ function makeService(): { service: EnginesService; leases: LeaseManager; engine:
     leases,
     manifestCapsByMount: new Map(),
   };
-  return { service: new EnginesService(config), leases, engine };
+  return { service: new EnginesService(config, grants), leases, engine };
 }
 
 describe("EnginesService — database/creds + sys/leases lifecycle", () => {
@@ -131,5 +145,32 @@ describe("EnginesService — database/creds + sys/leases lifecycle", () => {
     const lease = await leases.issue({ mount: "secret/", ttlSeconds: 60 });
     await expect(service.renewLease(lease.id)).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.revokeLease(lease.id)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  // SEC-H5 (#147): renew/revoke authorize against the *target lease's mount*, not just the
+  // sys/leases URL path the CapabilityGuard already checked.
+  it("renewLease throws Forbidden and does NOT renew when the subject lacks capability on the lease mount", async () => {
+    const { service, leases } = makeService(denyGrantsOn("database/"));
+    const leaseId = (await service.get("database/creds/app", {})).lease_id as string;
+    const before = await leases.get(leaseId);
+    await expect(service.renewLease(leaseId, 3600, "42")).rejects.toBeInstanceOf(ForbiddenException);
+    const after = await leases.get(leaseId);
+    expect(after!.expiresAt).toBe(before!.expiresAt); // TTL untouched
+    expect(await leases.state(leaseId)).toBe("active");
+  });
+
+  it("revokeLease throws Forbidden and does NOT revoke when the subject lacks capability on the lease mount", async () => {
+    const { service, leases } = makeService(denyGrantsOn("database/"));
+    const leaseId = (await service.get("database/creds/app", {})).lease_id as string;
+    await expect(service.revokeLease(leaseId, "42")).rejects.toBeInstanceOf(ForbiddenException);
+    expect(await leases.state(leaseId)).toBe("active"); // NOT revoked
+  });
+
+  it("renew + revoke succeed when the subject holds capability on the lease mount", async () => {
+    const { service, leases } = makeService(denyGrantsOn("other/")); // allows database/
+    const leaseId = (await service.get("database/creds/app", {})).lease_id as string;
+    await expect(service.renewLease(leaseId, 120, "42")).resolves.toBeDefined();
+    await service.revokeLease(leaseId, "42");
+    expect(await leases.state(leaseId)).toBe("revoked");
   });
 });

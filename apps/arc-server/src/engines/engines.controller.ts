@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CapabilityGuard } from "../grants/capability.guard";
+import { CurrentUser, type CurrentUserData } from "../auth/current-user.decorator";
 import { EnginesService } from "./engines.service";
 import { joinSplatStrict } from "./path-canon";
 
@@ -94,7 +95,10 @@ export class EnginesController {
    * endpoint already know they're talking to the renew API).
    */
   @Post("sys/leases/renew")
-  async renewLease(@Body() body: { lease_id?: unknown; increment?: unknown } = {}) {
+  async renewLease(
+    @CurrentUser() u: CurrentUserData,
+    @Body() body: { lease_id?: unknown; increment?: unknown } = {},
+  ) {
     if (typeof body.lease_id !== "string" || body.lease_id.length === 0) {
       throw new BadRequestException({ errors: ["`lease_id` is required"] });
     }
@@ -107,7 +111,7 @@ export class EnginesController {
       increment = n;
     }
     try {
-      return await this.engines.renewLease(body.lease_id, increment);
+      return await this.engines.renewLease(body.lease_id, increment, String(u.userId));
     } catch (err) {
       this.engines.translateError(err);
     }
@@ -116,9 +120,9 @@ export class EnginesController {
   /** `PUT /v1/sys/leases/revoke/<id>` per Vault's HTTP API. 204 on success. */
   @Put("sys/leases/revoke/:leaseId")
   @HttpCode(204)
-  async revokeLeaseByPath(@Param("leaseId") leaseId: string) {
+  async revokeLeaseByPath(@CurrentUser() u: CurrentUserData, @Param("leaseId") leaseId: string) {
     try {
-      await this.engines.revokeLease(leaseId);
+      await this.engines.revokeLease(leaseId, String(u.userId));
     } catch (err) {
       this.engines.translateError(err);
     }
@@ -127,12 +131,15 @@ export class EnginesController {
   /** Body form: `POST /v1/sys/leases/revoke { lease_id }`. 204 on success. */
   @Post("sys/leases/revoke")
   @HttpCode(204)
-  async revokeLeaseByBody(@Body() body: { lease_id?: unknown } = {}) {
+  async revokeLeaseByBody(
+    @CurrentUser() u: CurrentUserData,
+    @Body() body: { lease_id?: unknown } = {},
+  ) {
     if (typeof body.lease_id !== "string" || body.lease_id.length === 0) {
       throw new BadRequestException({ errors: ["`lease_id` is required"] });
     }
     try {
-      await this.engines.revokeLease(body.lease_id);
+      await this.engines.revokeLease(body.lease_id, String(u.userId));
     } catch (err) {
       this.engines.translateError(err);
     }
