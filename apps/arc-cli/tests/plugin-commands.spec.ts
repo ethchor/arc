@@ -18,6 +18,16 @@ interface Captured {
   code: number;
 }
 
+/** List a dir, tolerating "doesn't exist" (returns []). Used to assert refusals write nothing. */
+function readdirSyncSafe(dir: string): string[] {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return (require("node:fs").readdirSync(dir) as string[]).filter((n) => !n.startsWith(".staging-"));
+  } catch {
+    return [];
+  }
+}
+
 let tmp: string;
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), "arc-plug-cli-"));
@@ -121,7 +131,7 @@ describe("arc-vault plugin install --from-dir", () => {
     expect(joined).toMatch(/ARC_PLUGIN_TRUST_ANCHORS=publisher:arc-core=/);
   });
 
-  it("refuses with exit 2 + reason on tamper, leaves the files on disk for inspection", async () => {
+  it("refuses with exit 2 on tamper and writes NOTHING to the plugin dir (verify-before-install)", async () => {
     const fx = await makeFixture();
     const src = join(tmp, "release");
     require("node:fs").mkdirSync(src, { recursive: true });
@@ -138,8 +148,43 @@ describe("arc-vault plugin install --from-dir", () => {
     ]);
     expect(r.code).toBe(2);
     expect(r.err.join("\n")).toMatch(/refused: artifact_hash_mismatch/);
-    // Files were written before the refusal so the operator can inspect them.
-    expect(existsSync(join(dest, "arc-plugin-fake", "bin.cjs"))).toBe(true);
+    // The unverified artifact is staged + verified, never written to the live plugin path;
+    // a refusal cleans the staging dir, so nothing persists under out-dir.
+    expect(existsSync(join(dest, "arc-plugin-fake"))).toBe(false);
+    expect(readdirSyncSafe(dest)).toEqual([]);
+  });
+
+  it("refuses a manifest whose name escapes --out-dir (path traversal) and writes nothing", async () => {
+    const fx = await makeFixture();
+    const src = join(tmp, "release");
+    require("node:fs").mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "bin.cjs"), fx.binBytes);
+    // Malicious/MITM'd release: manifest claims a traversal name. We must refuse purely on
+    // the name, before writing anything (signature would fail too, but that's not the gate).
+    const evil = { ...fx.manifest, claims: { ...fx.manifest.claims, name: "../../pwned" } };
+    writeFileSync(join(src, "manifest.json"), JSON.stringify(evil));
+
+    const dest = join(tmp, "installed");
+    const r = await run(["install", "--from-dir", src, `--pub=${fx.pubB64u}`, "--out-dir", dest]);
+    expect(r.code).toBe(1); // thrown → runPluginCli maps to exit 1
+    expect(r.err.join("\n")).toMatch(/unsafe plugin name/);
+    // Nothing was written outside (or inside) out-dir.
+    expect(existsSync(join(tmp, "pwned"))).toBe(false);
+    expect(existsSync(dest) ? readdirSyncSafe(dest) : []).toEqual([]);
+  });
+
+  it("refuses an operator-supplied --name that traverses", async () => {
+    const fx = await makeFixture();
+    const src = join(tmp, "release");
+    require("node:fs").mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "bin.cjs"), fx.binBytes);
+    writeFileSync(join(src, "manifest.json"), fx.manifestJson);
+    const r = await run([
+      "install", "--from-dir", src, `--pub=${fx.pubB64u}`,
+      "--out-dir", join(tmp, "installed"), "--name", "../escape",
+    ]);
+    expect(r.code).toBe(1);
+    expect(r.err.join("\n")).toMatch(/unsafe plugin name/);
   });
 
   it("refuses when verified against a different publisher pub key", async () => {
@@ -388,8 +433,9 @@ describe("arc-vault plugin install --cosign-bundle", () => {
     expect(r.code).toBe(2);
     expect(r.err.join("\n")).toMatch(/cosign verify-blob rejected the bundle/);
     expect(r.err.join("\n")).toMatch(/identity not in certificate identities/);
-    // Files written for forensics
-    expect(existsSync(join(tmp, "installed", "arc-plugin-fake", "bin.cjs"))).toBe(true);
+    // A cosign refusal (like a signature refusal) installs nothing — the artifact was only
+    // ever staged, and the staging dir is cleaned up.
+    expect(existsSync(join(tmp, "installed", "arc-plugin-fake"))).toBe(false);
   });
 
   it("refuses install with exit 2 + actionable error when cosign is not on PATH", async () => {

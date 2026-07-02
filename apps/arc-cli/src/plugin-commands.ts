@@ -11,8 +11,9 @@
  * raw files and a tarball, so operators can pick whichever fits their automation.
  */
 import { spawn } from "node:child_process";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { resolve as resolvePath } from "node:path";
+import { randomBytes } from "node:crypto";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { resolve as resolvePath, sep } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import {
   derivePublisherPub,
@@ -138,58 +139,77 @@ async function runInstall(rest: readonly string[], io: PluginCliIO): Promise<num
   );
 
   const parsedManifest = parseManifest(bytes.manifest);
-  const name = optionalString(values, "name") ?? parsedManifest.claims.name;
+  const name = safePluginName(optionalString(values, "name") ?? parsedManifest.claims.name);
   const mountPath = optionalString(values, "mount-path") ?? defaultMountPath(name);
   const pubB64u = await resolvePub(pubRef);
 
-  // Write before verify so a tamper-mid-flight scenario still leaves the artifact on
-  // disk for forensics. Verify then makes the final accept/reject call.
   const pluginDir = resolvePath(outDir, name);
-  await mkdir(pluginDir, { recursive: true });
-  const binPath = resolvePath(pluginDir, "bin.cjs");
-  const manifestPath = resolvePath(pluginDir, "manifest.json");
-  await writeFile(binPath, bytes.bin);
-  await writeFile(manifestPath, bytes.manifest);
+  // Belt-and-suspenders after `safePluginName`: the resolved install dir must stay inside
+  // --out-dir. A name that somehow slipped past the identifier check still can't escape.
+  if (pluginDir !== outDir && !pluginDir.startsWith(outDir + sep)) {
+    throw new Error(`refusing to install outside --out-dir (${outDir})`);
+  }
+
+  // Stage the downloaded bytes in a scratch dir and VERIFY there. The artifact is still
+  // untrusted at this point, so it must never touch the live plugin path before the
+  // signature checks pass — otherwise a malicious / MITM'd release could drop attacker
+  // bytes at a predictable location or clobber a previously-verified install. Only a fully
+  // verified artifact is moved into place (atomic rename), and a refusal writes nothing to
+  // the plugin directory.
+  const stagingDir = resolvePath(outDir, `.staging-${name}-${randomBytes(6).toString("hex")}`);
+  await mkdir(stagingDir, { recursive: true });
+  const stagedBin = resolvePath(stagingDir, "bin.cjs");
+  const stagedManifest = resolvePath(stagingDir, "manifest.json");
+  await writeFile(stagedBin, bytes.bin);
+  await writeFile(stagedManifest, bytes.manifest);
 
   const result = await verifyArtifact({
     manifest: parsedManifest,
-    artifactPath: binPath,
+    artifactPath: stagedBin,
     publisherPubB64u: pubB64u,
   });
   if (!result.ok) {
+    await rm(stagingDir, { recursive: true, force: true });
     io.err(`refused: ${result.reason}`);
-    io.err(`the artifact + manifest were written to ${pluginDir} for inspection — delete them before retrying.`);
+    io.err("nothing was installed — the artifact was rejected before being written to the plugin directory.");
     return 2;
   }
 
-  // Second trust layer (optional): cosign keyless. Runs AFTER Ed25519 verify accepts, so
-  // a tampered artifact never reaches the cosign step. A cosign refusal aborts install
-  // with exit 2 and the files are left on disk for forensics (same posture as a
-  // manifest-signature refusal).
+  // Second trust layer (optional): cosign keyless. Runs AFTER Ed25519 verify accepts, still
+  // against the staged (not-yet-installed) artifact. A refusal cleans up the staging dir.
   if (cosignBundle !== undefined) {
     const bundleBytes = await loadCosignBundle(cosignBundle, release, io);
     const verifier = io.cosignVerify ?? cosignVerifyBlobReal;
     const cosignResult = await verifier({
       bundle: bundleBytes,
-      artifactPath: binPath,
+      artifactPath: stagedBin,
       identityRegexp: cosignIdentity!,
       issuer: cosignIssuer,
     });
     if (cosignResult === null) {
+      await rm(stagingDir, { recursive: true, force: true });
       io.err("refused: cosign verification requested but `cosign` is not on PATH.");
       io.err("install cosign (brew install cosign / apt-get install cosign / etc.) and retry.");
       return 2;
     }
     if (!cosignResult.ok) {
+      await rm(stagingDir, { recursive: true, force: true });
       io.err(`refused: cosign verify-blob rejected the bundle`);
       // Surface cosign's stderr verbatim — its diagnostics are what the operator needs.
       for (const line of cosignResult.stderr.split("\n").filter(Boolean)) io.err(`  ${line}`);
-      io.err(`the artifact + manifest were written to ${pluginDir} for inspection — delete them before retrying.`);
+      io.err("nothing was installed — the artifact was rejected before being written to the plugin directory.");
       return 2;
     }
   }
 
-  await chmod(binPath, 0o755); // executable, matches OOP plugin's spec.command expectation
+  await chmod(stagedBin, 0o755); // executable, matches OOP plugin's spec.command expectation
+
+  // Atomically swap the verified artifact into place: drop any prior install, then rename
+  // the staging dir onto the final path (intra-filesystem, so rename is atomic).
+  await rm(pluginDir, { recursive: true, force: true });
+  await rename(stagingDir, pluginDir);
+  const binPath = resolvePath(pluginDir, "bin.cjs");
+  const manifestPath = resolvePath(pluginDir, "manifest.json");
 
   const mountSnippet = `ARC_PLUGIN_MOUNTS=${mountPath}=${binPath}?manifest=${manifestPath}`;
   io.out(`installed ${parsedManifest.claims.name}@${parsedManifest.claims.version} to ${pluginDir}`);
@@ -428,6 +448,23 @@ async function resolvePub(ref: string): Promise<string> {
   const eq = raw.indexOf("=");
   if (eq > 0 && raw.startsWith("publisher:")) return raw.slice(eq + 1).trim();
   return raw;
+}
+
+/**
+ * A plugin name becomes a single filesystem path segment (`<out-dir>/<name>/`), so it must
+ * be a bare identifier — never a path. The default comes from the *unverified* manifest
+ * (`claims.name`), so reject separators, `..`, leading dots, and anything non-identifier up
+ * front — before a single byte is written — or a malicious/MITM'd release could set
+ * `claims.name` to `"../../etc/cron.d/evil"` and land attacker bytes outside --out-dir.
+ */
+function safePluginName(name: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.includes("..")) {
+    throw new Error(
+      `unsafe plugin name ${JSON.stringify(name)} — expected a bare identifier ` +
+        `(letters, digits, '.', '_', '-'; no path separators or '..')`,
+    );
+  }
+  return name;
 }
 
 function defaultMountPath(name: string): string {
