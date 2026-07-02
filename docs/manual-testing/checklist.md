@@ -63,7 +63,7 @@ See [`03-passkey-unlock.md`](03-passkey-unlock.md).
 - [ ] `listPasskeys` shows the registered credential
 - [ ] `removePasskey` deletes it; subsequent unlock 404s
 - [ ] Anti-clone: counter-rewind unlock attempt 401s
-- [ ] (UI) Web button to add a passkey — _pending, not yet shipped_
+- [x] (UI) Web button to add a passkey — `PasskeysSection` in the Settings dialog + "Use a passkey" on the unlock screen
 
 ## Phase 3 — Engine-A (OpenBao-backed)
 

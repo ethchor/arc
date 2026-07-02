@@ -28,6 +28,15 @@ export function RecoveryKeyActions({
 }) {
   const [copied, setCopied] = React.useState(false);
   const chunks = React.useMemo(() => chunkRecoveryKey(recoveryKey), [recoveryKey]);
+  const clearTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Don't leave the recovery key — the single value that recovers the whole vault — sitting on
+  // the clipboard indefinitely. Best-effort auto-clear after a window long enough to paste it
+  // into a password manager / offline note, matching the item-copy hygiene the app already
+  // applies to passwords (a blind overwrite, since reading the clipboard back would prompt).
+  React.useEffect(() => () => {
+    if (clearTimer.current) clearTimeout(clearTimer.current);
+  }, []);
 
   const copyKey = async () => {
     if (!recoveryKey) return;
@@ -35,6 +44,10 @@ export function RecoveryKeyActions({
       await navigator.clipboard.writeText(recoveryKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
+      if (clearTimer.current) clearTimeout(clearTimer.current);
+      clearTimer.current = setTimeout(() => {
+        void navigator.clipboard.writeText("").catch(() => {});
+      }, 60_000);
     } catch {
       /* clipboard can fail in non-secure contexts; the visual stays at "Copy" */
     }

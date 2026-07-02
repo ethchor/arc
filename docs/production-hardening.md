@@ -231,15 +231,11 @@ already present in [`manual-testing/checklist.md`](manual-testing/checklist.md) 
 
 These are **not** boot-time blockers but you should know they exist before scaling.
 
-- **Lease registry is in-memory** (issue [#113](https://github.com/ethchor/arc/issues/113)).
-  arc's `LeaseManager` lives in process memory. A server restart loses the arc-id →
-  backend-id binding for every active lease (the backend credential survives until its
-  own TTL, but arc can no longer renew or revoke it through `/v1/sys/leases/*`). Same
-  caveat blocks **multi-replica** today — two replicas don't share lease state.
-  - **Workaround**: single-node deploys only until #113 lands.
-  - **Mitigation**: shorten lease TTLs so backend cleanup catches up faster after a
-    restart; document a manual revoke procedure against OpenBao directly for the
-    forensic case.
+- **Lease registry is durable** as of [#113](https://github.com/ethchor/arc/issues/113).
+  The arc-id → backend-id binding is persisted in Postgres (`engines/typeorm-lease-store.ts`
+  + `engines/lease-sweep.service.ts`), so it survives a server restart and is shared across
+  replicas — renew/revoke take a `SELECT … FOR UPDATE` row lock. No single-node restriction
+  anymore; just point every replica at the same `DATABASE_URL`.
 - **`ARC_BLOB_BACKEND=memory`** loses every attachment on restart. The default is `memory`
   so a brand-new dev install works without setup; fail closed by treating any prod
   config with `memory` as a bug.

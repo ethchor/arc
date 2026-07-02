@@ -134,10 +134,9 @@ is tracking — minted by humans, plugins, or agent tasks.
 5. **Refresh** re-fetches; the 1s ticker is only mounted while at least one active
    lease is on screen (no idle re-renders).
 
-> **Known caveat (#113).** `LeaseManager` is **in-memory** server-side. On a server
-> restart this list goes empty until people start minting new credentials — the
-> backend leases on OpenBao survive but the arc-id → backend-id binding is gone.
-> Persistence + multi-replica concurrency is the deferred follow-up.
+> **Resolved (#113).** The lease registry is persisted in Postgres, so this list
+> survives a server restart and is shared across replicas — renew/revoke take a
+> `SELECT … FOR UPDATE` row lock. Point every replica at the same `DATABASE_URL`.
 
 ## F. Operator surface: state matrix
 

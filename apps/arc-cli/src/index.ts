@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { totpCode } from "@arc/crypto";
 import type { JsonValue, TotpAlgorithm, TotpItem } from "@arc/types";
@@ -26,8 +26,13 @@ function loadConfig(dir: string): CliConfig {
 }
 
 function saveConfig(dir: string, cfg: CliConfig): void {
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "config.json"), JSON.stringify(cfg, null, 2));
+  // config.json holds the bearer token — keep it owner-only (like `~/.vault-token`), so it
+  // isn't world-readable on a shared host. `mode` on writeFileSync only applies when the file
+  // is created, so chmod afterwards to enforce 0600 even if it already existed at 0644.
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const p = join(dir, "config.json");
+  writeFileSync(p, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  chmodSync(p, 0o600);
 }
 
 const USAGE =
