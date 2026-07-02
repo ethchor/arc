@@ -395,6 +395,15 @@ export class VaultService {
     target.status = "revoked";
     await this.memberships.save(target);
     await this.grants.delete({ vaultId, granteeUserId: targetUserId });
+    // Also drop the target's *device* grants for this vault. User grants aren't the only VK
+    // material they hold: every approved device has its own `granteeDeviceId` grant, and
+    // `getDeviceKeyset` hands those back on nothing more than device ownership. Leaving them
+    // lets a just-revoked member keep pulling the wrapped VK from their own device. Scope the
+    // delete to this vault so their memberships in *other* vaults are untouched.
+    const targetDevices = await this.devices.find({ where: { userId: targetUserId } });
+    if (targetDevices.length) {
+      await this.grants.delete({ vaultId, granteeDeviceId: In(targetDevices.map((d) => d.id)) });
+    }
     await this.writeAudit(vaultId, userId, "member_revoked", String(targetUserId));
     return { ok: true };
   }
@@ -773,7 +782,14 @@ export class VaultService {
     const dev = await this.devices.findOne({ where: { id: deviceId, userId } });
     if (!dev || !dev.approved) throw new NotFoundException("device not approved");
     const grants = await this.grants.find({ where: { granteeDeviceId: deviceId } });
-    return grants.map((g) => ({ vaultId: g.vaultId, keyVersion: g.keyVersion, wrappedVaultKey: g.wrappedVaultKey }));
+    // Defense-in-depth against a device grant that outlived a membership revocation (or any
+    // future cleanup gap): only surface grants for vaults where this device's owner is still
+    // an active member. Never hand back a wrapped VK for a vault the user was removed from.
+    const active = await this.memberships.find({ where: { userId, status: "active" } });
+    const activeVaultIds = new Set(active.map((m) => m.vaultId));
+    return grants
+      .filter((g) => activeVaultIds.has(g.vaultId))
+      .map((g) => ({ vaultId: g.vaultId, keyVersion: g.keyVersion, wrappedVaultKey: g.wrappedVaultKey }));
   }
 
   async revokeDevice(userId: number, deviceId: string) {
