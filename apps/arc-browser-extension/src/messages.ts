@@ -58,6 +58,17 @@ export interface FillValues {
   type: "arc:fillValues";
   username: string;
   password: string;
+  /**
+   * The credential's saved URL. The content script origin-binds the *explicit* fill against
+   * it (docs/12 §12.4) — even a popup-chosen credential must not be typed into a page whose
+   * origin doesn't match the saved site (else a phishing page gets it on one click).
+   */
+  savedUrl: string;
+}
+/** Content-script reply to `arc:fillValues` so the popup can report success vs an origin block. */
+export interface FillValuesResult {
+  filled: boolean;
+  reason?: "origin_mismatch";
 }
 
 /** Worker status — used by the popup to skip re-entering credentials when the worker is alive + unlocked. */

@@ -10,7 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@arc/sdk": "workspace:*"
+    "@arc/sdk": "workspace:*",
+    "tldts": "^7.4.5"
   },
   "devDependencies": {
     "@types/chrome": "*",

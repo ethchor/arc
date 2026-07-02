@@ -62,8 +62,19 @@ function render(filter = ""): void {
         const creds = await send<Creds | null>({ type: "arc:get", id: m.id });
         const tabId = await activeTabId();
         if (creds && tabId) {
-          chrome.tabs.sendMessage(tabId, { type: "arc:fillValues", username: creds.username, password: creds.password });
-          setStatus("Filled the active page");
+          // The content script origin-binds the fill against the credential's saved URL, so
+          // pass it along and report whether the fill was allowed or blocked.
+          chrome.tabs.sendMessage(
+            tabId,
+            { type: "arc:fillValues", username: creds.username, password: creds.password, savedUrl: m.url },
+            (resp?: { filled: boolean; reason?: string }) => {
+              setStatus(
+                resp?.filled
+                  ? "Filled the active page"
+                  : "Blocked — this page's origin doesn't match the saved site",
+              );
+            },
+          );
         }
       }),
       chip("User", async () => {

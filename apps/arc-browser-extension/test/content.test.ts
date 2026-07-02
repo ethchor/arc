@@ -102,6 +102,53 @@ describe("onPasswordFocus — inline suggestion overlay", () => {
   });
 });
 
+describe("arc:fillValues — explicit fill is origin-bound (SEC-C3 / SEC-H1)", () => {
+  // The module registers its onMessage handler at import time; grab it off the stub.
+  function grabListener(): (msg: unknown, sender: unknown, sendResponse: (r?: unknown) => void) => void {
+    const addListener = (globalThis as unknown as {
+      chrome: { runtime: { onMessage: { addListener: ReturnType<typeof vi.fn> } } };
+    }).chrome.runtime.onMessage.addListener;
+    const call = addListener.mock.calls[0];
+    if (!call) throw new Error("content script did not register an onMessage listener");
+    return call[0] as never;
+  }
+
+  it("fills when the active page origin matches the saved URL", async () => {
+    const user = document.createElement("input");
+    user.type = "text";
+    user.autocomplete = "username";
+    document.body.appendChild(user);
+    const pw = makePasswordField();
+    await loadModule(); // location = https://example.com/login (beforeEach)
+
+    const sendResponse = vi.fn();
+    grabListener()(
+      { type: "arc:fillValues", username: "alice", password: "hunter2", savedUrl: "https://example.com" },
+      {},
+      sendResponse,
+    );
+
+    expect(user.value).toBe("alice");
+    expect(pw.value).toBe("hunter2");
+    expect(sendResponse).toHaveBeenCalledWith({ filled: true });
+  });
+
+  it("REFUSES to fill when the page origin doesn't match the saved URL (anti-phishing)", async () => {
+    const pw = makePasswordField();
+    await loadModule(); // page is example.com; saved credential is for a different site
+
+    const sendResponse = vi.fn();
+    grabListener()(
+      { type: "arc:fillValues", username: "alice", password: "secret", savedUrl: "https://my-bank.example" },
+      {},
+      sendResponse,
+    );
+
+    expect(pw.value).toBe(""); // nothing was typed into the page
+    expect(sendResponse).toHaveBeenCalledWith({ filled: false, reason: "origin_mismatch" });
+  });
+});
+
 describe("overlay click → fills the form", () => {
   it("clicking the overlay fills username + password into the page fields", async () => {
     const mod = await loadModule();
