@@ -11,6 +11,7 @@
 // Both affordances are user-initiated: the overlay is a visible button that the user must
 // click, never an auto-fill on focus.
 import type { ContentMessage, FillResponse } from "./messages";
+import { originMatches } from "./origin";
 
 const OVERLAY_ID = "arc-vault-overlay";
 let overlayShown = false;
@@ -107,15 +108,26 @@ if (typeof document !== "undefined") {
   );
 }
 
-chrome.runtime.onMessage.addListener((message: ContentMessage) => {
-  if (message.type === "arc:doFill") {
-    chrome.runtime.sendMessage({ type: "arc:requestFill", pageUrl: location.href }, (resp: FillResponse) => {
-      if (resp && resp.ok) fill(resp.username, resp.password);
-    });
-  } else if (message.type === "arc:fillValues") {
-    fill(message.username, message.password);
-  }
-});
+chrome.runtime.onMessage.addListener(
+  (message: ContentMessage, _sender, sendResponse: (r?: unknown) => void) => {
+    if (message.type === "arc:doFill") {
+      chrome.runtime.sendMessage({ type: "arc:requestFill", pageUrl: location.href }, (resp: FillResponse) => {
+        if (resp && resp.ok) fill(resp.username, resp.password);
+      });
+    } else if (message.type === "arc:fillValues") {
+      // Origin-bind the *explicit* fill too (docs/12 §12.4). The popup already chose a
+      // credential, but we must still refuse to type it into a page whose origin doesn't
+      // match the saved site — otherwise clicking "Fill" on a phishing page hands it the
+      // credential. This path used to fill unconditionally (SEC-C3 / SEC-H1).
+      if (originMatches(location.href, message.savedUrl)) {
+        fill(message.username, message.password);
+        sendResponse({ filled: true });
+      } else {
+        sendResponse({ filled: false, reason: "origin_mismatch" });
+      }
+    }
+  },
+);
 
 // Test hook — reset between cases.
 export const __internal = {
