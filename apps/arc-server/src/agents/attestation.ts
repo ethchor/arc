@@ -459,15 +459,69 @@ export function loadJwksBundlesFromEnv(raw: string): Map<string, JwkSet> {
 
 /**
  * Selects a verifier by attestation kind and applies the enrollment-time policy. Config:
- *  - `ARC_AGENT_ATTESTATION` = `optional` (default) | `required`. In `required` mode an agent
- *    can't enroll without a verifiable attestation.
+ *  - `ARC_AGENT_ATTESTATION` = `optional` | `required`. In `required` mode an agent can't
+ *    enroll without a verifiable attestation. Env-aware default: `required` under
+ *    `NODE_ENV=production`, `optional` in dev/test (an explicit value always wins).
  *  - `ARC_SPIFFE_TRUST_DOMAINS` = comma-separated allowlist (empty = any well-formed domain).
  *  - `ARC_SPIFFE_ENFORCE` = `true` to require cryptographic SVID validation (enforce-mode).
+ *    Env-aware default: enforce (`true`) under `NODE_ENV=production`, `false` in dev/test.
  *  - `ARC_SPIFFE_TRUST_BUNDLES` = `<domain>=<pem-path>,…` for enforce-mode X.509 chain validation.
  *  - `ARC_SPIFFE_JWKS_BUNDLES` = `<domain>=<jwks-path>,…` for enforce-mode JWT-SVID validation.
  *  - `ARC_SPIFFE_REQUIRED_AUDIENCE` = expected `aud` value in JWT-SVIDs (optional).
  *    Unset = any non-empty `aud` accepted.
  */
+/**
+ * Resolve the enrollment-`required` posture from `ARC_AGENT_ATTESTATION`, env-aware like
+ * `ARC_DEFAULT_POLICY` (grants.module.ts::buildDefaultMode): an explicit `required`/`optional`
+ * always wins (case-insensitive); unset defaults to `required` under `NODE_ENV=production` and
+ * `optional` otherwise; an invalid value falls back to the same env-appropriate default + warns.
+ * So a stock prod deploy that forgets the var refuses to enroll an agent presenting no
+ * attestation, instead of silently recording a bare self-asserted identity.
+ */
+export function buildAttestationRequired(): boolean {
+  const isProd = process.env.NODE_ENV === "production";
+  const raw = process.env.ARC_AGENT_ATTESTATION?.toLowerCase();
+  if (raw === "required") return true;
+  if (raw === "optional") return false;
+  const log = new Logger("AttestationService");
+  if (raw !== undefined) {
+    log.warn(
+      `ARC_AGENT_ATTESTATION=${raw} is not 'required' or 'optional'; defaulting to '${isProd ? "required" : "optional"}'`,
+    );
+  } else if (isProd) {
+    log.log(
+      "ARC_AGENT_ATTESTATION unset with NODE_ENV=production → defaulting to 'required'. " +
+        "Set ARC_AGENT_ATTESTATION=optional to opt out.",
+    );
+  }
+  return isProd;
+}
+
+/**
+ * Resolve the cryptographic-`enforce` posture from `ARC_SPIFFE_ENFORCE`, env-aware like the
+ * above: explicit `true`/`false` wins; unset defaults to enforce under `NODE_ENV=production`.
+ * Interacts with the fail-closed-boot in `installSpiffeVerifier`: under production with no
+ * bundles configured, defaulting enforce on means the service *throws at boot* until a
+ * trust/JWKS bundle is configured or `ARC_SPIFFE_ENFORCE=false` — the intended posture.
+ */
+export function buildSpiffeEnforce(): boolean {
+  const isProd = process.env.NODE_ENV === "production";
+  const raw = process.env.ARC_SPIFFE_ENFORCE?.toLowerCase();
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  const log = new Logger("AttestationService");
+  if (raw !== undefined) {
+    log.warn(`ARC_SPIFFE_ENFORCE=${raw} is not 'true' or 'false'; defaulting to '${isProd}'`);
+  } else if (isProd) {
+    log.log(
+      "ARC_SPIFFE_ENFORCE unset with NODE_ENV=production → defaulting to enforce (cryptographic " +
+        "SVID validation). Configure ARC_SPIFFE_TRUST_BUNDLES / ARC_SPIFFE_JWKS_BUNDLES, or set " +
+        "ARC_SPIFFE_ENFORCE=false to opt out.",
+    );
+  }
+  return isProd;
+}
+
 @Injectable()
 export class AttestationService implements OnModuleDestroy {
   private readonly logger = new Logger(AttestationService.name);
@@ -481,8 +535,8 @@ export class AttestationService implements OnModuleDestroy {
   readonly enforce: boolean;
 
   constructor() {
-    this.required = (process.env.ARC_AGENT_ATTESTATION ?? "optional").toLowerCase() === "required";
-    this.enforce = (process.env.ARC_SPIFFE_ENFORCE ?? "false").toLowerCase() === "true";
+    this.required = buildAttestationRequired();
+    this.enforce = buildSpiffeEnforce();
     this.installSpiffeVerifier({ initial: true });
     // Hot-reload on SIGHUP. `process.on` adds a listener; the test-only `reloadBundles()`
     // entry point bypasses the signal entirely for deterministic specs. The handler is

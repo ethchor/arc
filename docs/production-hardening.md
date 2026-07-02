@@ -137,8 +137,8 @@ Grouped by concern. Items marked **prod**: review explicitly before going live.
 ### Agents / Engine-C
 | Variable | Default | Notes |
 |---|---|---|
-| `ARC_AGENT_ATTESTATION` | unset | When set, agents must attest at registration. |
-| `ARC_SPIFFE_ENFORCE` | unset | `true` requires X.509 or JWKS bundles below; **boot fails in prod** with `enforce=true` + no bundles. |
+| `ARC_AGENT_ATTESTATION` | **`required` in prod**, `optional` in dev/test | Agents must attest at registration in production unless you set `optional` (SEC-H7). An explicit value always wins. |
+| `ARC_SPIFFE_ENFORCE` | **`true` in prod**, `false` in dev/test | Requires cryptographic SVID validation via the X.509 / JWKS bundles below (SEC-H7). **Boot fails in prod** with enforce on + no bundles — so a stock prod deploy must configure a bundle or explicitly set `ARC_SPIFFE_ENFORCE=false`. |
 | `ARC_SPIFFE_TRUST_DOMAINS` | unset | Comma-separated SPIFFE trust domains accepted. |
 | `ARC_SPIFFE_TRUST_BUNDLES` | unset | X.509 trust bundles (file paths). |
 | `ARC_SPIFFE_JWKS_BUNDLES` | unset | JWKS bundles for JWT-SVID. |
