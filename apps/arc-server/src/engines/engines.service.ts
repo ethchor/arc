@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Optional,
@@ -19,7 +20,9 @@ import {
   type TransitEngine,
 } from "@arc/secrets-engine";
 import { OpenBaoClient, OpenBaoError } from "@arc/openbao-adapter";
+import type { Capability } from "@arc/grants";
 import { MetricsService } from "../observability/metrics.service";
+import { GrantsService } from "../grants/grants.service";
 
 /**
  * Token under which the {@link EnginesConfig} factory provider is registered. The module
@@ -80,8 +83,17 @@ export class EnginesService {
 
   constructor(
     @Inject(ENGINES_CONFIG) private readonly config: EnginesConfig,
+    @Optional() private readonly grants?: GrantsService,
     @Optional() private readonly metrics?: MetricsService,
-  ) {}
+  ) {
+    // SEC-H5 (#147): `grants` powers per-mount lease authorization. GrantsModule is @Global so
+    // the running server always supplies it; fail closed if a future refactor ever drops it in
+    // production. (Engine/plugin unit tests construct the service directly under NODE_ENV=test
+    // and legitimately omit it — they don't exercise the lease-authz path.)
+    if (!this.grants && process.env.NODE_ENV === "production") {
+      throw new Error("EnginesService requires GrantsService in production (lease authorization)");
+    }
+  }
 
   get enabled(): boolean {
     return this.config.client !== null;
@@ -398,9 +410,18 @@ export class EnginesService {
    * the lease's mount to a {@link DynamicSecretsEngine} and delegates; the adapter knows
    * how to drive the upstream `sys/leases/renew` against OpenBao if needed.
    */
-  async renewLease(leaseId: string, incrementSeconds?: number): Promise<Record<string, unknown>> {
+  async renewLease(
+    leaseId: string,
+    incrementSeconds?: number,
+    subject?: string,
+  ): Promise<Record<string, unknown>> {
     const lease = await this.config.leases.get(leaseId);
     if (!lease) throw new NotFoundException({ errors: [`no lease ${leaseId}`] });
+    // SEC-H5 (#147): authorize against the *target lease's mount*, not just the sys/leases URL
+    // path CapabilityGuard already checked. `subject` is always supplied by the controller (the
+    // sole caller); it runs before engine resolution so an unauthorized caller can't probe
+    // engine-type / registration state either.
+    if (subject !== undefined) await this.requireLeaseCapability(subject, lease.mount, "update");
     const engine = this.config.enginesByMount.get(lease.mount);
     if (!engine) {
       throw new NotFoundException({
@@ -430,9 +451,11 @@ export class EnginesService {
   }
 
   /** `PUT /v1/sys/leases/revoke/<id>` / `POST /v1/sys/leases/revoke {lease_id}`. */
-  async revokeLease(leaseId: string): Promise<void> {
+  async revokeLease(leaseId: string, subject?: string): Promise<void> {
     const lease = await this.config.leases.get(leaseId);
     if (!lease) throw new NotFoundException({ errors: [`no lease ${leaseId}`] });
+    // SEC-H5 (#147): authorize against the target lease's mount (see renewLease).
+    if (subject !== undefined) await this.requireLeaseCapability(subject, lease.mount, "delete");
     const engine = this.config.enginesByMount.get(lease.mount);
     if (!engine) {
       throw new NotFoundException({
@@ -703,6 +726,32 @@ export class EnginesService {
       mount: mountPath,
       declared: [...declared].sort(),
     });
+  }
+
+  /**
+   * SEC-H5 (#147): CapabilityGuard authorizes sys/leases/renew|revoke by the URL path, which
+   * only proves the subject may reach the sys/leases surface — not that it holds policy on the
+   * *target lease's mount*. Re-check the grants decision against the resolved mount before
+   * touching the lease, so a subject with update/delete on `sys/leases/` can't renew or revoke
+   * leases of a mount it has no grant for (cross-mount credential DoS). Mirrors the guard's
+   * decision handling, and counts the decision in the same ACL metric.
+   */
+  private async requireLeaseCapability(
+    subject: string,
+    mount: string,
+    capability: Capability,
+  ): Promise<void> {
+    // The prod boot-guard guarantees `grants` here in the running server; the guard keeps the
+    // types honest for the direct-construction test path.
+    if (!this.grants) return;
+    const decision = await this.grants.decide(subject, mount, capability);
+    this.metrics?.aclDecisions.labels(decision.decision, decision.reason).inc();
+    if (decision.decision !== "allow") {
+      throw new ForbiddenException({
+        errors: [`access denied: ${capability} on ${mount}`],
+        reason: decision.reason,
+      });
+    }
   }
 
   private requireClient(): OpenBaoClient {
