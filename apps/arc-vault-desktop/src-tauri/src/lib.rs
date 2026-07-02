@@ -244,7 +244,11 @@ fn spawn_lock_watcher(session: Arc<Mutex<Session>>, app: AppHandle) {
         let mut last_locked = session.lock().unwrap().is_locked(now());
         loop {
             thread::sleep(LOCK_TICK);
-            let locked = session.lock().unwrap().is_locked(now());
+            // SEC-H4: `lock_watcher_tick` zeroizes the VEK + identity in Rust on the
+            // unlocked → locked edge (under the session mutex), instead of only emitting an
+            // event and relying on the WebView to call `vault_lock` — which never happens if
+            // the WebView is hung or closed, leaving keys resident past the idle timeout.
+            let locked = session.lock().unwrap().lock_watcher_tick(now(), last_locked);
             if locked && !last_locked {
                 // Best-effort emit — if no window is open yet the event is dropped, which
                 // is fine because the WebView re-syncs state when it loads.

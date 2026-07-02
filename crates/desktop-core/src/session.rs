@@ -57,6 +57,22 @@ impl Session {
         self.locked = true;
     }
 
+    /// One tick of the idle-lock watcher. Reads `is_locked(now)` and, on the unlocked → locked
+    /// edge (`last_locked == false`), calls [`Session::lock`] to actually zeroize the VEK +
+    /// identity buffers. `is_locked` can flip to `true` purely from the idle deadline (without
+    /// the `locked` flag being set), so this edge is the ONLY place those buffers get wiped when
+    /// the WebView is hung/closed and never invokes the `vault_lock` command (SEC-H4). The shell
+    /// holds the session mutex across this call, so a concurrent `touch` cannot revive the
+    /// session between the observation and the wipe. Returns the current locked state so the
+    /// caller can detect the edge and emit its lock event exactly once.
+    pub fn lock_watcher_tick(&mut self, now: u64, last_locked: bool) -> bool {
+        let locked = self.is_locked(now);
+        if locked && !last_locked {
+            self.lock();
+        }
+        locked
+    }
+
     pub fn set_identity(&mut self, identity_priv: [u8; 32], now: u64) {
         self.identity = Some(Zeroizing::new(identity_priv));
         self.locked = false;
