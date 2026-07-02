@@ -132,8 +132,10 @@ Desktop grant wrapping is now hybrid-capable. Whether the desktop client
 the classical X25519 `seal` envelope because device keypairs are X25519
 only (no ML-KEM half). The next step is a small extension: have the
 desktop client also publish an ML-KEM device pub at registration so
-`approveDevice` can switch to `pqSeal` too. Tracked in ADR-003 (TODO) if
-the device-grant HNDL exposure turns out to matter at our threat model.
+`approveDevice` can switch to `pqSeal` too. **Shipped in ADR-003** (hybrid
+device keys): devices register an ML-KEM pub and the approver uses `pqSeal`
+when it's present, falling back to classical `seal` for legacy X25519-only
+devices.
 
 ## Explicitly rejected alternatives
 
