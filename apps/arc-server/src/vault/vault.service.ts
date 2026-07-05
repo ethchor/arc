@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
 import { BLOB_STORE, type BlobStore, newAttachmentKey, BlobNotFoundError } from "../blob/blob-store";
-import { DataSource, In, MoreThan, Repository } from "typeorm";
+import { DataSource, type EntityManager, In, MoreThan, Repository } from "typeorm";
 import { ctEqual, deviceSas, fingerprint, fromB64u, randomBytes, serverHashAuth, toB64u } from "@arc/crypto";
 import { isVaultColor, isVaultIcon } from "@arc/types";
 import { assertArgonParamsAboveFloor } from "./argon-floor";
@@ -449,11 +449,33 @@ export class VaultService {
     };
   }
 
+  /**
+   * Atomically allocate the next per-vault `seq` (the incremental-sync cursor). Issues a single
+   * `UPDATE … SET seqCounter = seqCounter + 1` (portable across Postgres + sql.js — no RETURNING)
+   * which takes a row lock on the vault, held until the transaction commits. That lock is the fix
+   * for SEC-M1/M2 (#148): every mutation on a vault now serializes, so two concurrent writes can't
+   * read the same counter and clobber each other (silent sync data loss), and a write can't slip
+   * into a key rotation mid-flight (which would strand the item on the old key version). Also keeps
+   * the in-memory `vault` in sync so a later `save(vault)` doesn't write back a stale counter.
+   */
+  private async nextSeq(mgr: EntityManager, vault: VaultEntity): Promise<number> {
+    await mgr.increment(VaultEntity, { id: vault.id }, "seqCounter", 1);
+    const fresh = await mgr.findOne(VaultEntity, { where: { id: vault.id }, select: ["seqCounter"] });
+    vault.seqCounter = fresh!.seqCounter;
+    return vault.seqCounter;
+  }
+
   async upsertItem(userId: number, vaultId: string, dto: UpsertItemDto) {
     await this.requireRole(vaultId, userId, "editor");
     return this.dataSource.transaction(async (mgr) => {
       const vault = await mgr.findOne(VaultEntity, { where: { id: vaultId } });
       if (!vault) throw new NotFoundException("vault not found");
+
+      // SEC-M1/M2/BUG-1 (#148): allocate the seq up front — this locks the vault row for the rest
+      // of the transaction, so a concurrent same-item update blocks here, then re-reads the bumped
+      // version below and gets a clean 409 (instead of both passing the check and colliding on the
+      // history archive as a 500), and writes serialize with key rotation.
+      await this.nextSeq(mgr, vault);
 
       let item = dto.id
         ? await mgr.findOne(VaultItemEntity, { where: { id: dto.id, vaultId } })
@@ -493,7 +515,6 @@ export class VaultService {
             );
           }
         }
-        vault.seqCounter += 1;
         item.ciphertext = dto.ciphertext;
         item.wrappedItemKey = dto.wrappedItemKey;
         item.vaultKeyVersion = dto.vaultKeyVersion;
@@ -508,7 +529,6 @@ export class VaultService {
         item = await mgr.save(item);
         await this.writeAudit(vaultId, userId, "item_updated", item.id);
       } else {
-        vault.seqCounter += 1;
         item = mgr.create(VaultItemEntity, {
           id: dto.id,
           vaultId,
@@ -536,7 +556,7 @@ export class VaultService {
       const vault = await mgr.findOne(VaultEntity, { where: { id: vaultId } });
       const item = await mgr.findOne(VaultItemEntity, { where: { id: itemId, vaultId } });
       if (!vault || !item) throw new NotFoundException("item not found");
-      vault.seqCounter += 1;
+      await this.nextSeq(mgr, vault); // SEC-M1 (#148): atomic seq + serialize with concurrent writes
       item.deletedAt = new Date();
       item.version += 1;
       item.seq = vault.seqCounter;
@@ -632,11 +652,12 @@ export class VaultService {
         const item = await mgr.findOne(VaultItemEntity, { where: { id: r.itemId, vaultId } });
         if (!item) continue;
         // Re-wrap only changes the wrapped IK + its VK version. The payload (and its item
-        // version, which its AAD binds) is untouched. Bump seq so the change syncs.
-        vault.seqCounter += 1;
+        // version, which its AAD binds) is untouched. SEC-M1/M2 (#148): allocate the seq
+        // atomically — the first call locks the vault row, serializing the rest of this rotation
+        // against concurrent item writes so none strands on the old key version.
         item.wrappedItemKey = r.wrappedItemKey;
         item.vaultKeyVersion = dto.newKeyVersion;
-        item.seq = vault.seqCounter;
+        item.seq = await this.nextSeq(mgr, vault);
         await mgr.save(item);
       }
 
