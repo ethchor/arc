@@ -149,6 +149,38 @@ describe("vault SDK e2e (consumer + service account)", () => {
     expect(post.find((x) => x.version === 1)?.data).toMatchObject({ value: "v1" });
   });
 
+  it("allocates a strictly-increasing, distinct seq per mutation (SEC-M1 #148)", async () => {
+    const C = new VaultClient({ baseUrl, profile: "test" });
+    await C.devLogin("seq@example.com");
+    await C.enroll("master-password-S");
+    const v = await C.createVault("team", "Seq");
+
+    const a = await C.putItem(v.id, { type: "secret", key: "A", value: "1" }, { type: "secret" });
+    const b = await C.putItem(v.id, { type: "secret", key: "B", value: "1" }, { type: "secret" });
+    const a2 = await C.putItem(
+      v.id,
+      { type: "secret", key: "A", value: "2" },
+      { id: a.id, baseVersion: a.version, type: "secret" },
+    );
+    const c = await C.putItem(v.id, { type: "secret", key: "C", value: "1" }, { type: "secret" });
+
+    // Every mutation gets a fresh, strictly-increasing seq — the atomic allocator (nextSeq)
+    // never reuses or loses a counter value, so no write can be silently dropped from a client's
+    // incremental sync by a colliding seq.
+    const seqs = [a.seq, b.seq, a2.seq, c.seq];
+    for (let i = 1; i < seqs.length; i++) expect(seqs[i]!).toBeGreaterThan(seqs[i - 1]!);
+    expect(new Set(seqs).size).toBe(seqs.length);
+
+    // And nothing is lost — all three live items are present.
+    const all = await C.pull(v.id, 0);
+    expect(
+      all.items
+        .filter((i) => !i.deleted)
+        .map((i) => i.id)
+        .sort(),
+    ).toEqual([a.id, b.id, c.id].sort());
+  });
+
   it("revoke member: removeMember drops the membership and re-keys the vault", async () => {
     const owner = new VaultClient({ baseUrl, profile: "test" });
     await owner.devLogin("revoker@example.com");
