@@ -520,12 +520,39 @@ export class VaultClient {
     return parsed as T;
   }
 
-  /** Dev-only login (stubs OAuth sync authorization). */
+  /**
+   * Dev-only login. Server-side it is double-gated (`ARC_ENABLE_DEV_LOGIN=true` **and**
+   * non-production), so it is unavailable in a real deployment — use {@link oidcLogin} there.
+   */
   async devLogin(email: string): Promise<{ userId: number; token: string }> {
     const r = await this.http<{ accessToken: string; userId: number }>("POST", "/auth/dev-login", { email });
     this.token = r.accessToken;
     this.userId = r.userId;
     return { userId: r.userId, token: r.accessToken };
+  }
+
+  /**
+   * Production account login: exchange an OIDC **ID token** from an allowlisted provider for
+   * an arc session token.
+   *
+   * This authorizes **sync only** — it identifies which encrypted blobs are yours. It does
+   * not unlock the vault; that is {@link unlock}, which derives keys from the master password
+   * and never involves the server (doc 06 §6.1). Both are needed for a working client, which
+   * is why a stolen session token is worth ciphertext and nothing more.
+   *
+   * The caller obtains `idToken` from the provider itself (an authorization-code + PKCE flow
+   * in the browser, or a workload's ambient token in CI) — arc never sees the user's IdP
+   * credentials.
+   */
+  async oidcLogin(idToken: string): Promise<{ userId: number; token: string; email: string }> {
+    const r = await this.http<{ accessToken: string; userId: number; email: string }>(
+      "POST",
+      "/auth/oidc/login",
+      { idToken },
+    );
+    this.token = r.accessToken;
+    this.userId = r.userId;
+    return { userId: r.userId, token: r.accessToken, email: r.email };
   }
 
   async enroll(masterPassword: string): Promise<{ recoveryKey: string }> {

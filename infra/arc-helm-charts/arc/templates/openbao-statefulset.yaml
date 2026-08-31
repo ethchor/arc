@@ -42,22 +42,43 @@ spec:
             - name: BAO_DEV_LISTEN_ADDRESS
               value: "0.0.0.0:{{ .Values.openbao.service.port }}"
           {{- else }}
-          # Production posture: ship a config file via ConfigMap + a real seal block.
-          # The chart leaves this branch deliberately minimal — operators wire their own
-          # storage / seal (KMS / Shamir) at the values layer.
+          # Production posture: config.hcl comes from openbao-configmap.yaml (Raft storage
+          # on the PVC + listener + seal). That template refuses to render without
+          # persistence, so this branch can no longer start an in-memory "production" vault.
           args: ["server", "-config=/etc/openbao/config.hcl"]
+          {{- if eq .Values.openbao.seal.type "transit" }}
+          env:
+            # Kept out of the ConfigMap — a seal token in a ConfigMap is readable by anyone
+            # with namespace get access.
+            - name: BAO_SEAL_TRANSIT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.openbao.seal.transit.tokenSecret.name | quote }}
+                  key: {{ .Values.openbao.seal.transit.tokenSecret.key | quote }}
+          {{- end }}
           {{- end }}
           ports:
             - name: api
               containerPort: {{ .Values.openbao.service.port }}
               protocol: TCP
-          {{- if .Values.openbao.persistence.enabled }}
           volumeMounts:
+            {{- if .Values.openbao.persistence.enabled }}
             - name: data
               mountPath: /openbao/data
-          {{- end }}
+            {{- end }}
+            {{- if not .Values.openbao.devMode }}
+            - name: config
+              mountPath: /etc/openbao
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.openbao.resources | nindent 12 }}
+      {{- if not .Values.openbao.devMode }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "arc.openbao.fullname" . }}-config
+      {{- end }}
   {{- if .Values.openbao.persistence.enabled }}
   volumeClaimTemplates:
     - metadata:

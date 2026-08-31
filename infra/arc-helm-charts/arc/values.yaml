@@ -131,8 +131,33 @@ openbao:
   service:
     type: ClusterIP
     port: 8200
+  # Web UI on the OpenBao listener.
+  ui: true
+  listener:
+    # TLS terminates at the ingress; flip to false only if you expose OpenBao directly,
+    # and mount a cert alongside it.
+    tlsDisable: true
+  # OpenBao mlocks memory so secrets never hit swap. Containers usually lack IPC_LOCK, so
+  # the upstream image expects this disabled; keep swap off on the node instead.
+  disableMlock: true
+  seal:
+    # "shamir"  — `bao operator init` once, then `bao operator unseal` after every restart.
+    #             No external dependency; not hands-off.
+    # "transit" — auto-unseal against another OpenBao/Vault's transit engine.
+    type: shamir
+    transit:
+      address: ""
+      keyName: openbao-unseal
+      mountPath: transit/
+      tlsSkipVerify: false
+      # The seal token comes from a Secret, never the ConfigMap.
+      tokenSecret:
+        name: openbao-seal-transit
+        key: token
   persistence:
-    enabled: false
+    # Required whenever devMode=false: Raft on a container filesystem loses every secret on
+    # reschedule, so openbao-configmap.yaml refuses to render without this.
+    enabled: true
     storageClass: ""
     size: 8Gi
   resources:

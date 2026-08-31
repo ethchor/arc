@@ -24,7 +24,9 @@ describe("AuthService.devLogin — MED-C gating", () => {
     create: jest.fn((u: { email: string }) => ({ id: 1, ...u })),
   };
   const jwt = { signAsync: jest.fn(async () => "test-token") } as unknown as JwtService;
-  const svc = new AuthService(usersRepo as never, jwt);
+  // dev-login never reaches the ID-token verifier; a throwing stub proves that.
+  const verifier = { verify: jest.fn(async () => { throw new Error("must not be called"); }) };
+  const svc = new AuthService(usersRepo as never, jwt, verifier);
 
   let nodeEnvBefore: string | undefined;
   let optInBefore: string | undefined;
