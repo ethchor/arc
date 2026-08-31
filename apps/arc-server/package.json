@@ -63,6 +63,7 @@
     "@arc/plugin-gitlab": "workspace:*",
     "@arc/plugin-kubernetes": "workspace:*",
     "@arc/plugin-oidc": "workspace:*",
+    "@arc/plugin-spiffe": "workspace:*",
     "@arc/plugin-sign": "workspace:*",
     "@arc/sdk": "workspace:*",
     "@nestjs/testing": "^11.0.0",

@@ -1,0 +1,40 @@
+{
+  "name": "@arc/plugin-spiffe",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SPIFFE auth plugin: exchange a JWT-SVID for an arc token by verifying it against the trust domain bundle and mapping the SPIFFE ID to arc policies. Implements @arc/plugin-sdk's AuthPlugin contract.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./node": {
+      "types": "./dist/node-verifier.d.ts",
+      "import": "./dist/node-verifier.js",
+      "require": "./dist/node-verifier.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arc/plugin-sdk": "workspace:*",
+    "@arc/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.6"
+  }
+}
