@@ -2,11 +2,20 @@
 
 arc exposed over the [Model Context Protocol](https://modelcontextprotocol.io). Lets any
 MCP-capable agent authenticate with an arc JWT and call **infrastructure-secret operations**
-as MCP tools — fetch a secret, mint a dynamic credential, encrypt via transit — each
-authorized by `@arc/grants` and recorded in the audit log on the arc-server side.
+as MCP tools — fetch a secret, mint a dynamic credential, encrypt via transit — plus
+**Engine-C agent-identity operations**: inspect the agent fleet, ask what an agent may
+actually reach, and revoke that authority. Every call is authorized by `@arc/grants` and
+recorded in the audit log on the arc-server side.
 
-The E2E vault (Engine B) is intentionally **not** exposed: the server stores ciphertext only
-and the master key never leaves the human client. Tools cover Engine A only.
+Two exclusions are deliberate and load-bearing:
+
+- **Engine B (the E2E vault) is not exposed.** The server stores ciphertext only and the
+  master key never leaves the human client; exposing it here would break that property.
+- **No Engine-C operation that requires a private key is exposed** — registering an agent
+  (client-side keygen), creating a delegation (delegator-signed), submitting an intent
+  (agent-signed) or approving one (WebAuthn). This server holds no signing key, so the
+  Engine-C surface is *read + revoke*: it can tell you what an agent may do and take that
+  authority away, but it cannot grant authority.
 
 ## Tools
 
@@ -19,6 +28,29 @@ and the master key never leaves the human client. Tools cover Engine A only.
 | `arc_transit_decrypt`      | decrypt | `POST /v1/<mount>/decrypt/<key>` |
 | `arc_dynamic_creds_issue`  | issue | `GET /v1/<mount>/creds/<role>` |
 | `arc_list_mounts`          | discover | `GET /v1/sys/mounts` |
+
+### Engine C — agent identity (ADR-005)
+
+These routes are mounted at the arc-server **root**, not under `/v1`.
+
+| Tool                            | Verb | arc-server path |
+|---------------------------------|------|------|
+| `arc_agents_list`               | list | `GET /vault/agents` |
+| `arc_agent_get`                 | read | `GET /vault/agents/<id>` |
+| `arc_agent_authorize`           | introspect | `POST /vault/agents/<id>/authorize` |
+| `arc_agent_delegations_list`    | list | `GET /vault/agents/<id>/delegations` |
+| `arc_agent_delegation_revoke`   | revoke | `DELETE /vault/agents/<id>/delegations/<did>` |
+| `arc_agent_task_open`           | open | `POST /vault/agents/<id>/tasks` |
+| `arc_agent_task_get`            | read | `GET /vault/agents/<id>/tasks/<tid>[?verify=true]` |
+| `arc_agent_task_close`          | kill switch | `POST /vault/agents/<id>/tasks/<tid>/close` |
+| `arc_approvals_list`            | list | `GET /vault/approvals` |
+
+`arc_agent_authorize` answers *"what can this agent actually reach?"* — it evaluates the
+effective-authority meet (delegation ∩ delegator ceiling ∩ agent ceiling) without performing
+the action or consuming the delegation's call budget.
+
+`arc_agent_task_close` is the one-shot kill switch: closing a task cascade-revokes its
+delegations and every lease issued under it.
 
 ## Running
 

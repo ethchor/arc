@@ -165,10 +165,163 @@ describe("arc_list_mounts", () => {
   });
 });
 
+/**
+ * Engine C (agent identity, ADR-005). These routes live at the arc-server root
+ * (`/vault/agents/...`), NOT under the `/v1` engines prefix — the assertions below pin that,
+ * because sending them to `/v1/vault/agents/...` would silently 404 against the engines
+ * catch-all rather than fail loudly.
+ */
+describe("Engine C — agent tools", () => {
+  it("arc_agents_list GETs /vault/agents at the root, without the /v1 engines prefix", async () => {
+    const { ctx, calls } = harness(() => ({ status: 200, body: { data: [] } }));
+    await findTool("arc_agents_list").handler({}, ctx);
+    expect(calls[0]).toMatchObject({ method: "GET", path: "/vault/agents" });
+    expect(calls[0]?.path.startsWith("/v1/")).toBe(false);
+  });
+
+  it("arc_agent_get GETs one agent by id", async () => {
+    const { ctx, calls } = harness(() => ({ status: 200, body: { data: {} } }));
+    await findTool("arc_agent_get").handler({ agentId: "agent-1" }, ctx);
+    expect(calls[0]).toMatchObject({ method: "GET", path: "/vault/agents/agent-1" });
+  });
+
+  it("arc_agent_authorize POSTs the path + capability for introspection", async () => {
+    const { ctx, calls } = harness(() => ({ status: 200, body: { data: { allowed: false } } }));
+    await findTool("arc_agent_authorize").handler(
+      { agentId: "agent-1", path: "secret/data/app/prod/db", capability: "read" },
+      ctx,
+    );
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      path: "/vault/agents/agent-1/authorize",
+      body: { path: "secret/data/app/prod/db", capability: "read" },
+    });
+  });
+
+  it("arc_agent_authorize threads an optional delegationId through", async () => {
+    const { ctx, calls } = harness(() => ({ status: 200, body: { data: {} } }));
+    await findTool("arc_agent_authorize").handler(
+      { agentId: "a", path: "secret/data/x", capability: "read", delegationId: "d-9" },
+      ctx,
+    );
+    expect(calls[0]?.body).toMatchObject({ delegationId: "d-9" });
+  });
+
+  it("arc_agent_authorize rejects a missing capability", async () => {
+    const { ctx } = harness(() => ({ status: 200, body: {} }));
+    const res = await findTool("arc_agent_authorize").handler({ agentId: "a", path: "p" }, ctx);
+    expect(res.isError).toBe(true);
+  });
+
+  it("arc_agent_delegations_list GETs the agent's delegations", async () => {
+    const { ctx, calls } = harness(() => ({ status: 200, body: { data: [] } }));
+    await findTool("arc_agent_delegations_list").handler({ agentId: "agent-1" }, ctx);
+    expect(calls[0]).toMatchObject({ method: "GET", path: "/vault/agents/agent-1/delegations" });
+  });
+
+  it("arc_agent_delegation_revoke DELETEs one delegation", async () => {
+    const { ctx, calls } = harness(() => ({ status: 200, body: { data: { revoked: true } } }));
+    await findTool("arc_agent_delegation_revoke").handler(
+      { agentId: "agent-1", delegationId: "del-7" },
+      ctx,
+    );
+    expect(calls[0]).toMatchObject({
+      method: "DELETE",
+      path: "/vault/agents/agent-1/delegations/del-7",
+    });
+  });
+
+  it("arc_agent_task_open POSTs the budget when provided", async () => {
+    const { ctx, calls } = harness(() => ({ status: 200, body: { data: { taskId: "t-1" } } }));
+    await findTool("arc_agent_task_open").handler(
+      { agentId: "agent-1", budget: { maxCalls: 10, wallClockMs: 60000 } },
+      ctx,
+    );
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      path: "/vault/agents/agent-1/tasks",
+      body: { budget: { maxCalls: 10, wallClockMs: 60000 } },
+    });
+  });
+
+  it("arc_agent_task_open rejects a non-object budget", async () => {
+    const { ctx } = harness(() => ({ status: 200, body: {} }));
+    const res = await findTool("arc_agent_task_open").handler({ agentId: "a", budget: 5 }, ctx);
+    expect(res.isError).toBe(true);
+  });
+
+  it("arc_agent_task_get requests chain verification only when asked", async () => {
+    const { ctx, calls } = harness(() => ({ status: 200, body: { data: {} } }));
+    const tool = findTool("arc_agent_task_get");
+    await tool.handler({ agentId: "a", taskId: "t" }, ctx);
+    expect(calls[0]?.query).toBeUndefined();
+    await tool.handler({ agentId: "a", taskId: "t", verify: true }, ctx);
+    expect(calls[1]?.query).toEqual({ verify: "true" });
+  });
+
+  it("arc_agent_task_close POSTs the cascade-revoke kill switch", async () => {
+    const { ctx, calls } = harness(() => ({ status: 200, body: { data: { closed: true } } }));
+    await findTool("arc_agent_task_close").handler({ agentId: "agent-1", taskId: "task-3" }, ctx);
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      path: "/vault/agents/agent-1/tasks/task-3/close",
+    });
+  });
+
+  it("arc_approvals_list GETs the owner's pending approvals", async () => {
+    const { ctx, calls } = harness(() => ({ status: 200, body: { data: [] } }));
+    await findTool("arc_approvals_list").handler({}, ctx);
+    expect(calls[0]).toMatchObject({ method: "GET", path: "/vault/approvals" });
+  });
+
+  it("surfaces an arc-server 403 as a structured tool error", async () => {
+    const { ctx } = harness(() => ({ status: 403, body: { error: "forbidden" } }));
+    const res = await findTool("arc_agent_task_close").handler({ agentId: "a", taskId: "t" }, ctx);
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text).toContain("403");
+  });
+});
+
+/**
+ * Security invariants of the MCP surface. These are assertions about what is deliberately
+ * absent — they fail loudly if someone later adds a tool that breaks the zero-knowledge or
+ * no-authority-granting properties documented at the top of `tools.ts`.
+ */
+describe("registry invariants", () => {
+  it("exposes no Engine-B (E2E vault) tool — the MCP server holds no master key", () => {
+    // Engine-B item/vault routes live under `vaults/:id/items`, `vault/keyset`, `vault/shares`.
+    const forbidden = /vaults?\/(:?[^/]*\/)?(items|keyset|shares|folders|attachments)/;
+    for (const t of tools) {
+      expect(t.def.name).not.toMatch(/item|keyset|share|attachment/i);
+      expect(JSON.stringify(t.def)).not.toMatch(forbidden);
+    }
+  });
+
+  it("exposes no tool that grants authority — granting requires a client-side signature", () => {
+    const names = tools.map((t) => t.def.name);
+    // Registering an agent (keygen), creating a delegation (delegator-signed) and submitting
+    // an intent (agent-signed) all need a private key the MCP server must never hold.
+    expect(names).not.toContain("arc_agent_register");
+    expect(names).not.toContain("arc_agent_delegation_create");
+    expect(names).not.toContain("arc_agent_intent_submit");
+    expect(names).not.toContain("arc_approval_approve");
+    expect(names.filter((n) => /create|register|grant|approve/.test(n))).toEqual([]);
+  });
+});
+
 describe("registry", () => {
-  it("exposes exactly the seven tools the README/CLAUDE.md document", () => {
+  it("exposes exactly the tools the README/CLAUDE.md document", () => {
     expect(tools.map((t) => t.def.name).sort()).toEqual(
       [
+        "arc_agent_authorize",
+        "arc_agent_delegation_revoke",
+        "arc_agent_delegations_list",
+        "arc_agent_get",
+        "arc_agent_task_close",
+        "arc_agent_task_get",
+        "arc_agent_task_open",
+        "arc_agents_list",
+        "arc_approvals_list",
         "arc_dynamic_creds_issue",
         "arc_kv_get",
         "arc_kv_list",
