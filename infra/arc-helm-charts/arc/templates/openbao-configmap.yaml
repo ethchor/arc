@@ -63,3 +63,4 @@ data:
     # Shamir (default): `bao operator init` once, then `bao operator unseal` after every
     # restart. No external dependency, but not hands-off.
     {{- end }}
+{{- end -}}

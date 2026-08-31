@@ -23,6 +23,28 @@ const templatesDir = join(chartDir, "templates");
 const chart = yaml.load(readFileSync(join(chartDir, "Chart.yaml"), "utf8")) as Record<string, unknown>;
 const values = yaml.load(readFileSync(join(chartDir, "values.yaml"), "utf8")) as Record<string, unknown>;
 
+/**
+ * Go-template block balance. `helm lint` catches this in CI, but a contributor without the
+ * helm binary gets no local signal — an unclosed `{{- if }}` reads as perfectly good YAML
+ * right up until it fails as "unexpected EOF" on the runner. This is the cheap local check
+ * for that, and it exists because exactly that slipped through once.
+ */
+describe("templates are structurally balanced", () => {
+  const OPENERS = /\{\{-?\s*(if|range|with|define)\b/g;
+  const ENDS = /\{\{-?\s*end\s*-?\}\}/g;
+
+  const templateFiles = readdirSync(templatesDir).filter(
+    (f) => f.endsWith(".yaml") || f.endsWith(".tpl"),
+  );
+
+  it.each(templateFiles)("%s opens and closes the same number of blocks", (file) => {
+    const src = readFileSync(join(templatesDir, file), "utf8");
+    const opens = src.match(OPENERS)?.length ?? 0;
+    const ends = src.match(ENDS)?.length ?? 0;
+    expect({ file, opens, ends }).toEqual({ file, opens, ends: opens });
+  });
+});
+
 describe("Chart.yaml", () => {
   it("has all required fields", () => {
     expect(chart.apiVersion).toBe("v2");

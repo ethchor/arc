@@ -101,6 +101,9 @@ importers:
       '@arc/openbao-adapter':
         specifier: workspace:*
         version: link:../../integrations/arc-openbao-adapter
+      '@arc/plugin-oidc':
+        specifier: workspace:*
+        version: link:../../plugins/auth/arc-plugin-oidc
       '@arc/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/arc-plugin-sdk
@@ -228,9 +231,6 @@ importers:
       '@arc/plugin-kubernetes':
         specifier: workspace:*
         version: link:../../plugins/auth/arc-plugin-kubernetes
-      '@arc/plugin-oidc':
-        specifier: workspace:*
-        version: link:../../plugins/auth/arc-plugin-oidc
       '@arc/plugin-sign':
         specifier: workspace:*
         version: link:../../tools/arc-plugin-sign
