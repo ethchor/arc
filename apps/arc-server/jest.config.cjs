@@ -16,6 +16,10 @@ module.exports = {
     "^@arc/grants$": "<rootDir>/../../packages/arc-grants/dist/index.cjs",
     "^@arc/leasing$": "<rootDir>/../../packages/arc-leasing/dist/index.cjs",
     "^@arc/plugin-sdk$": "<rootDir>/../../packages/arc-plugin-sdk/dist/index.cjs",
+    // The OIDC plugin's Node verifier (JWKS + RS/ES verify) backs production account login.
+    // It is a `./node` subpath export, which Jest's resolver won't follow, so map it here
+    // the same way as the dists above.
+    "^@arc/plugin-oidc/node$": "<rootDir>/../../plugins/auth/arc-plugin-oidc/dist/node-verifier.cjs",
     "^@arc/secrets-engine$": "<rootDir>/../../packages/arc-secrets-engine/dist/index.cjs",
     "^@arc/openbao-adapter$": "<rootDir>/../../integrations/arc-openbao-adapter/dist/index.cjs",
     "^@arc/plugin-aws$": "<rootDir>/../../plugins/cloud/arc-plugin-aws/dist/index.cjs",

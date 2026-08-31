@@ -30,6 +30,32 @@ export class UserEntity {
   @Column({ type: "text", unique: true })
   email!: string;
 
+  /**
+   * OIDC issuer that vouches for this account (e.g. `https://accounts.google.com`), or null
+   * for accounts created before real auth / by the gated dev-login stub.
+   *
+   * The account is bound to `(oidcIssuer, oidcSubject)` — **not** to the email. Doc 06 §6.7:
+   * "keys are bound to `userId`, not email", so an email change at the IdP moves nothing, and
+   * two different IdPs asserting the same address can never collide onto one arc account.
+   */
+  @Column({ type: "text", nullable: true })
+  oidcIssuer!: string | null;
+
+  /** Stable per-issuer subject claim (`sub`). Unique together with `oidcIssuer`. */
+  @Column({ type: "text", nullable: true })
+  oidcSubject!: string | null;
+
+  /**
+   * Whether the address has been proven. arc never sends mail — this mirrors the IdP's
+   * `email_verified` claim, which is why an OIDC login is also the email-verification path.
+   *
+   * Deliberately does NOT gate vault unlock: unlock is the master-password gate (doc 06 §6.1)
+   * and must stay independent of account state. It gates being *granted* access — invites and
+   * item shares — which is the actual takeover vector in doc 06 §6.7.
+   */
+  @Column({ type: "boolean", default: false })
+  emailVerified!: boolean;
+
   @CreateDateColumn()
   createdAt!: Date;
 }
