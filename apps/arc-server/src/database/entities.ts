@@ -50,8 +50,13 @@ export class UserEntity {
    * `email_verified` claim, which is why an OIDC login is also the email-verification path.
    *
    * Deliberately does NOT gate vault unlock: unlock is the master-password gate (doc 06 §6.1)
-   * and must stay independent of account state. It gates being *granted* access — invites and
-   * item shares — which is the actual takeover vector in doc 06 §6.7.
+   * and must stay independent of account state.
+   *
+   * Currently recorded but not yet enforced anywhere. The intended gate is being *granted*
+   * access — vault membership and item shares — since an unproven address is the takeover
+   * vector in doc 06 §6.7. Wiring that is deliberately separate from #144: it changes who can
+   * be shared to, which needs its own migration path for accounts enrolled before this column
+   * existed (all of which are `false`).
    */
   @Column({ type: "boolean", default: false })
   emailVerified!: boolean;
