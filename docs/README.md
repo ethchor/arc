@@ -37,6 +37,7 @@ shipped code.
 | 14 | [`14-developer-platform.md`](14-developer-platform.md) | Service accounts, CI/CD, API tokens, delegated access, org governance, escrow. |
 | 15 | [`15-testing-review-and-operations.md`](15-testing-review-and-operations.md) | Crypto testing/review, KAT vectors, ops hardening, production checklist. |
 | 16 | [`16-roadmap-and-migration.md`](16-roadmap-and-migration.md) | Unified consumer + developer roadmap, v1→v2 migration. |
+| 17 | [`17-free-tier-deployment.md`](17-free-tier-deployment.md) | Running the whole stack production-like on free infrastructure. |
 | — | [`production-hardening.md`](production-hardening.md) | **Operational** env-var contract + boot-time fail-closed gates for non-dev deploys. Pairs with §15.6 (crypto correctness). |
 | — | [`manual-testing/`](manual-testing/README.md) | Step-by-step QA playbook; per-feature checklist for release validation. |
 

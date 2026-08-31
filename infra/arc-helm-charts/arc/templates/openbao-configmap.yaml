@@ -1,0 +1,65 @@
+{{- if and .Values.openbao.enabled (not .Values.openbao.devMode) -}}
+{{- /*
+  BL-H8: the non-dev StatefulSet has always run `server -config=/etc/openbao/config.hcl`,
+  but no template ever produced that file and nothing mounted /etc/openbao — so a default
+  `helm install` rendered an Engine-A that CrashLoopBackOffs on a missing config. This
+  ConfigMap is that file.
+
+  Two fail-fast guards, because both failure modes are silent and destroy secrets:
+
+  1. Raft without a volume is an in-memory vault that looks healthy and loses everything on
+     reschedule. Refuse to render it.
+  2. `seal "shamir"` means a human must run `bao operator unseal` after every restart. That
+     is a legitimate posture, but it must be chosen, not defaulted into by an operator who
+     then finds a sealed vault after the first node drain.
+*/ -}}
+{{- if not .Values.openbao.persistence.enabled }}
+{{- fail "openbao.persistence.enabled=false with devMode=false: integrated Raft storage would write to a container filesystem and lose every secret on restart or reschedule. Set openbao.persistence.enabled=true (and a storageClass if your cluster has no default)." }}
+{{- end }}
+{{- if and (eq .Values.openbao.seal.type "transit") (not .Values.openbao.seal.transit.address) }}
+{{- fail "openbao.seal.type=transit requires openbao.seal.transit.address (the URL of the OpenBao/Vault that holds the unseal key)." }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "arc.openbao.fullname" . }}-config
+  labels:
+    {{- include "arc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openbao
+data:
+  config.hcl: |
+    ui = {{ .Values.openbao.ui }}
+
+    # Cluster-internal listener. TLS terminates at the ingress; if you expose OpenBao
+    # outside the cluster, set openbao.listener.tlsDisable=false and mount a cert.
+    listener "tcp" {
+      address     = "0.0.0.0:{{ .Values.openbao.service.port }}"
+      tls_disable = {{ .Values.openbao.listener.tlsDisable }}
+    }
+
+    # Integrated Raft storage on the PVC mounted at /openbao/data.
+    storage "raft" {
+      path    = "/openbao/data"
+      node_id = "{{ include "arc.openbao.fullname" . }}-0"
+    }
+
+    api_addr     = "http://{{ include "arc.openbao.fullname" . }}:{{ .Values.openbao.service.port }}"
+    cluster_addr = "http://{{ include "arc.openbao.fullname" . }}-0.{{ include "arc.openbao.fullname" . }}:{{ add .Values.openbao.service.port 1 }}"
+
+    disable_mlock = {{ .Values.openbao.disableMlock }}
+
+    {{- if eq .Values.openbao.seal.type "transit" }}
+
+    # Auto-unseal against another OpenBao/Vault's transit engine. The token is read from
+    # BAO_SEAL_TRANSIT_TOKEN so it never lands in the ConfigMap.
+    seal "transit" {
+      address         = {{ .Values.openbao.seal.transit.address | quote }}
+      key_name        = {{ .Values.openbao.seal.transit.keyName | quote }}
+      mount_path      = {{ .Values.openbao.seal.transit.mountPath | quote }}
+      tls_skip_verify = {{ .Values.openbao.seal.transit.tlsSkipVerify }}
+    }
+    {{- else }}
+
+    # Shamir (default): `bao operator init` once, then `bao operator unseal` after every
+    # restart. No external dependency, but not hands-off.
+    {{- end }}
