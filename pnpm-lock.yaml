@@ -234,6 +234,9 @@ importers:
       '@arc/plugin-sign':
         specifier: workspace:*
         version: link:../../tools/arc-plugin-sign
+      '@arc/plugin-spiffe':
+        specifier: workspace:*
+        version: link:../../plugins/auth/arc-plugin-spiffe
       '@arc/sdk':
         specifier: workspace:*
         version: link:../../sdks/arc-js-sdk
@@ -614,6 +617,28 @@ importers:
         version: 3.2.6(@types/node@24.13.1)(happy-dom@20.10.2)
 
   plugins/auth/arc-plugin-oidc:
+    dependencies:
+      '@arc/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../packages/arc-plugin-sdk
+      '@arc/types':
+        specifier: workspace:*
+        version: link:../../../packages/arc-types
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.1
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@1.21.7)(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.6(@types/node@24.13.1)(happy-dom@20.10.2)
+
+  plugins/auth/arc-plugin-spiffe:
     dependencies:
       '@arc/plugin-sdk':
         specifier: workspace:*

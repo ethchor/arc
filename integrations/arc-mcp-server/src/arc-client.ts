@@ -3,8 +3,10 @@
  * so authentication + authorization + audit happen on arc-server's side (`JwtAuthGuard` +
  * `CapabilityGuard`) — the MCP server never decides who is allowed to do what.
  *
- * Every call is a one-shot fetch against `/v1/*`; arc-server's existing engines surface
- * (KV v2, Transit, PKI, dynamic creds, sys/*) is the source of truth.
+ * Two route families are reachable:
+ *  - the engines surface under `/v1/*` (KV v2, Transit, PKI, dynamic creds, sys/*) — the default;
+ *  - root-relative arc-server routes (`vault/agents/*`, `vault/approvals/*`) via `{ root: true }`,
+ *    because Engine-C's control plane is mounted outside the `/v1` prefix.
  */
 
 export interface ArcHttpError extends Error {
@@ -12,27 +14,40 @@ export interface ArcHttpError extends Error {
   body: unknown;
 }
 
+export interface CallOptions {
+  /**
+   * Target a root-relative arc-server route instead of the `/v1/*` engines surface.
+   * Used by the Engine-C tools, whose controllers are mounted at `vault/agents/…`.
+   */
+  root?: boolean;
+}
+
 export class ArcClient {
   constructor(private readonly baseUrl: string, private readonly fetchFn: typeof fetch = globalThis.fetch) {}
 
-  /** GET /v1/<path>. */
-  get<T = unknown>(bearer: string, path: string, query?: Record<string, string>): Promise<T> {
-    return this.request<T>(bearer, "GET", path, undefined, query);
+  /** GET the engines surface (`/v1/<path>`), or a root-relative route with `{ root: true }`. */
+  get<T = unknown>(
+    bearer: string,
+    path: string,
+    query?: Record<string, string>,
+    opts: CallOptions = {},
+  ): Promise<T> {
+    return this.request<T>(bearer, "GET", path, undefined, query, opts);
   }
 
-  /** POST /v1/<path> with a JSON body. */
-  post<T = unknown>(bearer: string, path: string, body: unknown): Promise<T> {
-    return this.request<T>(bearer, "POST", path, body);
+  /** POST with a JSON body. */
+  post<T = unknown>(bearer: string, path: string, body: unknown, opts: CallOptions = {}): Promise<T> {
+    return this.request<T>(bearer, "POST", path, body, undefined, opts);
   }
 
-  /** PUT /v1/<path> with a JSON body. */
-  put<T = unknown>(bearer: string, path: string, body: unknown): Promise<T> {
-    return this.request<T>(bearer, "PUT", path, body);
+  /** PUT with a JSON body. */
+  put<T = unknown>(bearer: string, path: string, body: unknown, opts: CallOptions = {}): Promise<T> {
+    return this.request<T>(bearer, "PUT", path, body, undefined, opts);
   }
 
-  /** DELETE /v1/<path>. */
-  delete<T = unknown>(bearer: string, path: string): Promise<T> {
-    return this.request<T>(bearer, "DELETE", path);
+  /** DELETE. */
+  delete<T = unknown>(bearer: string, path: string, opts: CallOptions = {}): Promise<T> {
+    return this.request<T>(bearer, "DELETE", path, undefined, undefined, opts);
   }
 
   private async request<T>(
@@ -41,8 +56,10 @@ export class ArcClient {
     path: string,
     body?: unknown,
     query?: Record<string, string>,
+    opts: CallOptions = {},
   ): Promise<T> {
-    const url = new URL(`/v1/${path.replace(/^\/+/, "")}`, this.baseUrl);
+    const prefix = opts.root === true ? "" : "/v1";
+    const url = new URL(`${prefix}/${path.replace(/^\/+/, "")}`, this.baseUrl);
     if (query) for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
 
     const res = await this.fetchFn(url.toString(), {

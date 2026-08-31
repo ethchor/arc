@@ -1,5 +1,6 @@
 /**
- * End-to-end coverage of the auth-method plugins (OIDC + Kubernetes) through the real app:
+ * End-to-end coverage of the auth-method plugins (OIDC + Kubernetes + SPIFFE) through the
+ * real app:
  * `PluginsService.mountAuthPlugin` + `POST /v1/auth/<mount>/login`. Boots with
  * `ARC_DEFAULT_POLICY=deny` so we can prove the login actually binds the role's policies —
  * a freshly-minted token reaches exactly the paths its policy covers, and 403s elsewhere.
@@ -14,6 +15,7 @@ import request from "supertest";
 import { scope } from "@arc/grants";
 import { OidcAuthPlugin, type JwtVerifier } from "@arc/plugin-oidc";
 import { KubernetesAuthPlugin, type TokenReviewer } from "@arc/plugin-kubernetes";
+import { SpiffeAuthPlugin, type JwtSvidVerifier } from "@arc/plugin-spiffe";
 import { AppModule } from "../src/app.module";
 import { AuthMethodsService } from "../src/auth-methods/auth-methods.service";
 import { GrantsService } from "../src/grants/grants.service";
@@ -32,9 +34,25 @@ const k8sReviewer: TokenReviewer = {
   },
 };
 
+const SPIFFE_TRUST_DOMAIN = "prod.example.com";
+const SPIFFE_ID = `spiffe://${SPIFFE_TRUST_DOMAIN}/ns/prod/sa/api`;
+
+/**
+ * Fake JWT-SVID verifier: `good` verifies to a workload in the trust domain, `foreign`
+ * verifies but belongs to another trust domain (proving the plugin's own trust-domain check
+ * runs even when the signature is accepted).
+ */
+const svidVerifier: JwtSvidVerifier = {
+  async verify(svid) {
+    if (svid === "bad") throw new Error("spiffe: JWT-SVID signature verification failed");
+    const sub = svid === "foreign" ? "spiffe://evil.example.com/ns/prod/sa/api" : SPIFFE_ID;
+    return { sub, aud: ["arc"], exp: Math.floor(Date.now() / 1000) + 300 };
+  },
+};
+
 const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
 
-describe("auth-plugins e2e — OIDC + Kubernetes login bind policies to the minted token", () => {
+describe("auth-plugins e2e — OIDC + Kubernetes + SPIFFE login bind policies to the minted token", () => {
   let app: INestApplication;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let server: any;
@@ -61,6 +79,17 @@ describe("auth-plugins e2e — OIDC + Kubernetes login bind policies to the mint
       });
       await methods.mount(new KubernetesAuthPlugin(k8sReviewer), "kubernetes", {
         roles: { deploy: { boundServiceAccountNames: ["deployer"], boundNamespaces: ["apps"], policies: ["reader"] } },
+      });
+      await methods.mount(new SpiffeAuthPlugin(svidVerifier), "spiffe", {
+        trustDomain: SPIFFE_TRUST_DOMAIN,
+        trustBundle: { keys: [{ kid: "k1", kty: "EC" }] },
+        roles: {
+          api: {
+            boundSpiffeIdPrefixes: ["/ns/prod/sa/"],
+            boundAudiences: ["arc"],
+            policies: ["reader"],
+          },
+        },
       });
     } finally {
       if (saved === undefined) delete process.env.ARC_DEFAULT_POLICY;
@@ -108,9 +137,36 @@ describe("auth-plugins e2e — OIDC + Kubernetes login bind policies to the mint
     expect(covered.status).not.toBe(403);
   });
 
+  it("SPIFFE login exchanges a JWT-SVID for a policy-bound arc token", async () => {
+    const res = await request(server)
+      .post("/v1/auth/spiffe/login")
+      .send({ role: "api", svid: "good" })
+      .expect(200);
+    const data = res.body.data as {
+      token: string;
+      identityId: string;
+      policies: string[];
+      metadata: Record<string, string>;
+    };
+    // The arc identity *is* the SPIFFE ID — no separately managed credential.
+    expect(data.identityId).toBe(SPIFFE_ID);
+    expect(data.policies).toEqual(["reader"]);
+    expect(data.metadata).toMatchObject({ trustDomain: SPIFFE_TRUST_DOMAIN, spiffePath: "/ns/prod/sa/api" });
+
+    const covered = await request(server).get("/v1/secret/data/app").set(auth(data.token));
+    expect(covered.status).not.toBe(403);
+    const forbidden = await request(server).get("/v1/transit/keys/foo").set(auth(data.token));
+    expect(forbidden.status).toBe(403);
+  });
+
+  it("SPIFFE login rejects a verified SVID from a foreign trust domain (401)", async () => {
+    await request(server).post("/v1/auth/spiffe/login").send({ role: "api", svid: "foreign" }).expect(401);
+  });
+
   it("rejects a token the plugin can't verify (401)", async () => {
     await request(server).post("/v1/auth/oidc/login").send({ role: "ci", jwt: "bad" }).expect(401);
     await request(server).post("/v1/auth/kubernetes/login").send({ role: "deploy", jwt: "bad" }).expect(401);
+    await request(server).post("/v1/auth/spiffe/login").send({ role: "api", svid: "bad" }).expect(401);
   });
 
   it("rejects an unknown role (401) and an unmounted auth method (404)", async () => {

@@ -1,7 +1,7 @@
 /**
  * End-to-end HTTP test: boots the real arc-mcp-server on a random port, with a fake fetch
  * standing in for arc-server. Drives it with the MCP SDK Client over Streamable HTTP and
- * asserts: tools/list returns the seven tools, tools/call(arc_kv_get) round-trips through
+ * asserts: tools/list returns the full tool set, tools/call(arc_kv_get) round-trips through
  * the fake arc-server, and a request with no Authorization header is rejected with 401.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -68,6 +68,15 @@ describe("arc-mcp-server HTTP", () => {
     const list = await client.listTools();
     expect(list.tools.map((t) => t.name).sort()).toEqual(
       [
+        "arc_agent_authorize",
+        "arc_agent_delegation_revoke",
+        "arc_agent_delegations_list",
+        "arc_agent_get",
+        "arc_agent_task_close",
+        "arc_agent_task_get",
+        "arc_agent_task_open",
+        "arc_agents_list",
+        "arc_approvals_list",
         "arc_dynamic_creds_issue",
         "arc_kv_get",
         "arc_kv_list",

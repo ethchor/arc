@@ -8,10 +8,21 @@
  *  - Transit (`transit/`): encrypt / decrypt
  *  - Dynamic credentials (any plugin mount): issue
  *  - Sys: list_mounts
+ *  - Engine C (agent identity, ADR-005): inspect the agent fleet, introspect effective
+ *    authority, and revoke — delegations individually, or a whole task at once.
  *
- * Engine B (the E2E vault) is intentionally NOT exposed — the server stores ciphertext only
- * and the master key never leaves the human client. Exposing Engine B over MCP would
- * fundamentally break that property.
+ * Two deliberate exclusions, both load-bearing:
+ *
+ * 1. **Engine B (the E2E vault) is NOT exposed.** The server stores ciphertext only and the
+ *    master key never leaves the human client. Exposing Engine B over MCP would
+ *    fundamentally break that property.
+ *
+ * 2. **Engine C operations that require a private key are NOT exposed** — registering an
+ *    agent (client-side keygen), creating a delegation (delegator-signed), submitting an
+ *    intent (agent-signed), and approving (WebAuthn ceremony). The MCP server holds no
+ *    signing key, so it could only ever forward an unsigned request the server would
+ *    rightly reject. The surface here is therefore *read + revoke*: it can tell you what an
+ *    agent may do and take that authority away, but it cannot grant authority.
  */
 import type { ArcClient, ArcHttpError } from "./arc-client";
 
@@ -267,7 +278,219 @@ const listMounts: Tool = guarded(
   async (_input, ctx) => callArc(() => ctx.client.get(ctx.bearer, "sys/mounts")),
 );
 
+/** ----- Engine C: agent identity, authority introspection, revocation (ADR-005) --------- */
+
+const agentsList: Tool = guarded(
+  {
+    name: "arc_agents_list",
+    description:
+      "List the agent identities owned by the caller. Returns each agent's id, label, ceiling scopes, autonomous-mode flag and status. Start here to discover agent ids for the other Engine-C tools.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  async (_input, ctx) => callArc(() => ctx.client.get(ctx.bearer, "vault/agents", undefined, { root: true })),
+);
+
+const agentGet: Tool = guarded(
+  {
+    name: "arc_agent_get",
+    description: "Fetch one agent identity by id, including its ceiling scopes and autonomous-mode setting.",
+    inputSchema: {
+      type: "object",
+      properties: { agentId: { type: "string", description: "Agent id (uuid)." } },
+      required: ["agentId"],
+    },
+  },
+  async (input, ctx) => {
+    const agentId = str(input, "agentId", { required: true }) as string;
+    return callArc(() => ctx.client.get(ctx.bearer, `vault/agents/${agentId}`, undefined, { root: true }));
+  },
+);
+
+const agentAuthorize: Tool = guarded(
+  {
+    name: "arc_agent_authorize",
+    description:
+      "Explain whether an agent may perform one action, and why. Evaluates the Engine-C effective-authority meet (delegation \u2229 delegator ceiling \u2229 agent ceiling) for a path + capability and returns the decision. Read-only introspection: it does NOT perform the action and does NOT consume the delegation's call budget. Use it to answer \"what can this agent actually reach?\" before granting or revoking.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agentId: { type: "string", description: "Agent id (uuid)." },
+        path: { type: "string", description: 'Target path, e.g. "secret/data/app/prod/db".' },
+        capability: {
+          type: "string",
+          enum: ["create", "read", "update", "delete", "list", "sudo"],
+          description: "Capability being tested.",
+        },
+        delegationId: {
+          type: "string",
+          description: "Optional: evaluate against one specific delegation instead of the agent's best-matching one.",
+        },
+      },
+      required: ["agentId", "path", "capability"],
+    },
+  },
+  async (input, ctx) => {
+    const agentId = str(input, "agentId", { required: true }) as string;
+    const path = str(input, "path", { required: true }) as string;
+    const capability = str(input, "capability", { required: true }) as string;
+    const delegationId = str(input, "delegationId");
+    const body: Record<string, unknown> = { path, capability };
+    if (delegationId !== undefined) body.delegationId = delegationId;
+    return callArc(() =>
+      ctx.client.post(ctx.bearer, `vault/agents/${agentId}/authorize`, body, { root: true }),
+    );
+  },
+);
+
+const delegationsList: Tool = guarded(
+  {
+    name: "arc_agent_delegations_list",
+    description:
+      "List the delegations issued to an agent — the signed grants that give it scoped authority, with their scopes, budgets, expiry and revocation state.",
+    inputSchema: {
+      type: "object",
+      properties: { agentId: { type: "string", description: "Agent id (uuid)." } },
+      required: ["agentId"],
+    },
+  },
+  async (input, ctx) => {
+    const agentId = str(input, "agentId", { required: true }) as string;
+    return callArc(() =>
+      ctx.client.get(ctx.bearer, `vault/agents/${agentId}/delegations`, undefined, { root: true }),
+    );
+  },
+);
+
+const delegationRevoke: Tool = guarded(
+  {
+    name: "arc_agent_delegation_revoke",
+    description:
+      "Revoke one delegation, immediately removing the authority it granted. Irreversible — a new delegation must be signed by the delegator to restore access (which this MCP server cannot do). Use arc_agent_task_close to revoke a whole task's delegations at once.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agentId: { type: "string", description: "Agent id (uuid)." },
+        delegationId: { type: "string", description: "Delegation id to revoke." },
+      },
+      required: ["agentId", "delegationId"],
+    },
+  },
+  async (input, ctx) => {
+    const agentId = str(input, "agentId", { required: true }) as string;
+    const delegationId = str(input, "delegationId", { required: true }) as string;
+    return callArc(() =>
+      ctx.client.delete(ctx.bearer, `vault/agents/${agentId}/delegations/${delegationId}`, { root: true }),
+    );
+  },
+);
+
+const taskOpen: Tool = guarded(
+  {
+    name: "arc_agent_task_open",
+    description:
+      "Open a task for an agent: the revocable unit of work and the anchor of its signed-intent hash chain. A task carries a budget (wall-clock, max calls, max secrets unsealed) that the server enforces. Opening a task does NOT itself grant authority — that requires a delegation signed by the delegator.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agentId: { type: "string", description: "Agent id (uuid)." },
+        taskId: { type: "string", description: "Optional explicit task id (uuid) — e.g. the one a delegation was signed against." },
+        delegationId: { type: "string", description: "Optional delegation this task runs under." },
+        budget: {
+          type: "object",
+          description: "Optional budget caps; the server applies defaults for anything omitted.",
+          properties: {
+            wallClockMs: { type: "integer", minimum: 1, description: "Wall-clock lifetime in ms." },
+            maxCalls: { type: "integer", minimum: 1, description: "Maximum authorized calls." },
+            maxSecretsUnsealed: { type: "integer", minimum: 1, description: "Maximum distinct secrets unsealed." },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ["agentId"],
+    },
+  },
+  async (input, ctx) => {
+    const agentId = str(input, "agentId", { required: true }) as string;
+    const taskId = str(input, "taskId");
+    const delegationId = str(input, "delegationId");
+    const body: Record<string, unknown> = {};
+    if (taskId !== undefined) body.taskId = taskId;
+    if (delegationId !== undefined) body.delegationId = delegationId;
+    if (input.budget !== undefined) {
+      const budget = input.budget;
+      if (!budget || typeof budget !== "object" || Array.isArray(budget)) {
+        throw new Error('argument "budget" must be an object');
+      }
+      body.budget = budget;
+    }
+    return callArc(() => ctx.client.post(ctx.bearer, `vault/agents/${agentId}/tasks`, body, { root: true }));
+  },
+);
+
+const taskGet: Tool = guarded(
+  {
+    name: "arc_agent_task_get",
+    description:
+      "Fetch a task's state: budget consumed vs remaining, status, and its recorded signed-intent chain. Set verify=true to re-verify the intent chain server-side — each intent's signature and its link to the previous hash — which detects tampering or omission in the agent's action history.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agentId: { type: "string", description: "Agent id (uuid)." },
+        taskId: { type: "string", description: "Task id (uuid)." },
+        verify: { type: "boolean", description: "Re-verify the signed-intent hash chain (default false).", default: false },
+      },
+      required: ["agentId", "taskId"],
+    },
+  },
+  async (input, ctx) => {
+    const agentId = str(input, "agentId", { required: true }) as string;
+    const taskId = str(input, "taskId", { required: true }) as string;
+    const verify = input.verify;
+    if (verify !== undefined && typeof verify !== "boolean") {
+      throw new Error('argument "verify" must be a boolean');
+    }
+    const query = verify === true ? { verify: "true" } : undefined;
+    return callArc(() =>
+      ctx.client.get(ctx.bearer, `vault/agents/${agentId}/tasks/${taskId}`, query, { root: true }),
+    );
+  },
+);
+
+const taskClose: Tool = guarded(
+  {
+    name: "arc_agent_task_close",
+    description:
+      "Close a task and cascade-revoke everything it holds — its delegations and every lease issued under it. This is the one-shot kill switch for a running agent: after it returns, the agent has no authority from that task. Irreversible.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agentId: { type: "string", description: "Agent id (uuid)." },
+        taskId: { type: "string", description: "Task id (uuid) to close." },
+      },
+      required: ["agentId", "taskId"],
+    },
+  },
+  async (input, ctx) => {
+    const agentId = str(input, "agentId", { required: true }) as string;
+    const taskId = str(input, "taskId", { required: true }) as string;
+    return callArc(() =>
+      ctx.client.post(ctx.bearer, `vault/agents/${agentId}/tasks/${taskId}/close`, {}, { root: true }),
+    );
+  },
+);
+
+const approvalsList: Tool = guarded(
+  {
+    name: "arc_approvals_list",
+    description:
+      "List the caller's pending human-in-the-loop approvals — elevated agent actions waiting on consent. Read-only: granting one requires a WebAuthn assertion from the owner's authenticator and cannot be done through MCP.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  async (_input, ctx) => callArc(() => ctx.client.get(ctx.bearer, "vault/approvals", undefined, { root: true })),
+);
+
 export const tools: readonly Tool[] = Object.freeze([
+  // Engine A — secrets engines
   kvGet,
   kvPut,
   kvList,
@@ -275,4 +498,14 @@ export const tools: readonly Tool[] = Object.freeze([
   transitDecrypt,
   dynamicCredsIssue,
   listMounts,
+  // Engine C — agent identity: inspect + revoke (never grant)
+  agentsList,
+  agentGet,
+  agentAuthorize,
+  delegationsList,
+  delegationRevoke,
+  taskOpen,
+  taskGet,
+  taskClose,
+  approvalsList,
 ]);
