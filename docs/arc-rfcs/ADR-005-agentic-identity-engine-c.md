@@ -333,6 +333,45 @@ last-seen + scope summary + retire).
 - **Not a reimplementation of OpenBao leasing.** Task budgets drive the existing
   `@arc/leasing` revoke; Engine-A is unchanged.
 
+## Standards alignment (IETF AIMS / WIMSE / RFC 8693)
+
+*Added 2026-08 after an industry review; no design change, this records the mapping while
+the relevant draft is young enough that aligning is cheap.*
+
+The IETF's `draft-klrc-aiagent-auth` (**AIMS** — Agent Identity Management System, first
+published March 2026) composes three existing standards into an agent-auth framework:
+**WIMSE** + **SPIFFE/SPIRE** for workload identity, and **OAuth 2.0** for delegation and
+authorization. Engine-C was designed independently and arrived at substantially the same
+composition, so the mapping is close:
+
+| AIMS pillar | Engine-C today | Status |
+| ----------- | -------------- | ------ |
+| Workload identity for the agent | SPIFFE attestation at enrollment — X.509-SVID chain validation + JWT-SVID signature verification against per-trust-domain bundles; the resolved SPIFFE ID and trust anchor are persisted on the agent (`attestation.subject` / `.trustAnchor`) | aligned |
+| Workload identity as a login credential | SPIFFE auth method (`@arc/plugin-spiffe`): a JWT-SVID is exchanged for an arc token whose identity *is* the SPIFFE ID | aligned |
+| On-behalf-of / delegation semantics | Agent tokens carry the **RFC 8693 `act` claim** (`act: { sub: "agent:<id>" }`) alongside the human owner as `sub`, so the relationship is legible to standard OAuth tooling | aligned |
+| Fine-grained authorization | `@arc/grants` effective-authority meet — delegation ∩ delegator ceiling ∩ agent ceiling | aligned |
+| **Multi-hop delegation chain verification** | **Not supported, deliberately.** `DelegationClaims.delegator` is always `user:<id>`, and `createDelegation` refuses any delegator but the authenticated user | divergent by design |
+
+### On the one divergence
+
+AIMS (following RFC 8693) expresses a delegation chain as **nested `act` claims**:
+`{ sub: human, act: { sub: agent-a, act: { sub: agent-b } } }`. Engine-C has nothing to nest,
+because an agent cannot delegate: authority flows human → agent in exactly one hop, and the
+server enforces it. That is a security posture, not an oversight — it means every grant of
+authority traces to a human signature, with no chain to walk, truncate, or confuse.
+
+What Engine-C has instead is a **per-task signed-intent hash chain** (§4): a tamper-evident
+record of what the agent actually *did*, not merely what it was permitted to do. AIMS has no
+equivalent. The two are complementary — a delegation chain answers "may this principal act?",
+an intent chain answers "what did it actually do, and has that record been altered?".
+
+**If sub-delegation is ever added**, the wire change is small and should follow the standard
+rather than invent: widen `DelegationClaims.delegator` to accept an `agent:<id>` subject, add
+a parent-delegation reference so the chain is walkable, and emit nested `act` claims in the
+agent token. The scope meet already composes correctly across hops (intersection is
+associative), so `@arc/grants` needs no change. Until then, aligning further would mean
+building a chain we deliberately do not have.
+
 ## Licensing
 
 The HashiCorp posts are read for *target behavior* only (CLAUDE.md rule 4); no
