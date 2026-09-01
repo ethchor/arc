@@ -34,6 +34,7 @@ import {
 import type {
   AddMemberDto,
   ApproveDeviceDto,
+  ChangeMasterPasswordDto,
   CreateFolderDto,
   CreateItemShareDto,
   CreateVaultDto,
@@ -211,6 +212,74 @@ export class VaultService {
    * working; only the password-derived + recovery wrapping, salts, authHash, and
    * self-attestation change.
    */
+  /**
+   * Change the master password (doc 05 §5.3). Re-wraps the three WK-wrapped private keys
+   * under a new WK and replaces the KDF salts + params + authHash.
+   *
+   * Authorization is the point of this method. Doc 06 §6.7 requires unlocking the *existing*
+   * keyset, not merely holding a session — so `currentAuthHash` is verified against the stored
+   * hash first, through the same constant-time compare and the same lockout counter as
+   * `unlock()`. Without that, a stolen JWT would be enough to re-wrap someone's vault and lock
+   * them out of it.
+   *
+   * The identity keys are pinned: this rotates the *wrapping*, never the identity. Rotating
+   * the identity is a different operation with different consequences for every grant that
+   * pins the old key (doc 05 §5.6).
+   *
+   * The recovery-wrapped copies are untouched — the recovery key is independent of the master
+   * password, so a password change must not invalidate it.
+   */
+  async changeMasterPassword(userId: number, dto: ChangeMasterPasswordDto) {
+    const state = this.attempts.get(userId);
+    if (state && state.lockedUntil > Date.now()) {
+      throw new HttpException(
+        { error: "locked", retryAfter: Math.ceil((state.lockedUntil - Date.now()) / 1000) },
+        423,
+      );
+    }
+    const k = await this.userKeys.findOne({ where: { userId } });
+    if (!k) throw new NotFoundException("not enrolled");
+
+    // Prove the CURRENT password before anything is written.
+    const candidate = serverHashAuth(dto.currentAuthHash, k.serverSalt);
+    if (!ctEqual(fromB64u(candidate), fromB64u(k.authHashStored))) {
+      const fails = (state?.fails ?? 0) + 1;
+      this.attempts.set(userId, {
+        fails,
+        lockedUntil: fails >= MAX_UNLOCK_FAILS ? Date.now() + LOCKOUT_MS : 0,
+      });
+      await this.writeAudit(null, userId, "master_password_change_failed", null);
+      throw new UnauthorizedException("unlock failed");
+    }
+
+    if (
+      dto.identityPublicKey !== k.identityPublicKey ||
+      dto.identityPublicKeyMlkem !== k.identityPublicKeyMlkem ||
+      dto.signingPublicKey !== k.signingPublicKey
+    ) {
+      throw new BadRequestException({ error: "identity_pubkey_mismatch" });
+    }
+
+    // Same KDF floor that gates enrollment and recovery — a password change must not be a
+    // way to quietly downgrade the parameters protecting every future unlock.
+    assertArgonParamsAboveFloor(dto.argonParams);
+
+    const serverSalt = toB64u(randomBytes(16));
+    k.saltMk = dto.saltMk;
+    k.saltAuth = dto.saltAuth;
+    k.argonParams = dto.argonParams;
+    k.authHashStored = serverHashAuth(dto.authHash, serverSalt);
+    k.serverSalt = serverSalt;
+    k.encIdentityPriv = dto.encIdentityPriv;
+    k.encIdentityPrivMlkem = dto.encIdentityPrivMlkem;
+    k.encSigningPriv = dto.encSigningPriv;
+    await this.userKeys.save(k);
+
+    this.attempts.delete(userId);
+    await this.writeAudit(null, userId, "master_password_changed", null);
+    return { ok: true };
+  }
+
   async recoverKeyset(userId: number, dto: RecoverKeysetDto) {
     const k = await this.userKeys.findOne({ where: { userId } });
     if (!k) throw new NotFoundException("not enrolled");
@@ -380,6 +449,68 @@ export class VaultService {
    * comes from the client re-keying the vault right after this returns. Owner/admin only;
    * refuses to remove yourself or the last owner (which would orphan the vault).
    */
+  /**
+   * Change a member's role (doc 09 §9.3). Until now the only way to demote an admin was
+   * remove-then-re-add, which revokes their grants and forces a fresh VK re-wrap — expensive,
+   * and it briefly drops their access for a change that should be instant.
+   *
+   * Role lives outside the crypto: it gates *API* authority, while the wrapped VK the member
+   * already holds is what decrypts. So this deliberately touches no key material — demoting an
+   * editor to viewer stops them writing through the API, it does not un-give them the vault
+   * key. Revoking actual key access is `removeMember` + `rotate-key`.
+   */
+  async updateMemberRole(userId: number, vaultId: string, targetUserId: number, role: MemberRole) {
+    await this.requireRole(vaultId, userId, "admin");
+    if (!Number.isInteger(targetUserId)) throw new BadRequestException({ error: "invalid_user" });
+    // Self-demotion is how an admin locks themselves out of their own vault in one call.
+    if (targetUserId === userId) throw new BadRequestException({ error: "cannot_change_own_role" });
+
+    const target = await this.memberships.findOne({ where: { vaultId, userId: targetUserId } });
+    if (!target || target.status === "revoked") throw new NotFoundException("member not found");
+    if (target.role === role) return { ok: true, role };
+
+    if (target.role === "owner") {
+      const owners = await this.memberships.count({
+        where: { vaultId, role: "owner", status: "active" },
+      });
+      // Same guard as removeMember: a vault with no owner can never be administered again.
+      if (owners <= 1) throw new BadRequestException({ error: "cannot_demote_last_owner" });
+    }
+
+    const previous = target.role;
+    target.role = role;
+    await this.memberships.save(target);
+    // writeAudit carries a single target id; record the transition in the action so the
+    // trail says what changed, not merely that something did.
+    await this.writeAudit(
+      vaultId,
+      userId,
+      `member_role_changed:${previous}->${role}`,
+      String(targetUserId),
+    );
+    return { ok: true, role };
+  }
+
+  /**
+   * Soft-delete a vault (doc 09 §9.3). Owner only.
+   *
+   * Soft, not hard: the rows stay so an accidental delete is recoverable and the audit trail
+   * keeps its referents. `VaultEntity` already carried a `@DeleteDateColumn`, so every existing
+   * repository read excludes it automatically once set — there was simply no route to set it.
+   *
+   * This is *not* the erasure path. Deleting the ciphertext is `deleteItem`'s job (which
+   * genuinely erases payload, history and attachments); a vault-level hard erase is its own
+   * change, tracked separately.
+   */
+  async deleteVault(userId: number, vaultId: string) {
+    await this.requireRole(vaultId, userId, "owner");
+    const vault = await this.vaults.findOne({ where: { id: vaultId } });
+    if (!vault) throw new NotFoundException("vault not found");
+    await this.vaults.softRemove(vault);
+    await this.writeAudit(vaultId, userId, "vault_deleted", null);
+    return { ok: true };
+  }
+
   async removeMember(userId: number, vaultId: string, targetUserId: number) {
     await this.requireRole(vaultId, userId, "admin");
     if (!Number.isInteger(targetUserId)) throw new BadRequestException({ error: "invalid_user" });

@@ -20,7 +20,7 @@ signatures — never plaintext. DTOs are validated by a global
 | ------ | ---- | -------- | ------------ |
 | POST | `/vault/enroll` | self | full enrollment payload (doc 06 §6.2) → `{ keysetId, vaultId, deviceId }` |
 | GET | `/vault/keyset` | self | salts, argonParams, `encIdentityPriv`, `encSigningPriv`, `keyVersion` (identity-key version) |
-| PUT | `/vault/keyset` | self | param upgrade / master-pw change: new params, re-wrapped privs, new authHash (doc 05 §5.3) |
+| PUT | `/vault/keyset` | self | master-pw change: `currentAuthHash` (proof of the CURRENT password — doc 06 §6.7) + new params, re-wrapped WK privs, new authHash (doc 05 §5.3). Identity pubkeys pinned; recovery envelopes untouched |
 | POST | `/vault/unlock` | self | `{ authHash }` → `{ ok }`; rate-limited, lockout on N fails |
 | POST | `/vault/identity` | self | publish identity+signing pubkeys + self-attestation; store wrapped privs |
 | POST | `/vault/identity/rotate-signing` | self | `{ newSigningPub, encSigningPriv, continuitySig }` (doc 05 §5.5) |
@@ -37,10 +37,10 @@ signatures — never plaintext. DTOs are validated by a global
 | GET | `/vaults` | member | vaults the caller belongs to + their grant |
 | GET | `/vaults/:id` | viewer | vault metadata + caller's grant |
 | PATCH | `/vaults/:id` | owner | rename (`encName`) |
-| DELETE | `/vaults/:id` | owner | soft-delete |
+| DELETE | `/vaults/:id` | owner | soft-delete (sets `deletedAt`; ciphertext is retained — erasure is a separate operation) |
 | GET | `/vaults/:id/members` | viewer | membership list (no key material) |
 | POST | `/vaults/:id/members` | admin | `{ userId, role, keyVersion, wrappedVaultKey, signature? }` |
-| PATCH | `/vaults/:id/members/:userId` | admin | change role |
+| PATCH | `/vaults/:id/members/:userId` | admin | change role. Refuses self-change and demoting the last owner. Touches no key material — role gates API authority, the wrapped VK is what decrypts |
 | DELETE | `/vaults/:id/members/:userId` | admin | revoke (pair with rotate-key) |
 | POST | `/vaults/:id/rotate-key` | admin | `{ newKeyVersion, grants[], rewrappedItemKeys[] }` (atomic, doc 07 §7.5) |
 | POST | `/vaults/:id/invites` | admin | `{ email, role, expiresAt }` (doc 06 §6.6) |

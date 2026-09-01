@@ -77,6 +77,46 @@ export class ItemShareWriteBackDto {
   @IsInt() baseItemVersion!: number;
 }
 
+/**
+ * Master-password change (doc 05 §5.3, doc 09 §9.2). The client re-derives MK/WK from the new
+ * password and re-wraps the three WK-wrapped private keys; the server only ever sees
+ * ciphertext and hashes.
+ *
+ * `currentAuthHash` is the load-bearing field. Doc 06 §6.7: "changing the master password
+ * requires unlocking the *existing* keyset (proving WK), not just a valid JWT" — so a stolen
+ * session alone must not be enough to re-wrap the vault.
+ *
+ * The recovery-wrapped envelopes are deliberately absent: the recovery key is independent of
+ * the master password and is unchanged by this operation, so re-sending them would only create
+ * a way to overwrite them.
+ */
+/** Role change on an existing member (doc 09 §9.3). */
+export class UpdateMemberRoleDto {
+  @IsIn(["viewer", "editor", "admin", "owner"])
+  role!: MemberRole;
+}
+
+export class ChangeMasterPasswordDto {
+  /** Proof of the CURRENT password — same value `POST /vault/unlock` takes. */
+  @IsString() currentAuthHash!: string;
+
+  @IsString() saltMk!: string;
+  @IsString() saltAuth!: string;
+  @IsObject() argonParams!: Record<string, unknown>;
+  /** Derived from the NEW password + new saltAuth. */
+  @IsString() authHash!: string;
+
+  /** Pinned — a password change re-wraps the same identity, it never rotates it. */
+  @IsString() identityPublicKey!: string;
+  @IsString() identityPublicKeyMlkem!: string;
+  @IsString() signingPublicKey!: string;
+
+  /** The three WK-wrapped private keys, re-wrapped under the new WK. */
+  @IsObject() encIdentityPriv!: EnvelopeJson;
+  @IsObject() encIdentityPrivMlkem!: EnvelopeJson;
+  @IsObject() encSigningPriv!: EnvelopeJson;
+}
+
 export class RecoverKeysetDto {
   @IsString() saltMk!: string;
   @IsString() saltAuth!: string;
