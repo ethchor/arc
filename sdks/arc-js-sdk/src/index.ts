@@ -31,6 +31,7 @@ import {
   pqSealOpen,
   randomBytes,
   intentArgsDigest,
+  changeMasterPassword as cryptoChangeMasterPassword,
   recover as cryptoRecover,
   rewrapItemKey,
   seal,
@@ -62,6 +63,7 @@ import {
   type DelegationClaims,
   type DelegationScope,
   type IntentClaims,
+  type MemberRole,
 } from "@arc/types";
 
 export type VaultType = "personal" | "team" | "org";
@@ -529,6 +531,59 @@ export class VaultClient {
     this.token = r.accessToken;
     this.userId = r.userId;
     return { userId: r.userId, token: r.accessToken };
+  }
+
+  /**
+   * Change the master password (doc 05 §5.3). Everything is derived and re-wrapped
+   * client-side; the server sees only ciphertext, salts and hashes.
+   *
+   * Requires the CURRENT password as well as the new one — doc 06 §6.7 requires unlocking the
+   * existing keyset, so a live session alone cannot re-wrap the vault.
+   *
+   * The recovery key is unaffected: it wraps its own copies of the private keys and is
+   * independent of the master password.
+   */
+  async changeMasterPassword(
+    currentMasterPassword: string,
+    newMasterPassword: string,
+    opts: { profile?: "desktop" | "mobile" } = {},
+  ): Promise<{ ok: true }> {
+    const keyset = await this.http<Keyset>("GET", "/vault/keyset");
+    // Everything below happens client-side; a wrong current password fails here rather than
+    // producing a request the server has to reject.
+    const change = await cryptoChangeMasterPassword(currentMasterPassword, newMasterPassword, keyset, {
+      ...(opts.profile ? { profile: opts.profile } : {}),
+    });
+    await this.http("PUT", "/vault/keyset", {
+      currentAuthHash: change.currentAuthHash,
+      saltMk: change.saltMk,
+      saltAuth: change.saltAuth,
+      argonParams: change.argonParams,
+      authHash: change.authHash,
+      identityPublicKey: keyset.identityPublicKey,
+      identityPublicKeyMlkem: keyset.identityPublicKeyMlkem,
+      signingPublicKey: keyset.signingPublicKey,
+      encIdentityPriv: change.encIdentityPriv,
+      encIdentityPrivMlkem: change.encIdentityPrivMlkem,
+      encSigningPriv: change.encSigningPriv,
+    });
+    // The in-memory session is already valid under the new password — no re-unlock needed.
+    this.session = change.session;
+    return { ok: true };
+  }
+
+  /** Change an existing member's role. Admin+; cannot demote the last owner or yourself. */
+  async updateMemberRole(vaultId: string, targetUserId: number, role: MemberRole) {
+    return this.http<{ ok: true; role: MemberRole }>(
+      "PATCH",
+      `/vaults/${vaultId}/members/${targetUserId}`,
+      { role },
+    );
+  }
+
+  /** Soft-delete a vault. Owner only. Recoverable server-side; does not erase ciphertext. */
+  async deleteVault(vaultId: string) {
+    return this.http<{ ok: true }>("DELETE", `/vaults/${vaultId}`);
   }
 
   /**

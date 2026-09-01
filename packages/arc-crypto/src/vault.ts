@@ -303,6 +303,108 @@ export interface RecoverResult {
  * keysets enrolled before that can't be cleanly recovered (the signing key would have to be
  * rotated, which this function deliberately refuses rather than silently changing a pub).
  */
+/** What a master-password change produces. Nothing here is secret to the server except by design. */
+export interface ChangePasswordResult {
+  /** Proof of the OLD password, so the server can authorize the change (doc 06 §6.7). */
+  currentAuthHash: string;
+  /** New KDF salts + params + authHash derived from the new password. */
+  saltMk: string;
+  saltAuth: string;
+  argonParams: ArgonProfile;
+  authHash: string;
+  /** The three WK-wrapped private keys, re-wrapped under the NEW wrapping key. */
+  encIdentityPriv: Envelope;
+  encIdentityPrivMlkem: Envelope;
+  encSigningPriv: Envelope;
+  /** Unlocked session under the new password — ready to use without a re-unlock. */
+  session: Session;
+}
+
+/**
+ * Change the master password (doc 05 §5.3).
+ *
+ * Distinct from {@link recover} in what it proves and what it rotates:
+ *  - it unwraps with the CURRENT password, not the recovery key, so it only works for someone
+ *    who can already open the vault;
+ *  - it returns `currentAuthHash` as the server's authorization proof, because doc 06 §6.7
+ *    requires unlocking the existing keyset rather than merely holding a session;
+ *  - it leaves the **recovery** envelopes alone. The recovery key wraps its own copies of the
+ *    same private keys and is independent of the password, so changing the password must not
+ *    silently invalidate the recovery key the user has written down.
+ *
+ * The identity keys themselves never change — only the wrapping layer.
+ */
+export async function changeMasterPassword(
+  currentMasterPassword: string,
+  newMasterPassword: string,
+  keyset: Keyset,
+  opts: { profile?: ArgonProfileName; argon2?: Argon2idFn } = {},
+): Promise<ChangePasswordResult> {
+  const keyVersion = keyset.keyVersion;
+
+  // 1. Open under the current password. A wrong password fails here, client-side, so we never
+  //    send the server a re-wrap it would have to reject.
+  const currentMk = await deriveMasterKey(
+    currentMasterPassword,
+    fromB64u(keyset.saltMk),
+    keyset.argonParams,
+    opts.argon2,
+  );
+  const { authSeed: currentAuthSeed, wk: currentWk } = splitMasterKey(currentMk);
+  wipe(currentMk);
+  const currentAuthHash = await deriveAuthHash(
+    currentAuthSeed,
+    fromB64u(keyset.saltAuth),
+    keyset.argonParams,
+    opts.argon2,
+  );
+
+  const identityPriv = aeadOpen(currentWk, keyset.encIdentityPriv, privAad("identity-priv", keyVersion));
+  const identityPrivMlkem = aeadOpen(
+    currentWk,
+    keyset.encIdentityPrivMlkem,
+    privAad("identity-priv-mlkem", keyVersion),
+  );
+  const signingPriv = aeadOpen(currentWk, keyset.encSigningPriv, privAad("signing-priv", keyVersion));
+  wipe(currentWk);
+
+  // 2. Fresh salts + a new wrapping key from the new password. New salts matter: reusing them
+  //    would let anyone who captured the old authHash keep testing candidate passwords against
+  //    the same target.
+  const params = ARGON_PROFILES[opts.profile ?? "desktop"];
+  const saltMk = randomBytes(SALT_BYTES);
+  const saltAuth = randomBytes(SALT_BYTES);
+  const mk = await deriveMasterKey(newMasterPassword, saltMk, params, opts.argon2);
+  const { authSeed, wk } = splitMasterKey(mk);
+  wipe(mk);
+  const authHash = await deriveAuthHash(authSeed, saltAuth, params, opts.argon2);
+
+  // 3. Re-wrap under the new WK. Same AAD, same key version — only the wrapping key changed.
+  const encIdentityPriv = aeadSeal(wk, identityPriv, privAad("identity-priv", keyVersion));
+  const encIdentityPrivMlkem = aeadSeal(wk, identityPrivMlkem, privAad("identity-priv-mlkem", keyVersion));
+  const encSigningPriv = aeadSeal(wk, signingPriv, privAad("signing-priv", keyVersion));
+
+  return {
+    currentAuthHash: toB64u(currentAuthHash),
+    saltMk: toB64u(saltMk),
+    saltAuth: toB64u(saltAuth),
+    argonParams: params,
+    authHash: toB64u(authHash),
+    encIdentityPriv,
+    encIdentityPrivMlkem,
+    encSigningPriv,
+    session: {
+      wk,
+      identityPriv,
+      identityPub: x25519PubFromPriv(identityPriv),
+      identityPrivMlkem,
+      identityPubMlkem: ml_kem768.getPublicKey(identityPrivMlkem),
+      signingPriv,
+      signingPub: edPubFromPriv(signingPriv),
+    },
+  };
+}
+
 export async function recover(
   recoveryKeyEncoded: string,
   keyset: Keyset,

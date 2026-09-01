@@ -20,6 +20,7 @@ import { VaultService } from "./vault.service";
 import {
   AddMemberDto,
   ApproveDeviceDto,
+  ChangeMasterPasswordDto,
   CreateFolderDto,
   CreateItemShareDto,
   ItemShareWriteBackDto,
@@ -34,6 +35,7 @@ import {
   RotateKeyDto,
   TouchDeviceDto,
   UnlockDto,
+  UpdateMemberRoleDto,
   UpdateVaultUiDto,
   UploadAttachmentDto,
   UpsertItemDto,
@@ -60,6 +62,15 @@ export class VaultController {
   @Get("vault/keyset")
   keyset(@CurrentUser() u: CurrentUserData) {
     return this.vault.getKeyset(u.userId);
+  }
+
+  /**
+   * Change the master password (doc 05 §5.3). Requires proof of the CURRENT password in the
+   * body — doc 06 §6.7 is explicit that this must not be reachable with a valid JWT alone.
+   */
+  @Put("vault/keyset")
+  changeMasterPassword(@CurrentUser() u: CurrentUserData, @Body() dto: ChangeMasterPasswordDto) {
+    return this.vault.changeMasterPassword(u.userId, dto);
   }
 
   @Post("vault/unlock")
@@ -154,6 +165,22 @@ export class VaultController {
   }
 
   /** Revoke a member's access. The client re-keys the vault afterward (forward secrecy). */
+  @Patch("vaults/:id/members/:userId")
+  updateMemberRole(
+    @CurrentUser() u: CurrentUserData,
+    @Param("id") id: string,
+    @Param("userId") userId: string,
+    @Body() dto: UpdateMemberRoleDto,
+  ) {
+    return this.vault.updateMemberRole(u.userId, id, Number(userId), dto.role);
+  }
+
+  /** Soft-delete a vault. Owner only. */
+  @Delete("vaults/:id")
+  deleteVault(@CurrentUser() u: CurrentUserData, @Param("id") id: string) {
+    return this.vault.deleteVault(u.userId, id);
+  }
+
   @Delete("vaults/:id/members/:userId")
   removeMember(
     @CurrentUser() u: CurrentUserData,
