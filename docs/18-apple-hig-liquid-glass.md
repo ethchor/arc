@@ -343,8 +343,10 @@ This covers `components/vault/console-shell.tsx`, `command-palette.tsx` and `sit
   it: the mesh background runs full-bleed, and wide hero content can use a mirrored,
   blurred "background extension" strip under it.
 - **Structure:** at most two levels. Group labels switch to title case, and the icons use
-  the accent color only for the selected item.
-- **The existing collapse-to-rail becomes "hide sidebar",** with the same toggle and ⌘⌥S.
+  the accent color, which is the HIG's sidebar default. The selected row is a filled,
+  concentric highlight rather than an edge marker.
+- **The existing collapse-to-rail becomes "hide sidebar",** with the same toggle (and the
+  macOS-standard ⌃⌘S in Phase 2).
   Auto-collapse below about 1100 px. Nothing critical sits at the bottom of the sidebar.
 - **Persona switch (Personal/Operator):** a two-segment segmented control at the top of the
   sidebar, not a dropdown.
@@ -610,14 +612,14 @@ a web-specific implementation. **Reference** means reading it, with nothing to b
 | Page | Disposition | What it means for arc |
 | --- | --- | --- |
 | Accessibility | Adopt | WCAG-aligned contrast (4.5:1 up to 17 pt, 3:1 at 18 pt or bold), 44 px touch targets, full keyboard use, labelled icon buttons, reduced transparency, contrast and motion (§2.4). |
-| App icons | Adapt | PWA and web-clip icons and the Tauri desktop icon: simplified, centred honeycomb on a solid field; test on the iOS 27 Home Screen and in dark and tinted modes (§4.9). |
-| Branding | Adopt | Updated Sept 2026. Accent sparingly (primary action, selection, status); brand colour and mesh live in the content layer under glass; no logo repetition (§3.1). |
-| Color | Adopt | Liquid Glass colour rules: glass has no inherent colour, tint only the primary action's background, monochrome labels on glass; light, dark and increased-contrast variants for every token (§2.3). |
-| Dark Mode | Adopt | Default to the system appearance; decide whether to keep the in-app override and colour presets (decision D3). |
+| App icons | Adapt | PWA and web-clip icons and the Tauri desktop icon: simplified, centered honeycomb on a solid field; test on the iOS 27 Home Screen and in dark and tinted modes (§4.9). |
+| Branding | Adopt | Updated Sept 2026. Accent sparingly (primary action, selection, status); brand color and mesh live in the content layer under glass; no logo repetition (§3.1). |
+| Color | Adopt | Liquid Glass color rules: glass has no inherent color, tint only the primary action's background, monochrome labels on glass; light, dark and increased-contrast variants for every token (§2.3). |
+| Dark Mode | Adopt | Default to the system appearance; decide whether to keep the in-app override and color presets (decision D3). |
 | Icons | Adapt | Keep Lucide (ISC); standard icons for standard actions, filled variant for the selected tab, no bordered toolbar icons, accessible names everywhere. |
 | Images | Reference | Few raster images; keep @2x assets and sRGB or Display P3 profiles for marketing art. |
 | Immersive experiences | Not applicable | visionOS immersive spaces. |
-| Inclusion | Adopt | Folds into the writing pass: plain, inclusive, gender-neutral copy; no culture-specific colour meanings. |
+| Inclusion | Adopt | Folds into the writing pass: plain, inclusive, gender-neutral copy; no culture-specific color meanings. |
 | Layout | Adopt | Updated Sept 2026. Size classes become container queries; controls separated from content by glass plus a scroll-edge effect; backgrounds extend beneath the sidebar; safe areas (§4.1–4.2). |
 | Materials | Adopt | The core of this plan: Liquid Glass for the functional layer only, regular vs clear variants, a dimming layer over bright content; standard materials in the content layer (§2). |
 | Motion | Adopt | Purposeful and optional (reduced motion); glass morphs for menus and popovers; no motion on high-frequency interactions (§2.5). |
@@ -626,7 +628,7 @@ a web-specific implementation. **Reference** means reading it, with nothing to b
 | SF Symbols | Reference | Not shipped. The SF Symbols terms restrict use (never in logos); arc keeps Lucide and follows the same conventions. |
 | Spatial layout | Not applicable | visionOS. |
 | Typography | Adopt | A type scale mapped to the HIG text styles (Body 17/22 on iOS, 13/16 on macOS), rem-based so browser text size scales, a Dynamic Type hook on iOS Safari, no light weights, 11 px minimum (decision D2). |
-| Writing | Adopt | One capitalisation rule set (title case for menus, buttons, section headers, tab and view titles; sentence case for descriptions), clear errors, next steps on every empty state. |
+| Writing | Adopt | One capitalization rule set (title case for menus, buttons, section headers, tab and view titles; sentence case for descriptions), clear errors, next steps on every empty state. |
 
 #### Patterns
 
@@ -664,7 +666,7 @@ a web-specific implementation. **Reference** means reading it, with nothing to b
 | --- | --- | --- |
 | Charts | Adapt | See Charting data. |
 | Image views | Reference | Minimal imagery. |
-| Text views | Adopt | Secure-note editor: comfortable measure, selectable text, system text behaviour. |
+| Text views | Adopt | Secure-note editor: comfortable measure, selectable text, system text behavior. |
 | Web views | Adapt | The Tauri desktop app is a web view: support back and forward where there's navigation; don't build browser chrome. |
 
 #### Components · Layout and organization
@@ -675,7 +677,7 @@ a web-specific implementation. **Reference** means reading it, with nothing to b
 | Collections | Adapt | Home and security grids; even column counts, which also split cleanly on fold. |
 | Column views | Not applicable | macOS Finder-style browser; not needed. |
 | Disclosure controls | Adopt | Progressive disclosure in item details and advanced policy options. |
-| Labels | Adopt | Selectable, copyable static text; secondary and tertiary label colours for hierarchy. |
+| Labels | Adopt | Selectable, copyable static text; secondary and tertiary label colors for hierarchy. |
 | Lists and tables | Adopt | Vault items, leases and audit rows: larger row height, title-case section headers, sortable columns on desktop (§4.6). |
 | Lockups | Not applicable | tvOS. |
 | Outline views | Adapt | Folder tree and KV path tree. |
@@ -697,7 +699,7 @@ a web-specific implementation. **Reference** means reading it, with nothing to b
 | Pop-up buttons | Adopt | Selects for mutually exclusive options (vault picker, TTL presets). |
 | Pull-down buttons | Adopt | A More menu for secondary actions; destructive items confirmed. |
 | The menu bar | Adapt | Tauri desktop: a native menu bar mirroring every toolbar action with standard shortcuts (§4.8). |
-| Toolbars | Adopt | Glass toolbar with at most three groups, one prominent trailing action, icon-only items with accessible names, priority-based overflow (iOS 27 visibility priority), minimise on scroll on compact screens (§4.1). |
+| Toolbars | Adopt | Glass toolbar with at most three groups, one prominent trailing action, icon-only items with accessible names, priority-based overflow (iOS 27 visibility priority), minimize on scroll on compact screens (§4.1). |
 
 #### Components · Navigation and search
 
@@ -705,7 +707,7 @@ a web-specific implementation. **Reference** means reading it, with nothing to b
 | --- | --- | --- |
 | Path controls | Adapt | KV and PKI path breadcrumbs. |
 | Search fields | Adopt | Updated June 2026. Search in the toolbar (trailing) on desktop and as a trailing search tab on compact screens; tokens for scopes (§4.5). |
-| Sidebars | Adopt | Updated June 2026. A floating glass sidebar with content extending beneath it, at most two levels, title-case group labels, hideable, icons in the accent colour (§4.1). |
+| Sidebars | Adopt | Updated June 2026. A floating glass sidebar with content extending beneath it, at most two levels, title-case group labels, hideable, icons in the accent color (§4.1). |
 | Tab bars | Adopt | Updated June 2026. At compact widths, a floating glass tab bar of five or fewer tabs, with a button to convert it to the sidebar; search as the trailing tab; never hide or disable tabs (§4.2). |
 | Token fields | Adapt | Search scopes, share recipients, policy capability chips. |
 
@@ -726,7 +728,7 @@ a web-specific implementation. **Reference** means reading it, with nothing to b
 
 | Page | Disposition | What it means for arc |
 | --- | --- | --- |
-| Color wells | Not applicable | No colour picking (decision D3 removes the presets). |
+| Color wells | Not applicable | No color picking (decision D3 removes the presets). |
 | Combo boxes | Adapt | Autocomplete fields (vault or path pickers). |
 | Digit entry views | Adopt | TOTP, device-approval and recovery codes: segmented digit entry with paste support and one-time-code autocomplete. |
 | Image wells | Not applicable | — |
@@ -777,7 +779,7 @@ a web-specific implementation. **Reference** means reading it, with nothing to b
 | Gyroscope and accelerometer | Not applicable | — |
 | Keyboards | Adopt | Full keyboard access, standard shortcuts untouched, custom shortcuts only for frequent commands (⌘K), shortcuts shown in menus. |
 | Nearby interactions | Not applicable | — |
-| Pointing devices | Adopt | Hover states shaped like the control, comfortable hit regions, pointer reveals minimised controls. |
+| Pointing devices | Adopt | Hover states shaped like the control, comfortable hit regions, pointer reveals minimized controls. |
 | Remotes | Not applicable | tvOS. |
 
 #### Technologies

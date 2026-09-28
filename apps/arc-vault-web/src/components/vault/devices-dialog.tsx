@@ -45,7 +45,7 @@ export function DevicesDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <TipTrigger tip={{ label: "Pending devices", hint: "Approve or reject devices waiting to join your vault." }}>
-        <Button variant="outline" size="icon" aria-label="Devices">
+        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" aria-label="Devices">
           <MonitorSmartphone className="h-4 w-4" />
         </Button>
       </TipTrigger>

@@ -84,7 +84,7 @@ export function CommandPalette({
       <div
         role="dialog"
         aria-label="Command palette"
-        className="relative w-full max-w-lg overflow-hidden rounded-xl border bg-popover shadow-[var(--shadow-lg)]"
+        className="glass glass-strong relative w-full max-w-lg overflow-hidden rounded-[var(--radius-2xl)]"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") {
@@ -99,7 +99,7 @@ export function CommandPalette({
           }
         }}
       >
-        <div className="flex items-center gap-2.5 border-b px-4">
+        <div className="flex items-center gap-2.5 border-b border-border/60 px-4">
           <Search className="h-4 w-4 text-muted-foreground" />
           <input
             ref={inputRef}
@@ -122,8 +122,8 @@ export function CommandPalette({
                   onMouseEnter={() => setActive(idx)}
                   onClick={() => choose(i)}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm",
-                    idx === active ? "bg-accent text-accent-foreground" : "text-foreground",
+                    "flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left text-sm",
+                    idx === active ? "bg-foreground/[0.08] text-foreground" : "text-foreground",
                   )}
                 >
                   <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
