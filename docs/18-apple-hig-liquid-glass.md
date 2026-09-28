@@ -373,6 +373,10 @@ This covers `components/vault/console-shell.tsx`, `command-palette.tsx` and `sit
 **Split view:** at regular widths, the vault, leases and audit views gain a list plus
 inspector layout. The inspector is a content-layer panel, not glass, so selection
 highlighting persists in the list. It collapses to push navigation at compact widths.
+Leases and Audit Log use `components/arc/inspector-split.tsx`: from 1024 px a 360 px
+inspector sits beside the list and stays in view while the page scrolls. Narrower than
+that, choosing a row replaces the list with the details and a Back button. The vault
+keeps its own two-pane layout.
 
 ### 4.2 Responsive navigation: tab bar, adaptable sidebar, iPhone Duo
 
@@ -563,10 +567,11 @@ so the recommendations in §8 (D1–D6) are the working defaults and can be revi
 any phase review.
 
 **Progress:** Phases 0 and 1 landed in #171, Phase 2 in #172 and Phase 3 in #173. Phase 4
-lands in two parts. The first covers the writing pass with its CI copy check, vault-row
-context menus and list metrics, the Move Undo toast, list empty states, and Cancel
-buttons on form sheets. The second covers the list-plus-inspector split view for leases
-and audit, and the same row metrics on those tables and on devices.
+landed in two parts. Part 1 (#174) covers the writing pass with its CI copy check,
+vault-row context menus and list metrics, the Move Undo toast, list empty states, and
+Cancel buttons on form sheets. Part 2 covers the list-plus-inspector split view for
+Leases and Audit Log, a context menu on lease rows, and the same touch row metrics on
+those lists and on Devices.
 
 ## 6. Test matrix
 
