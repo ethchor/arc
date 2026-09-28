@@ -179,6 +179,16 @@ function useMinimizeOnScroll(enabled: boolean): boolean {
 }
 
 /**
+ * A request from outside the shell to open search or toggle the sidebar: a Home Screen
+ * shortcut or a desktop menu-bar command (docs/18 §4.8–4.9). `seq` changes on every request,
+ * so asking twice in a row still acts twice.
+ */
+export interface ShellRequest {
+  kind: "search" | "sidebar";
+  seq: number;
+}
+
+/**
  * Persona-aware console chrome in the Liquid Glass layout (docs/18 §4.1–4.2). Functional layer:
  * a floating glass sidebar (regular widths) or a floating glass tab bar plus an "All sections"
  * sheet (compact widths), and a floating glass toolbar over a scroll-edge effect. Content
@@ -196,6 +206,8 @@ export function ConsoleShell({
   statusLabel,
   onLock,
   actions,
+  request,
+  onSidebarShownChange,
   children,
 }: {
   persona: Persona;
@@ -208,6 +220,10 @@ export function ConsoleShell({
   statusLabel: string;
   onLock: () => void;
   actions?: React.ReactNode;
+  /** Open search or toggle the sidebar from outside (a shortcut or the menu bar). */
+  request?: ShellRequest | null;
+  /** Reports whether the sidebar is showing, so the desktop menu's title can follow it. */
+  onSidebarShownChange?: (shown: boolean) => void;
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = React.useState(false);
@@ -237,6 +253,18 @@ export function ConsoleShell({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  React.useEffect(() => {
+    if (!request) return;
+    if (request.kind === "search") setPaletteOpen(true);
+    else setCollapsed((c) => !c);
+  }, [request]);
+
+  React.useEffect(() => {
+    onSidebarShownChange?.(!collapsed);
+    // Report changes to `collapsed` only; the callback's identity doesn't matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collapsed]);
 
   const current = LABELS[section] ?? "";
   const flush = FLUSH_SECTIONS.has(section);

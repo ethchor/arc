@@ -121,6 +121,24 @@ jobs:
             echo "::warning::cargo-audit binary unavailable — audit skipped this run"
           fi
 
+  # The Tauri desktop shell (apps/arc-vault-desktop) isn't bundled here, but it must still
+  # compile. It wasn't checked before, and a type error plus a missing icons/icon.png left it
+  # unbuildable until docs/18 Phase 5. `cargo check` also validates tauri.conf.json. It only
+  # needs the WebKitGTK stack's headers and pkg-config files, not a display.
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Tauri build prerequisites (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libxdo-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+      - name: Desktop shell (cargo check)
+        run: cargo check --locked --manifest-path apps/arc-vault-desktop/src-tauri/Cargo.toml
+
   # Smoke-tests the OpenBao adapter against a real OpenBao instance. The Node smoke
   # suite already skips when BAO_ADDR is unset, so we only need to give it one.
   openbao-adapter:

@@ -17,6 +17,7 @@
  *   Item ops   — encryptItem / decryptItem  (VEK never crosses to the WebView)
  *   Cache      — cacheOpen / cacheUpsert / cacheGet / cacheList
  *   Events     — onLocked(cb)                (subscribe to the lock-tick event)
+ *   Menu bar   — onMenuCommand(cb) / setSidebarShown  (macOS menu bar, docs/18 §4.8)
  */
 
 import type { Event } from "@tauri-apps/api/event";
@@ -161,3 +162,21 @@ export async function onLocked(cb: () => void): Promise<() => void> {
   await ensureLoaded();
   return _listen!("arc://vault-locked", () => cb());
 }
+
+// --- Menu bar (macOS; docs/18 §4.8) ---------------------------------------------------
+
+/**
+ * Menu-bar commands the shell forwards to the web app. Each mirrors a toolbar control:
+ * Settings…, Lock Vault, Search… and the sidebar toggle. The Help menu is handled in Rust
+ * (it opens the docs in their own window), so it never reaches the web app.
+ */
+export type MenuCommand = "settings" | "lock" | "search" | "sidebar";
+
+/** Subscribe to menu-bar commands. The returned function unsubscribes. */
+export async function onMenuCommand(cb: (command: MenuCommand) => void): Promise<() => void> {
+  await ensureLoaded();
+  return _listen!("arc://menu", (e) => cb(e.payload as MenuCommand));
+}
+
+/** Keep the View menu's item in step with the sidebar: "Hide Sidebar" or "Show Sidebar". */
+export const setSidebarShown = (shown: boolean): Promise<void> => call("menu_sidebar_shown", { shown });

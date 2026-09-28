@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- "Search" app shortcut icon (manifest.json shortcuts). Full-bleed so Android can mask it
+     to a circle; the glyph stays inside the central 44%. Glyph: Lucide "search" (ISC license,
+     Copyright (c) Lucide Contributors). scripts/generate-icons.mjs rasterises it. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#0C0F16"/>
+  <g transform="translate(143.36 143.36) scale(9.3867)" fill="none" stroke="#2DC6B1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+  </g>
+</svg>

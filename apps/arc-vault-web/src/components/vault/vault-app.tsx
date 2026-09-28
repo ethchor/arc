@@ -21,6 +21,7 @@ import {
   type ConsoleSection,
   type Density,
   type Persona,
+  type ShellRequest,
 } from "@/components/vault/console-shell";
 import { DevicesView } from "@/components/vault/devices-view";
 import { HomeView } from "@/components/vault/home-view";
@@ -103,6 +104,13 @@ export function VaultApp() {
   const [section, setSection] = React.useState<ConsoleSection>("vault");
   const [persona, setPersona] = React.useState<Persona>("person");
   const [density, setDensity] = React.useState<Density>("comfortable");
+  // Requests from outside the console (a Home Screen shortcut or the desktop menu bar) to open
+  // search, toggle the sidebar or open Settings. See docs/18 §4.8–4.9.
+  const [shellRequest, setShellRequest] = React.useState<ShellRequest | null>(null);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const pendingShortcut = React.useRef<string | null>(null);
+  const requestShell = (kind: ShellRequest["kind"]) =>
+    setShellRequest((r) => ({ kind, seq: (r?.seq ?? 0) + 1 }));
   // The SDK invokes its `onUnauthorized` hook from *outside* React (inside a request), so it
   // reads through a ref that always points at the current `doLock`/`phase` closure. The
   // boolean ref de-dupes the burst of 401s a single expiry triggers across concurrent calls.
@@ -491,6 +499,59 @@ export function VaultApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, autolock]);
 
+  // Home Screen and taskbar shortcuts (manifest.json "shortcuts") arrive as ?shortcut=… on
+  // launch. The vault always opens locked, so the action waits for unlock. "lock" needs
+  // nothing more: a launch starts locked.
+  React.useEffect(() => {
+    const url = new URL(window.location.href);
+    const shortcut = url.searchParams.get("shortcut");
+    if (!shortcut) return;
+    pendingShortcut.current = shortcut;
+    url.searchParams.delete("shortcut");
+    // Keep the entry's existing state: the Next.js router stores its own there.
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  }, []);
+
+  React.useEffect(() => {
+    if (phase !== "unlocked" || !pendingShortcut.current) return;
+    const shortcut = pendingShortcut.current;
+    pendingShortcut.current = null;
+    if (shortcut === "search") requestShell("search");
+    if (shortcut === "generate") {
+      setPersona("operator");
+      setSection("tools");
+    }
+  }, [phase]);
+
+  // macOS menu-bar commands from the desktop shell. Each mirrors a toolbar control, so it
+  // only acts while the console is showing.
+  React.useEffect(() => {
+    if (phase !== "unlocked") return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    (async () => {
+      const tauri = await import("@/lib/tauri");
+      if (!tauri.isDesktop()) return;
+      try {
+        const off = await tauri.onMenuCommand((command) => {
+          if (command === "settings") setSettingsOpen(true);
+          else if (command === "lock") doLock();
+          else requestShell(command);
+        });
+        if (cancelled) off();
+        else unlisten = off;
+      } catch {
+        /* shell not actually wired (browser build); ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+    // doLock only calls state setters, so the closure from this render stays correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   if (phase === "device-pending") {
     return <DevicePendingView code={deviceCode} onCheck={() => pollApproval(true)} onCancel={doLock} />;
   }
@@ -560,6 +621,12 @@ export function VaultApp() {
         vaultName={selectedVault?.name ?? selectedVault?.type}
         statusLabel={deviceMode ? "Device session" : "Unlocked"}
         onLock={doLock}
+        request={shellRequest}
+        onSidebarShownChange={(shown) => {
+          void import("@/lib/tauri")
+            .then((tauri) => (tauri.isDesktop() ? tauri.setSidebarShown(shown) : undefined))
+            .catch(() => {});
+        }}
         actions={
           <>
             {!deviceMode && (
@@ -575,6 +642,8 @@ export function VaultApp() {
               autolock={autolock}
               onAutolock={setAutolockPersist}
               client={getClient()}
+              open={settingsOpen}
+              onOpenChange={setSettingsOpen}
             />
           </>
         }

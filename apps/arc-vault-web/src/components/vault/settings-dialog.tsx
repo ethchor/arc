@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { TipTrigger } from "@/components/ui/tooltip";
 import { PasskeysSection } from "@/components/vault/passkeys-section";
+import { useControllableOpen } from "@/lib/use-controllable-open";
 
 const AUTOLOCK_OPTIONS = [1, 5, 15, 30];
 
@@ -21,14 +22,20 @@ export function SettingsDialog({
   autolock,
   onAutolock,
   client,
+  open: openProp,
+  onOpenChange,
 }: {
   autolock: number;
   onAutolock: (minutes: number) => void;
   /** When omitted (e.g. the user isn't unlocked yet), the passkey section is hidden. */
   client?: VaultClient;
+  /** Controlled open state, for opening Settings from the desktop menu bar (Settings… ⌘,). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
+  const [open, setOpen] = useControllableOpen(openProp, onOpenChange);
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <TipTrigger tip={{ label: "Settings", hint: "Auto-lock timer, passkeys & account — stored on this device." }}>
         <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" aria-label="Settings">
           <Settings className="h-4 w-4" />

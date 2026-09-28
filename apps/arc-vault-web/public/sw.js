@@ -29,7 +29,7 @@
 
 // Bumped per release so the install step pulls a fresh shell and activate prunes old
 // buckets. Without the bump, users get pinned to whatever HTML was first cached.
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const SHELL_CACHE = `arc-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `arc-static-${CACHE_VERSION}`;
 
@@ -75,6 +75,7 @@ function isStaticAsset(url) {
   return (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icon-") ||
+    url.pathname.startsWith("/shortcut-") ||
     url.pathname === "/icon.svg" ||
     url.pathname === "/favicon-32.png" ||
     url.pathname === "/apple-touch-icon.png" ||

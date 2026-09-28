@@ -6,7 +6,7 @@
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "theme_color": "#14AE9B",
   "background_color": "#0C0F16",
   "categories": ["productivity", "security", "utilities"],
@@ -20,18 +20,34 @@
   ],
   "shortcuts": [
     {
-      "name": "Open vault",
-      "short_name": "Vault",
-      "description": "Jump straight to the unlocked vault list",
-      "url": "/?shortcut=vault",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "name": "Search",
+      "short_name": "Search",
+      "description": "Unlock arc and search your vault",
+      "url": "/?shortcut=search",
+      "icons": [
+        { "src": "/shortcut-search-96.png", "sizes": "96x96", "type": "image/png" },
+        { "src": "/shortcut-search-192.png", "sizes": "192x192", "type": "image/png" }
+      ]
     },
     {
-      "name": "Documentation",
-      "short_name": "Docs",
-      "description": "Open the public arc documentation",
-      "url": "/docs",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "name": "Generate Password",
+      "short_name": "Generate",
+      "description": "Unlock arc and open the password generator",
+      "url": "/?shortcut=generate",
+      "icons": [
+        { "src": "/shortcut-generate-96.png", "sizes": "96x96", "type": "image/png" },
+        { "src": "/shortcut-generate-192.png", "sizes": "192x192", "type": "image/png" }
+      ]
+    },
+    {
+      "name": "Lock",
+      "short_name": "Lock",
+      "description": "Reopen arc locked",
+      "url": "/?shortcut=lock",
+      "icons": [
+        { "src": "/shortcut-lock-96.png", "sizes": "96x96", "type": "image/png" },
+        { "src": "/shortcut-lock-192.png", "sizes": "192x192", "type": "image/png" }
+      ]
     }
   ]
 }

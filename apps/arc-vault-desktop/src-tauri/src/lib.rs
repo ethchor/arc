@@ -14,7 +14,8 @@ use arc_vault_desktop_core::{
     open_vek_from_device, CachedItem, CipherCache, DeviceKeyStore, OsKeyStore, Session,
 };
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::menu::{AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, Wry};
 
 const KEYCHAIN_SERVICE: &str = "app.arcvault.desktop";
 const DEVICE_KEY_ACCOUNT: &str = "device-x25519";
@@ -24,6 +25,13 @@ const DEFAULT_AUTOLOCK_SECS: u64 = 300;
 const LOCK_TICK: Duration = Duration::from_secs(1);
 /// Event name the shell emits when the session transitions from unlocked → locked.
 const EVT_LOCKED: &str = "arc://vault-locked";
+/// Event name the shell emits when a menu-bar command should run in the web app. The payload
+/// is the command id (`MenuCommand` in apps/arc-vault-web/src/lib/tauri.ts).
+const EVT_MENU: &str = "arc://menu";
+/// Menu-bar commands that mirror a toolbar control, so the web app runs them.
+const WEB_MENU_COMMANDS: [&str; 4] = ["settings", "lock", "search", "sidebar"];
+/// Help → arc Help: handled here (it opens the docs window), never forwarded.
+const MENU_HELP: &str = "help";
 
 pub struct AppState {
     session: Arc<Mutex<Session>>,
@@ -122,7 +130,10 @@ fn vault_decrypt_item(
         .unwrap()
         .decrypt_item(&vault_id, &item_id, version, key_version, now(), &ciphertext, &wrapped_item_key)
         .map_err(|e| format!("{e:?}"))?;
-    String::from_utf8(pt).map_err(|_| "non-utf8 plaintext".to_string())
+    // `pt` is zeroized when it drops (SEC-H4); the one String copy is what crosses the IPC.
+    std::str::from_utf8(&pt)
+        .map(str::to_owned)
+        .map_err(|_| "non-utf8 plaintext".to_string())
 }
 
 /// Wrap a vault's VEK to a new device's public key (device-approval transfer).
@@ -233,6 +244,138 @@ fn with_cache<T>(
     f(cache)
 }
 
+// --- Menu bar (macOS; docs/18 §4.8) -------------------------------------------------------
+
+/// The View menu's sidebar item, kept so its title can follow the sidebar ("Hide Sidebar" or
+/// "Show Sidebar"). Empty where there is no menu bar: Windows and Linux.
+#[derive(Default)]
+struct SidebarMenuItem(Mutex<Option<MenuItem<Wry>>>);
+
+/// The macOS menu bar (HIG: The menu bar): the standard app, File, Edit, View, Window and Help
+/// menus, with every toolbar command and its standard shortcut. Windows and Linux keep no
+/// menu bar, as before. Returns the sidebar item so its title can be updated later.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn build_menu(app: &AppHandle) -> tauri::Result<(Menu<Wry>, MenuItem<Wry>)> {
+    let name = app.package_info().name.clone();
+    let sep = || PredefinedMenuItem::separator(app);
+    let sidebar = MenuItem::with_id(app, "sidebar", "Hide Sidebar", true, Some("Ctrl+Cmd+S"))?;
+
+    let app_menu = Submenu::with_items(
+        app,
+        &name,
+        true,
+        &[
+            &PredefinedMenuItem::about(app, Some(&format!("About {name}")), Some(AboutMetadata::default()))?,
+            &sep()?,
+            &MenuItem::with_id(app, "settings", "Settings…", true, Some("Cmd+,"))?,
+            &sep()?,
+            &PredefinedMenuItem::services(app, None)?,
+            &sep()?,
+            &PredefinedMenuItem::hide(app, Some(&format!("Hide {name}")))?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::show_all(app, None)?,
+            &sep()?,
+            &PredefinedMenuItem::quit(app, Some(&format!("Quit {name}")))?,
+        ],
+    )?;
+    let file_menu = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[
+            &MenuItem::with_id(app, "lock", "Lock Vault", true, Some("Cmd+L"))?,
+            &sep()?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    // The standard Edit items also give text fields ⌘Z, ⌘X, ⌘C, ⌘V and ⌘A on macOS.
+    let edit_menu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &sep()?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let view_menu = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[
+            &MenuItem::with_id(app, "search", "Search…", true, Some("Cmd+K"))?,
+            &sidebar,
+            &sep()?,
+            &PredefinedMenuItem::fullscreen(app, None)?,
+        ],
+    )?;
+    let window_menu = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, Some("Zoom"))?,
+        ],
+    )?;
+    let help_menu = Submenu::with_items(
+        app,
+        "Help",
+        true,
+        &[&MenuItem::with_id(app, MENU_HELP, format!("{name} Help"), true, None::<&str>)?],
+    )?;
+    // Let macOS own these two: the window list and the Help menu's search field.
+    #[cfg(target_os = "macos")]
+    {
+        window_menu.set_as_windows_menu_for_nsapp()?;
+        help_menu.set_as_help_menu_for_nsapp()?;
+    }
+
+    let menu = Menu::with_items(
+        app,
+        &[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu, &help_menu],
+    )?;
+    Ok((menu, sidebar))
+}
+
+fn on_menu_event(app: &AppHandle, event: MenuEvent) {
+    let id = event.id().as_ref();
+    if id == MENU_HELP {
+        open_help_window(app);
+    } else if WEB_MENU_COMMANDS.contains(&id) {
+        let _ = app.emit(EVT_MENU, id);
+    }
+}
+
+/// Help → arc Help opens the documentation in its own window, so reading it never navigates
+/// the vault window away (which would lock it). The window isn't listed in
+/// capabilities/default.json, so it gets no IPC access.
+fn open_help_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("help") {
+        let _ = window.set_focus();
+        return;
+    }
+    let title = format!("{} Help", app.package_info().name);
+    let _ = WebviewWindowBuilder::new(app, "help", WebviewUrl::App("docs".into()))
+        .title(title)
+        .inner_size(1000.0, 760.0)
+        .min_inner_size(360.0, 480.0)
+        .build();
+}
+
+/// Keep the View menu's sidebar item in step with the web app's sidebar.
+#[tauri::command]
+fn menu_sidebar_shown(shown: bool, item: State<SidebarMenuItem>) {
+    if let Some(item) = item.0.lock().unwrap().as_ref() {
+        let _ = item.set_text(if shown { "Hide Sidebar" } else { "Show Sidebar" });
+    }
+}
+
 // --- Auto-lock background tick ------------------------------------------------------------
 
 /// Spawn a background thread that polls `is_locked()` every {@link LOCK_TICK} and emits
@@ -268,10 +411,18 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        .manage(SidebarMenuItem::default())
         .setup(move |app| {
             spawn_lock_watcher(session.clone(), app.handle().clone());
+            #[cfg(target_os = "macos")]
+            {
+                let (menu, sidebar) = build_menu(app.handle())?;
+                app.set_menu(menu)?;
+                *app.state::<SidebarMenuItem>().0.lock().unwrap() = Some(sidebar);
+            }
             Ok(())
         })
+        .on_menu_event(on_menu_event)
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             vault_set_autolock,
@@ -287,6 +438,7 @@ pub fn run() {
             cache_upsert,
             cache_get,
             cache_list,
+            menu_sidebar_shown,
         ])
         .run(tauri::generate_context!())
         .expect("error while running arc-vault desktop");
