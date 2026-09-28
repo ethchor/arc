@@ -85,7 +85,7 @@ export function NoteDialog({
             <textarea
               id="note-body"
               rows={8}
-              className="min-h-[10rem] rounded-md border bg-background p-2 text-sm font-mono"
+              className="min-h-[10rem] rounded-[var(--radius-lg)] border border-input bg-[var(--surface-inset)] px-3.5 py-2.5 font-mono text-sm outline-none transition-[border-color,box-shadow] [transition-duration:var(--dur-fast)] hover:border-ring/40 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 max-sm:text-base"
               value={form.body}
               onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
               autoComplete="off"

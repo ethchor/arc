@@ -3,13 +3,15 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /*
- * Card — tinted-shadow elevation rather than the generic shadcn drop.
+ * Card — a content-layer grouping (never glass). Liquid Glass-era geometry: 16px corners and a
+ * hairline edge so cards read as quiet containers beneath the floating glass layer.
+ * Tinted-shadow elevation rather than the generic shadcn drop.
  * The `interactive` variant adds a subtle lift on hover so a Card that links
  * somewhere feels different from a Card that just contains data.
  */
 
 const cardVariants = cva(
-  "rounded-lg border bg-card text-card-foreground transition-[transform,box-shadow,border-color] [transition-duration:var(--dur-base)] ease-out-quart",
+  "rounded-[var(--radius-xl)] border border-border/70 bg-card text-card-foreground transition-[transform,box-shadow,border-color] [transition-duration:var(--dur-base)] ease-out-quart",
   {
     variants: {
       tone: {

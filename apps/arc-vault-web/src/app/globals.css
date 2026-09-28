@@ -253,6 +253,13 @@
     --control-height-sm: 32px;
     --control-px: 14px;
   }
+  /* HIG: 44x44pt controls on touch (28pt minimum); pointer sizes stay compact. */
+  @media (pointer: coarse) {
+    :root {
+      --control-height: 44px;
+      --control-height-sm: 36px;
+    }
+  }
 
   .dark {
     --content-primary: #E9ECF1;
@@ -452,7 +459,7 @@ html[data-glass="off"] [data-sonner-toast].glass-toast { -webkit-backdrop-filter
 @layer components {
   /* CopyButton — copy → confirm → clipboard auto-clear countdown */
   .arc-copy { display:inline-flex; align-items:center; gap:6px; height:var(--control-height-sm); padding:0 10px;
-    border-radius:var(--radius-sm,6px); border:1px solid hsl(var(--border)); background:var(--surface-raised);
+    border-radius:var(--radius-pill,999px); border:1px solid hsl(var(--border)); background:var(--surface-raised);
     color:var(--content-secondary); font:500 12px var(--font-sans); cursor:pointer; white-space:nowrap;
     transition:color var(--dur-fast), border-color var(--dur-fast), background var(--dur-fast); }
   .arc-copy:hover { color:var(--content-primary); border-color:hsl(var(--border)); }
@@ -463,7 +470,7 @@ html[data-glass="off"] [data-sonner-toast].glass-toast { -webkit-backdrop-filter
   /* MaskedField — reveal/conceal + copy, with a "revealed" warm plate */
   .arc-masked-wrap { display:flex; flex-direction:column; }
   .arc-masked { display:flex; align-items:center; gap:8px; min-height:var(--control-height); padding:0 6px 0 var(--control-px);
-    background:var(--surface-inset); border:1px solid hsl(var(--border)); border-radius:var(--radius-md,8px); min-width:0;
+    background:var(--surface-inset); border:1px solid hsl(var(--border)); border-radius:var(--radius-lg,12px); min-width:0;
     transition:background var(--dur-base) var(--ease-out-quart), border-color var(--dur-base) var(--ease-out-quart); }
   .arc-masked--revealed { background:var(--sec-revealed-bg); border-color:var(--sec-revealed-edge); }
   .arc-masked__val { flex:1; min-width:0; font:500 14px var(--font-geist-mono); color:var(--content-primary);
