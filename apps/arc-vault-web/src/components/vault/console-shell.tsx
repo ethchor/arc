@@ -36,6 +36,7 @@ import { CommandPalette, type CommandItem } from "@/components/vault/command-pal
 import { CompactTabBar, type CompactTab } from "@/components/vault/compact-tab-bar";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useMediaQuery } from "@/lib/use-media-query";
 
 export type Persona = "person" | "operator";
 export type Density = "comfortable" | "compact";
@@ -154,18 +155,6 @@ const COMPACT_TABS: Record<Persona, CompactTab<ConsoleSection>[]> = {
     { id: "audit", label: "Audit", icon: FileClock },
   ],
 };
-
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = React.useState(false);
-  React.useEffect(() => {
-    const mq = window.matchMedia(query);
-    const sync = () => setMatches(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, [query]);
-  return matches;
-}
 
 /** Scroll-down minimizes, scroll-up (or reaching the top) restores — HIG tab bar behavior. */
 function useMinimizeOnScroll(enabled: boolean): boolean {

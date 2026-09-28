@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   Bot,
   Clock,
+  Copy,
   Database,
   KeyRound,
   RotateCcw,
@@ -15,9 +16,19 @@ import { toast } from "sonner";
 import type { LeaseWire, VaultClient } from "@arc/sdk";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { IconTip } from "@/components/ui/tooltip";
+import { CopyButton } from "@/components/arc/copy-button";
+import { InspectorField, InspectorPlaceholder, InspectorSplit } from "@/components/arc/inspector-split";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { relativeAgo } from "@/lib/datetime";
 
@@ -30,6 +41,10 @@ import { relativeAgo } from "@/lib/datetime";
  * Unlike the Creds screen — which tracks just the leases *you* minted in your session —
  * this is the server-wide truth: useful for cleaning up forgotten leases minted in other
  * tabs, by agents, or by other operators.
+ *
+ * List plus inspector (docs/18 §4.1): selecting a row shows the lease's full IDs, timing
+ * and task binding beside the list, or in place of it on narrower screens. Rows also have
+ * a context menu with the same commands.
  */
 
 type StateFilter = "all" | "active" | "expired" | "revoked";
@@ -40,6 +55,7 @@ export function LeasesView({ getClient }: { getClient: () => VaultClient }) {
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<StateFilter>("active");
   const [pending, setPending] = React.useState<string | null>(null);
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
   // 1s tick — only mounted when at least one lease is active so we don't burn cycles.
   const [, setTick] = React.useState(0);
 
@@ -131,53 +147,94 @@ export function LeasesView({ getClient }: { getClient: () => VaultClient }) {
     });
   }, [leases, query, filter]);
 
+  const selected = leases?.find((l) => l.id === selectedId) ?? null;
+
+  const list = (
+    <Card>
+      <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-4 py-3">
+        <FilterChip label="All" count={counts.all} active={filter === "all"} onClick={() => setFilter("all")} />
+        <FilterChip label="Active" count={counts.active} active={filter === "active"} onClick={() => setFilter("active")} tone="ok" />
+        <FilterChip label="Expired" count={counts.expired} active={filter === "expired"} onClick={() => setFilter("expired")} tone="warn" />
+        <FilterChip label="Revoked" count={counts.revoked} active={filter === "revoked"} onClick={() => setFilter("revoked")} tone="danger" />
+        <div className="relative ml-2 flex-1 min-w-[200px]">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search id, mount, engine type…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-9 pl-8 text-sm"
+          />
+        </div>
+        <Button variant="outline" size="sm" onClick={() => void refresh()}>
+          <RotateCcw className="h-3.5 w-3.5" /> Refresh
+        </Button>
+      </div>
+      {leases === null ? (
+        <p className="px-6 py-12 text-center text-sm text-muted-foreground">Loading leases…</p>
+      ) : error ? (
+        <p className="px-6 py-12 text-center text-sm text-[var(--danger-fg)]">{error}</p>
+      ) : filtered.length === 0 ? (
+        <EmptyLeases total={leases.length} filter={filter} query={query.trim()} />
+      ) : (
+        <ul className="divide-y divide-border/60">
+          {filtered.map((l) => (
+            <LeaseRow
+              key={l.id}
+              lease={l}
+              selected={selectedId === l.id}
+              pending={pending === l.id}
+              onSelect={() => setSelectedId(l.id)}
+              onRenew={() => onRenew(l.id)}
+              onRevoke={() => onRevoke(l.id)}
+            />
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+
   return (
     <div className="space-y-5">
       <Header />
-      <Card>
-        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-4 py-3">
-          <FilterChip label="All" count={counts.all} active={filter === "all"} onClick={() => setFilter("all")} />
-          <FilterChip label="Active" count={counts.active} active={filter === "active"} onClick={() => setFilter("active")} tone="ok" />
-          <FilterChip label="Expired" count={counts.expired} active={filter === "expired"} onClick={() => setFilter("expired")} tone="warn" />
-          <FilterChip label="Revoked" count={counts.revoked} active={filter === "revoked"} onClick={() => setFilter("revoked")} tone="danger" />
-          <div className="relative ml-2 flex-1 min-w-[200px]">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search id, mount, engine type…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="h-9 pl-8 text-sm"
+      <InspectorSplit
+        list={list}
+        hasSelection={selected !== null}
+        inspector={
+          selected ? (
+            <LeaseInspector
+              lease={selected}
+              pending={pending === selected.id}
+              onRenew={() => onRenew(selected.id)}
+              onRevoke={() => onRevoke(selected.id)}
             />
-          </div>
-          <Button variant="outline" size="sm" onClick={() => void refresh()}>
-            <RotateCcw className="h-3.5 w-3.5" /> Refresh
-          </Button>
-        </div>
-        {leases === null ? (
-          <p className="px-6 py-12 text-center text-sm text-muted-foreground">Loading leases…</p>
-        ) : error ? (
-          <p className="px-6 py-12 text-center text-sm text-[var(--danger-fg)]">{error}</p>
-        ) : filtered.length === 0 ? (
-          <p className="px-6 py-12 text-center text-sm text-muted-foreground">
-            {leases.length === 0
-              ? "No leases tracked yet. Mint credentials from the Dynamic credentials screen and they'll appear here."
-              : `No ${filter === "all" ? "" : filter + " "}leases matching “${query}”.`}
-          </p>
-        ) : (
-          <ul className="divide-y divide-border/60">
-            {filtered.map((l) => (
-              <LeaseRow
-                key={l.id}
-                lease={l}
-                pending={pending === l.id}
-                onRenew={() => onRenew(l.id)}
-                onRevoke={() => onRevoke(l.id)}
-              />
-            ))}
-          </ul>
-        )}
-      </Card>
+          ) : null
+        }
+        placeholder={
+          <InspectorPlaceholder
+            title="No Lease Selected"
+            body="Select a lease to see its full IDs, timing and task binding."
+          />
+        }
+        onBack={() => setSelectedId(null)}
+        backLabel="Leases"
+        inspectorLabel="Lease details"
+      />
       <Footer />
+    </div>
+  );
+}
+
+function EmptyLeases({ total, filter, query }: { total: number; filter: StateFilter; query: string }) {
+  const [title, body] =
+    total === 0
+      ? ["No Leases Yet", "Credentials minted in Dynamic Creds, by any operator or agent task, show up here."]
+      : query
+        ? [`No Results for “${query}”`, "Check the spelling, or search by lease ID, mount or engine type."]
+        : [`No ${filter[0]?.toUpperCase()}${filter.slice(1)} Leases`, "Choose All to see every lease the server tracks."];
+  return (
+    <div className="px-6 py-12 text-center">
+      <p className="break-words text-headline font-semibold">{title}</p>
+      <p className="mt-1 text-subhead text-muted-foreground">{body}</p>
     </div>
   );
 }
@@ -188,7 +245,7 @@ function Header() {
       <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
         Govern · leases
       </span>
-      <h1 className="font-display text-2xl font-medium tracking-tight">Active leases</h1>
+      <h1 className="font-display text-2xl font-medium tracking-tight">Leases</h1>
       <p className="max-w-prose text-sm text-muted-foreground">
         Every lease the arc-server is tracking across every engine. Renew before expiry to
         extend the credential, or revoke to clean up. This is the server-wide view —
@@ -245,7 +302,162 @@ function FilterChip({
   );
 }
 
+function leaseTimeLabel(lease: LeaseWire): string {
+  if (lease.state === "revoked") return `revoked ${relativeAgo(toIso(lease.revokedAt))}`;
+  if (lease.state === "expired") return `expired ${relativeAgo(toIso(lease.expiresAt))}`;
+  return formatTtl(Math.floor(Math.max(0, lease.expiresAt - Date.now()) / 1000));
+}
+
+function StateBadge({ lease }: { lease: LeaseWire }) {
+  const label = leaseTimeLabel(lease);
+  if (lease.state === "active") {
+    return (
+      <Badge variant="secondary" className="bg-[var(--success-subtle)] text-[var(--success-fg)]">
+        <Clock className="mr-1 h-2.5 w-2.5" /> {label}
+      </Badge>
+    );
+  }
+  if (lease.state === "expired") {
+    return (
+      <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 dark:text-amber-300">
+        {label}
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="secondary" className="bg-[var(--danger-subtle)] text-[var(--danger-fg)]">
+      {label}
+    </Badge>
+  );
+}
+
 function LeaseRow({
+  lease,
+  selected,
+  pending,
+  onSelect,
+  onRenew,
+  onRevoke,
+}: {
+  lease: LeaseWire;
+  selected: boolean;
+  pending: boolean;
+  onSelect: () => void;
+  onRenew: () => void;
+  onRevoke: () => void;
+}) {
+  const canRenew = lease.state === "active" && lease.renewable;
+  const canRevoke = lease.state === "active";
+  // The row body selects the lease (the inspector shows it); the trailing buttons act on it
+  // directly. Right-click or long-press anywhere on the row opens the same commands.
+  return (
+    <li>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            className={cn(
+              "flex select-none items-center gap-3 px-4 py-3 transition-colors [-webkit-touch-callout:none] [transition-duration:var(--dur-fast)] [@media(pointer:coarse)]:py-3.5",
+              "data-[state=open]:ring-2 data-[state=open]:ring-inset data-[state=open]:ring-primary/60",
+              selected ? "bg-[var(--ds-accent-subtle)]" : "hover:bg-[var(--surface-hover)]",
+            )}
+          >
+            <button
+              type="button"
+              onClick={onSelect}
+              aria-current={selected ? "true" : undefined}
+              aria-label={`Lease ${lease.id} on ${lease.mount}, ${lease.state}`}
+              className="flex min-w-0 flex-1 items-center gap-3 rounded-[var(--radius-md)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <EngineIcon type={lease.engineType} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[12px] font-medium">{lease.id.slice(0, 14)}…</span>
+                  <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+                    {lease.engineType}
+                  </Badge>
+                  <span className="font-mono text-[11px] text-muted-foreground">{lease.mount}</span>
+                  {lease.taskId ? (
+                    <Badge variant="outline" className="gap-1 text-[10px] uppercase tracking-wide">
+                      <Bot className="h-3 w-3" /> task
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <StateBadge lease={lease} />
+                  {lease.renewable ? (
+                    <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                      renewable
+                    </Badge>
+                  ) : null}
+                  <span className="text-[11px] text-muted-foreground">
+                    issued {relativeAgo(toIso(lease.issuedAt))}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    · max {formatTtl(lease.maxTtlSeconds)}
+                  </span>
+                </div>
+              </div>
+            </button>
+            <div className="flex items-center gap-1">
+              {canRenew ? (
+                <IconTip label="Renew Lease" hint="Ask the engine for another TTL window." side="left">
+                  <Button variant="ghost" size="sm" disabled={pending} onClick={onRenew}>
+                    <RotateCcw className="h-3.5 w-3.5" /> Renew
+                  </Button>
+                </IconTip>
+              ) : null}
+              {canRevoke ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={pending}
+                  onClick={onRevoke}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> {pending ? "…" : "Revoke"}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-56">
+          <ContextMenuItem onSelect={() => void copyText(lease.id, "Lease ID")}>
+            <Copy /> Copy Lease ID
+          </ContextMenuItem>
+          {lease.backendLeaseId ? (
+            <ContextMenuItem onSelect={() => void copyText(lease.backendLeaseId ?? "", "Backend lease ID")}>
+              <Copy /> Copy Backend Lease ID
+            </ContextMenuItem>
+          ) : null}
+          {lease.taskId ? (
+            <ContextMenuItem onSelect={() => void copyText(lease.taskId ?? "", "Task ID")}>
+              <Copy /> Copy Task ID
+            </ContextMenuItem>
+          ) : null}
+          {canRenew ? (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={onRenew}>
+                <RotateCcw /> Renew
+              </ContextMenuItem>
+            </>
+          ) : null}
+          {canRevoke ? (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem destructive onSelect={onRevoke}>
+                <Trash2 /> Revoke
+              </ContextMenuItem>
+            </>
+          ) : null}
+        </ContextMenuContent>
+      </ContextMenu>
+    </li>
+  );
+}
+
+/** The selected lease in full: every ID (copyable), its timing, and its task binding. */
+function LeaseInspector({
   lease,
   pending,
   onRenew,
@@ -256,81 +468,80 @@ function LeaseRow({
   onRenew: () => void;
   onRevoke: () => void;
 }) {
-  const remainingMs = Math.max(0, lease.expiresAt - Date.now());
-  const ageLabel =
-    lease.state === "revoked"
-      ? `revoked ${relativeAgo(toIso(lease.revokedAt))}`
-      : lease.state === "expired"
-        ? `expired ${relativeAgo(toIso(lease.expiresAt))}`
-        : formatTtl(Math.floor(remainingMs / 1000));
+  // relativeAgo only speaks of the past, so a future expiry reads "in 39m 47s" instead.
+  const stamp = (ms: number | undefined) => {
+    if (ms === undefined) return "—";
+    const ahead = Math.floor((ms - Date.now()) / 1000);
+    return `${new Date(ms).toLocaleString()} (${ahead > 0 ? `in ${formatTtl(ahead)}` : relativeAgo(toIso(ms))})`;
+  };
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
-      <EngineIcon type={lease.engineType} />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <IconTip label="Lease ID" hint={lease.id} side="top">
-            <span className="font-mono text-[12px] font-medium">
-              {lease.id.slice(0, 14)}…
-            </span>
-          </IconTip>
-          <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
-            {lease.engineType}
-          </Badge>
-          <span className="font-mono text-[11px] text-muted-foreground">{lease.mount}</span>
-          {lease.taskId ? (
-            <Badge variant="outline" className="gap-1 text-[10px] uppercase tracking-wide">
-              <Bot className="h-3 w-3" /> task
+    <div className="space-y-5 p-5">
+      <div className="flex items-start gap-3">
+        <EngineIcon type={lease.engineType} />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate font-mono text-title-3 font-semibold">{lease.mount}</h2>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+              {lease.engineType}
             </Badge>
-          ) : null}
-        </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-          {lease.state === "active" ? (
-            <Badge variant="secondary" className="bg-[var(--success-subtle)] text-[var(--success-fg)]">
-              <Clock className="mr-1 h-2.5 w-2.5" /> {ageLabel}
-            </Badge>
-          ) : lease.state === "expired" ? (
-            <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 dark:text-amber-300">
-              {ageLabel}
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="bg-[var(--danger-subtle)] text-[var(--danger-fg)]">
-              {ageLabel}
-            </Badge>
-          )}
-          {lease.renewable ? (
-            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-              renewable
-            </Badge>
-          ) : null}
-          <span className="text-[11px] text-muted-foreground">
-            issued {relativeAgo(toIso(lease.issuedAt))}
-          </span>
-          <span className="text-[11px] text-muted-foreground">
-            · max {formatTtl(lease.maxTtlSeconds)}
-          </span>
+            <StateBadge lease={lease} />
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        {lease.state === "active" && lease.renewable ? (
-          <IconTip label="Renew Lease" hint="Ask the engine for another TTL window." side="left">
-            <Button variant="ghost" size="sm" disabled={pending} onClick={onRenew}>
+
+      <dl className="space-y-3.5">
+        <InspectorField label="Lease ID" mono>
+          <span className="min-w-0 flex-1">{lease.id}</span>
+          <CopyButton value={lease.id} iconOnly autoClearSeconds={0} />
+        </InspectorField>
+        {lease.backendLeaseId ? (
+          <InspectorField label="Backend Lease ID" mono>
+            <span className="min-w-0 flex-1">{lease.backendLeaseId}</span>
+            <CopyButton value={lease.backendLeaseId} iconOnly autoClearSeconds={0} />
+          </InspectorField>
+        ) : null}
+        <InspectorField label="Issued">{stamp(lease.issuedAt)}</InspectorField>
+        {lease.state === "revoked" ? (
+          <InspectorField label="Revoked">{stamp(lease.revokedAt)}</InspectorField>
+        ) : (
+          <InspectorField label={lease.state === "expired" ? "Expired" : "Expires"}>{stamp(lease.expiresAt)}</InspectorField>
+        )}
+        <InspectorField label="TTL">
+          {formatTtl(lease.ttlSeconds)} · max {formatTtl(lease.maxTtlSeconds)}
+          {lease.renewable ? " · renewable" : ""}
+        </InspectorField>
+        <InspectorField label="Issued For" mono={Boolean(lease.taskId)}>
+          {lease.taskId ? (
+            <>
+              <Bot className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1">{lease.taskId}</span>
+              <CopyButton value={lease.taskId} iconOnly autoClearSeconds={0} />
+            </>
+          ) : (
+            "A person (no agent task)"
+          )}
+        </InspectorField>
+      </dl>
+
+      {lease.state === "active" ? (
+        <div className="flex items-center gap-2 border-t border-border/60 pt-4">
+          {lease.renewable ? (
+            <Button variant="secondary" size="sm" disabled={pending} onClick={onRenew}>
               <RotateCcw className="h-3.5 w-3.5" /> Renew
             </Button>
-          </IconTip>
-        ) : null}
-        {lease.state === "active" ? (
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
             disabled={pending}
             onClick={onRevoke}
           >
-            <Trash2 className="h-3.5 w-3.5" /> {pending ? "…" : "Revoke"}
+            <Trash2 className="h-3.5 w-3.5" /> Revoke
           </Button>
-        ) : null}
-      </div>
-    </li>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

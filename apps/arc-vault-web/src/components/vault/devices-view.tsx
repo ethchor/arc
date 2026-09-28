@@ -126,7 +126,7 @@ export function DevicesView({ getClient }: { getClient: () => VaultClient }) {
               </div>
               <ul className="divide-y">
                 {pending.map((d) => (
-                  <li key={d.id} className="flex items-center gap-3 px-5 py-3">
+                  <li key={d.id} className="flex items-center gap-3 px-5 py-3 [@media(pointer:coarse)]:py-3.5">
                     <DeviceAvatar name={d.name} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{d.name}</div>
@@ -242,7 +242,7 @@ function DeviceRow({
   const stale = isStale(device);
   const lastSeen = relativeAgo(device.lastSeenAt);
   return (
-    <li className="flex items-center gap-3 px-5 py-3">
+    <li className="flex items-center gap-3 px-5 py-3 [@media(pointer:coarse)]:py-3.5">
       <DeviceAvatar name={device.name} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{device.name}</div>
