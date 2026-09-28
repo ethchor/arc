@@ -26,7 +26,7 @@ export function CopyField({
       {secret ? (
         <MaskedField value={value} />
       ) : (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-input bg-[var(--surface-inset)] px-3 py-2">
+        <div className="flex min-h-[var(--control-height)] items-center justify-between gap-2 rounded-[var(--radius-lg)] border border-input bg-[var(--surface-inset)] px-3.5 py-2">
           <span className="min-w-0 truncate font-mono text-sm">{value || "—"}</span>
           <CopyButton value={value} iconOnly />
         </div>
