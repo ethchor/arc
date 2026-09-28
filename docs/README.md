@@ -40,6 +40,7 @@ shipped code.
 | 17 | [`17-free-tier-deployment.md`](17-free-tier-deployment.md) | Running the whole stack production-like on free infrastructure. |
 | — | [`production-hardening.md`](production-hardening.md) | **Operational** env-var contract + boot-time fail-closed gates for non-dev deploys. Pairs with §15.6 (crypto correctness). |
 | — | [`manual-testing/`](manual-testing/README.md) | Step-by-step QA playbook; per-feature checklist for release validation. |
+| — | [`launch-video/`](launch-video/README.md) | The 22-second launch film: storyboard, claims check, and the source to re-render it. |
 
 ## Coverage matrix
 

@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>arc — launch film</title>
+<!--
+  arc launch film, 1920×1080 @ 30 fps. Every frame is a pure function of time:
+  capture.mjs calls window.__render(t) and screenshots the stage. Timing lives in
+  timeline.json, which soundtrack.py reads too, so picture and sound cannot drift.
+  Colors, type, radii and easings are lifted from apps/arc-vault-web (dark theme).
+-->
+<style>
+@font-face{font-family:"Space Grotesk";font-weight:500;src:url(fonts/space-grotesk-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"Space Grotesk";font-weight:600;src:url(fonts/space-grotesk-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Space Grotesk";font-weight:700;src:url(fonts/space-grotesk-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Sans";font-weight:400;src:url(fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Sans";font-weight:500;src:url(fonts/ibm-plex-sans-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Sans";font-weight:600;src:url(fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Geist Mono";font-weight:400;src:url(fonts/GeistMono-Regular.woff2) format("woff2")}
+@font-face{font-family:"Geist Mono";font-weight:500;src:url(fonts/GeistMono-Medium.woff2) format("woff2")}
+@font-face{font-family:"Geist Mono";font-weight:600;src:url(fonts/GeistMono-SemiBold.woff2) format("woff2")}
+
+:root{
+  --bg:#0C0F16; --raised:#141821; --overlay:#1B202A; --inset:#0F131B; --sunken:#080B11;
+  --border:#29303D; --text:#E9ECF1; --text-2:#9AA4B4; --muted:#697485; --faint:#4C5666;
+  --arc:#2DC6B1; --arc-ink:#04241F; --arc-subtle:rgba(45,198,177,.13); --arc-subtle-fg:#93EBDC; --zk:#57DBC7;
+  --ember:#EC9B2E; --ember-fg:#F0B25A; --ember-subtle:rgba(236,155,46,.14);
+  --success:#36C97B; --success-fg:#6FD39B; --success-subtle:rgba(54,201,123,.13);
+  --danger:#F26464; --danger-fg:#F08A8A; --danger-subtle:rgba(242,100,100,.14);
+  --info:#6E83F5; --info-fg:#9CABFF; --info-subtle:rgba(110,131,245,.16);
+  --display:"Space Grotesk",sans-serif; --sans:"IBM Plex Sans",sans-serif; --mono:"Geist Mono",monospace;
+  --shadow-lg:0 16px 36px rgba(0,0,0,.58),0 0 0 1px rgba(255,255,255,.03);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:var(--sans);-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}
+.layer{position:absolute;inset:0}
+.abs{position:absolute}
+svg.icon{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+
+/* background: the dark arc mesh (ember = human pole, cyan = machine pole), a faint security
+   grid, grain, and a vignette */
+#meshBase{background:
+  radial-gradient(ellipse 70% 50% at 80% 10%, rgba(236,155,46,.10), transparent 60%),
+  radial-gradient(ellipse 80% 55% at 25% 0%, rgba(45,198,177,.14), transparent 62%), var(--bg)}
+#meshEmber{background:radial-gradient(ellipse 60% 55% at 82% 18%, rgba(236,155,46,.10), transparent 65%)}
+#meshTeal{background:radial-gradient(ellipse 60% 55% at 18% 18%, rgba(45,198,177,.11), transparent 65%)}
+#meshApex{background:radial-gradient(ellipse 55% 45% at 50% 0%, rgba(45,198,177,.10), transparent 65%)}
+#grid{background-image:linear-gradient(rgba(41,48,61,.55) 1px,transparent 1px),linear-gradient(90deg,rgba(41,48,61,.55) 1px,transparent 1px);
+  background-size:56px 56px;background-position:-1px -1px;opacity:.35;
+  -webkit-mask-image:radial-gradient(ellipse 75% 70% at 50% 45%, #000 20%, transparent 78%)}
+#grain{opacity:.07;mix-blend-mode:screen;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' seed='7' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+#logoGlow{left:0;top:0;width:1000px;height:1000px;border-radius:50%;background:radial-gradient(circle, rgba(45,198,177,.20), rgba(45,198,177,.06) 38%, transparent 62%)}
+#vignette{background:radial-gradient(ellipse 85% 80% at 50% 48%, transparent 58%, rgba(0,0,0,.38) 100%)}
+
+/* type */
+.headline{font-family:var(--display);font-weight:600;font-size:96px;letter-spacing:-.035em;line-height:1;white-space:nowrap;text-align:center}
+.caption{position:absolute;left:0;width:1920px;top:872px;text-align:center;font-family:var(--display);font-weight:600;
+  font-size:56px;letter-spacing:-.025em;line-height:1.1;white-space:nowrap}
+.caption em,.triad em,.headline em{font-style:normal;color:var(--arc)}
+.nodeLabel{font-family:var(--display);font-weight:500;font-size:38px;letter-spacing:-.02em;white-space:nowrap;text-align:center}
+.eyebrow{font-family:var(--sans);font-weight:500;font-size:19px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.mono{font-family:var(--mono)}
+#lblL,#lblR,#chipsL,#chipsR{left:0;top:0}
+.ln{white-space:pre;height:40px}
+
+/* chips (hook) */
+.chips{display:flex;gap:12px;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 20px 0 16px;border-radius:999px;border:1px solid var(--border);
+  background:rgba(20,24,33,.85);font:500 22px var(--sans);color:var(--text-2)}
+.chip i{width:9px;height:9px;border-radius:50%;display:block}
+.chips.teal i{background:var(--arc);box-shadow:0 0 12px rgba(45,198,177,.7)}
+.chips.ember i{background:var(--ember);box-shadow:0 0 12px rgba(236,155,46,.7)}
+
+.triad{position:absolute;left:0;width:1920px;top:620px;display:flex;justify-content:center;gap:44px;
+  font-family:var(--display);font-weight:500;font-size:60px;letter-spacing:-.025em;white-space:nowrap}
+
+/* header chrome (mirrors site-header.tsx: tinted tile + mark + wordmark) */
+#hdrTile{left:96px;top:64px;width:84px;height:84px;border-radius:18px;background:rgba(45,198,177,.15);
+  box-shadow:inset 0 0 0 2.5px rgba(45,198,177,.25)}
+#hdrDivider{top:88px;width:2px;height:36px;background:var(--border)}
+.chapter{top:84px;font:500 32px var(--sans);color:var(--text-2);white-space:nowrap;letter-spacing:-.005em}
+
+/* cards (DialogContent / panels) */
+.card{background:var(--raised);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow-lg)}
+.dlg-title{font:600 32px var(--display);letter-spacing:-.02em}
+.dlg-desc{margin-top:8px;font:400 20px var(--sans);color:var(--muted)}
+.field{margin-top:18px}
+.field .lbl{font:500 18px var(--sans);color:var(--text-2);margin-bottom:9px}
+.input{height:56px;border-radius:12px;border:1px solid var(--border);background:var(--inset);display:flex;align-items:center;
+  padding:0 18px;font:400 23px var(--sans);color:var(--text);position:relative;overflow:hidden}
+.input.mono{font:500 23px var(--mono);letter-spacing:.02em}
+.caret{display:inline-block;width:2px;height:28px;background:var(--arc);margin-left:2px;vertical-align:middle}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:54px;padding:0 30px;border-radius:12px;
+  font:600 22px var(--sans)}
+.btn.primary{background:var(--arc);color:var(--arc-ink)}
+.btn.outline{border:1px solid var(--border);background:var(--raised);color:var(--text-2);font-weight:500}
+.trust{display:inline-flex;align-items:center;gap:9px;padding:8px 16px;border-radius:999px;font:500 18px var(--sans);letter-spacing:.02em;
+  background:rgba(45,198,177,.14);color:var(--zk);border:1px solid rgba(45,198,177,.24);white-space:nowrap}
+.trust.ember{background:var(--ember-subtle);color:var(--ember-fg);border-color:rgba(236,155,46,.28)}
+
+/* JSON / code */
+.code{font:400 24px var(--mono);line-height:40px;white-space:normal;color:var(--text-2)}
+.code .k{color:var(--text-2)} .code .s{color:var(--arc-subtle-fg)} .code .n{color:var(--ember-fg)} .code .p{color:var(--faint)}
+.code .b{color:var(--info-fg)}
+.skel{height:18px;border-radius:9px;background:var(--overlay);margin-top:22px}
+
+/* status chips */
+.stat{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:999px;font:500 18px var(--sans);white-space:nowrap}
+.stat i{width:8px;height:8px;border-radius:50%;background:currentColor;display:block}
+.stat.ok{background:var(--success-subtle);color:var(--success-fg)}
+.stat.bad{background:var(--danger-subtle);color:var(--danger-fg)}
+.cap{display:inline-flex;align-items:center;height:36px;padding:0 12px;border-radius:8px;font:500 20px var(--mono);letter-spacing:-.01em;
+  background:var(--info-subtle);color:var(--info-fg)}
+.role-agent{display:inline-flex;align-items:center;height:36px;padding:0 16px;border-radius:999px;font:500 19px var(--sans);
+  background:var(--ember-subtle);color:var(--ember-fg)}
+
+/* agents */
+.intent{position:absolute;left:0;width:860px;height:104px;border-radius:16px;background:var(--raised);border:1px solid var(--border);
+  box-shadow:var(--shadow-lg);padding:0 26px;display:flex;flex-direction:column;justify-content:center;gap:10px}
+.intent .top{display:flex;align-items:center;gap:16px}
+.intent .idx{font:500 20px var(--mono);color:var(--faint);width:34px}
+.intent .path{font:500 24px var(--mono);color:var(--text)}
+.intent .sig{margin-left:auto;display:inline-flex;align-items:center;gap:8px;font:500 18px var(--sans);color:var(--success-fg)}
+.intent .chain{font:400 18px var(--mono);color:var(--muted);padding-left:50px;display:flex;gap:12px;align-items:center}
+.hash{padding:2px 10px;border-radius:6px;background:var(--overlay);color:var(--text-2)}
+.hash.hot{background:rgba(45,198,177,.16);color:var(--arc-subtle-fg)}
+.hold{position:absolute;left:0;width:640px;height:78px;border-radius:14px;background:var(--raised);border:1px solid var(--border);
+  display:flex;align-items:center;padding:0 22px;gap:16px}
+.hold .kind{font:500 20px var(--sans);color:var(--text-2);width:132px;flex-shrink:0}
+.hold .what{font:500 21px var(--mono);color:var(--text);flex:1;white-space:nowrap;position:relative}
+.hold .what s{position:absolute;left:0;top:50%;height:2px;background:var(--danger);display:block}
+.hold .st{position:relative;width:118px;height:34px}
+.hold .st .stat{position:absolute;right:0;top:0}
+.cmd{border-radius:14px;background:var(--sunken);border:1px solid var(--border);height:70px;display:flex;align-items:center;padding:0 26px;
+  font:500 26px var(--mono);color:var(--text);gap:16px;overflow:hidden}
+.cmd .pr{color:var(--arc)}
+.kbd{display:inline-flex;align-items:center;justify-content:center;width:52px;height:40px;border-radius:9px;border:1px solid var(--border);
+  background:var(--overlay);color:var(--text-2);font-size:24px}
+</style>
+</head>
+<body>
+<div id="stage">
+  <!-- background -->
+  <div class="layer" id="meshBase"></div>
+  <div class="layer" id="meshEmber"></div>
+  <div class="layer" id="meshTeal"></div>
+  <div class="layer" id="meshApex"></div>
+  <div class="layer" id="grid"></div>
+  <div class="abs" id="logoGlow"></div>
+
+  <!-- 1–2 · hook + bridge -->
+  <div class="abs headline" id="hookHead" style="left:0;width:1920px;top:150px">Two worlds of secrets.</div>
+  <div class="abs headline" id="bridgeHead" style="left:0;width:1920px;top:150px">One platform.</div>
+  <div class="abs nodeLabel" id="lblL">Machine secrets</div>
+  <div class="abs nodeLabel" id="lblR">Human secrets</div>
+  <div class="abs chips teal" id="chipsL"><span class="chip"><i></i>Database creds</span><span class="chip"><i></i>Cloud STS</span><span class="chip"><i></i>KV</span><span class="chip"><i></i>PKI</span></div>
+  <div class="abs chips ember" id="chipsR"><span class="chip"><i></i>Passwords</span><span class="chip"><i></i>Passkeys</span><span class="chip"><i></i>TOTP</span><span class="chip"><i></i>Notes</span></div>
+
+  <!-- 3 · reveal -->
+  <div class="triad" id="triad"><span id="tr0"><em>One</em> identity.</span><span id="tr1"><em>One</em> policy.</span><span id="tr2"><em>One</em> audit trail.</span></div>
+
+  <!-- header chrome (4–6) -->
+  <div class="abs" id="hdrTile"></div>
+  <div class="abs" id="hdrDivider"></div>
+  <div class="abs chapter" id="chHuman">Human secrets</div>
+  <div class="abs chapter" id="chMachine">Machine secrets</div>
+  <div class="abs chapter" id="chAgents">Agents</div>
+
+  <!-- 4 · human secrets -->
+  <div id="s4">
+    <div class="abs eyebrow" id="s4LblDev" style="left:250px;top:212px">Your device</div>
+    <div class="abs eyebrow" id="s4LblSrv" style="left:1070px;top:212px">arc server</div>
+    <svg class="abs" id="s4Boundary" width="40" height="660" style="left:940px;top:196px;overflow:visible">
+      <line id="s4BLine" x1="20" y1="0" x2="20" y2="660" stroke="#3A4354" stroke-width="3" stroke-dasharray="10 12" stroke-linecap="round"/>
+      <circle id="s4BRing" cx="20" cy="0" r="0" fill="none" stroke="#2DC6B1" stroke-width="3"/>
+    </svg>
+    <div class="abs trust" id="s4BPill" style="background:var(--overlay);color:var(--text-2);border-color:var(--border);left:960px;top:160px">trust boundary</div>
+
+    <div class="abs card" id="s4Card" style="left:250px;top:252px;width:600px;padding:34px 36px 32px">
+      <div class="dlg-title">Add login</div>
+      <div class="dlg-desc">Encrypted on this device before it is saved.</div>
+      <div class="field"><div class="lbl">Title</div><div class="input">Production DB</div></div>
+      <div class="field"><div class="lbl">Username</div><div class="input">app_admin</div></div>
+      <div class="field"><div class="lbl">Password</div>
+        <div class="input mono" id="s4Pw"><span id="s4PwText"></span><span class="caret" id="s4Caret"></span>
+          <svg class="icon abs" id="s4Lock" viewBox="0 0 24 24" style="right:18px;top:15px;width:26px;height:26px;color:var(--zk)"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:28px;height:54px">
+        <span class="trust" id="s4Trust"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>encrypted on this device</span>
+        <div class="btn primary" id="s4Save">Save</div>
+      </div>
+    </div>
+
+    <div class="abs card" id="s4Srv" style="left:1070px;top:252px;width:600px;height:540px;padding:30px 36px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="mono" style="font-size:20px;color:var(--muted)">vault_items<span style="color:var(--faint)"> / </span><span style="color:var(--text-2)">ciphertext</span></span>
+        <span class="mono" style="font-size:20px;color:var(--faint)">row 3f2a</span>
+      </div>
+      <div id="s4Skel" style="margin-top:14px"><div class="skel" style="width:28%"></div><div class="skel" style="width:74%"></div><div class="skel" style="width:58%"></div><div class="skel" style="width:66%"></div></div>
+      <div class="code abs" id="s4Json" style="left:36px;top:78px">
+        <div class="ln" id="j0"><span class="p">{</span></div>
+        <div class="ln" id="j1">  <span class="k">"v"</span><span class="p">:</span> <span class="n">1</span><span class="p">,</span></div>
+        <div class="ln" id="j2">  <span class="k">"alg"</span><span class="p">:</span> <span class="s">"XC20P"</span><span class="p">,</span></div>
+        <div class="ln" id="j3">  <span class="k">"kv"</span><span class="p">:</span> <span class="n">1</span><span class="p">,</span></div>
+        <div class="ln" id="j4">  <span class="k">"n"</span><span class="p">:</span> <span class="s">"Pz0v4Nq8Ys2kT1wF…"</span><span class="p">,</span></div>
+        <div class="ln" id="j5">  <span class="k">"ct"</span><span class="p">:</span> <span class="s" id="s4Ct">"7Hk2Xq9dLr0sAe5U…"</span></div>
+        <div class="ln" id="j6"><span class="p">}</span></div>
+      </div>
+      <div class="abs" id="s4Badge" style="left:36px;bottom:30px;display:flex;align-items:center;gap:14px">
+        <span class="trust ember"><svg class="icon" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>post-quantum</span>
+        <span style="font:500 20px var(--sans);color:var(--text-2)">key grants · <span class="mono" style="color:var(--text)">X25519 + ML-KEM-768</span></span>
+      </div>
+    </div>
+    <div class="abs" id="s4Packet" style="left:0;top:0"><span class="mono" style="display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 18px;border-radius:12px;background:#0E2A28;border:1px solid rgba(45,198,177,.55);color:var(--arc-subtle-fg);font-size:22px;box-shadow:0 0 28px rgba(45,198,177,.35)"><svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px;color:var(--zk)"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>7Hk2Xq9dLr0sAe5U…</span></div>
+    <div class="caption" id="cap4">Only <em>ciphertext</em> crosses the trust boundary.</div>
+  </div>
+
+  <!-- 5 · machine secrets -->
+  <div id="s5">
+    <div class="abs card" id="s5Term" style="left:180px;top:220px;width:1010px;height:600px;padding:34px 40px">
+      <div style="display:flex;align-items:center;gap:18px">
+        <span class="cap" style="background:var(--arc-subtle);color:var(--arc-subtle-fg);font-weight:600">GET</span>
+        <span class="mono" style="font-size:28px;color:var(--text)"><span id="s5Path"></span><span class="caret" id="s5Caret" style="height:30px"></span></span>
+      </div>
+      <div style="height:1px;background:var(--border);margin:28px 0 22px"></div>
+      <div class="abs" id="s5Status" style="left:40px;top:122px;display:flex;align-items:center;gap:12px">
+        <span class="stat ok"><i></i>200 OK</span><span class="mono" style="font-size:19px;color:var(--faint)">application/json</span></div>
+      <div class="code abs" style="left:40px;top:176px;font-size:25px">
+        <div class="ln m0" style="height:42px"><span class="p">{</span></div>
+        <div class="ln m0" style="height:42px">  <span class="k">"lease_id"</span><span class="p">:</span> <span class="s">"8c1f2e9a-4b7d-4e61-9a0f-…"</span><span class="p">,</span></div>
+        <div class="ln m1" style="height:42px">  <span class="k">"lease_duration"</span><span class="p">:</span> <span class="n">3600</span><span class="p">,</span></div>
+        <div class="ln m2" style="height:42px">  <span class="k">"renewable"</span><span class="p">:</span> <span class="b">true</span><span class="p">,</span></div>
+        <div class="ln m3" style="height:42px">  <span class="k">"data"</span><span class="p">: {</span></div>
+        <div class="ln m3" style="height:42px">    <span class="k">"username"</span><span class="p">:</span> <span class="s">"v-app-7Qd2"</span><span class="p">,</span></div>
+        <div class="ln m4" style="height:42px">    <span class="k">"password"</span><span class="p">:</span> <span class="s">"A1a-9xZqT7mK…"</span></div>
+        <div class="ln m4" style="height:42px">  <span class="p">}</span></div>
+        <div class="ln m4" style="height:42px"><span class="p">}</span></div>
+      </div>
+    </div>
+    <div class="abs card" id="s5Lease" style="left:1250px;top:220px;width:490px;height:600px;padding:34px 36px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="eyebrow">Lease</span><span class="mono" style="font-size:19px;color:var(--faint)">8c1f2e9a…</span></div>
+      <svg class="abs" width="280" height="280" style="left:105px;top:134px" viewBox="0 0 280 280">
+        <circle cx="140" cy="140" r="120" fill="none" stroke="#080B11" stroke-width="16"/>
+        <circle id="s5Ring" cx="140" cy="140" r="120" fill="none" stroke="#2DC6B1" stroke-width="16" stroke-linecap="round" transform="rotate(-90 140 140)"/>
+      </svg>
+      <div class="abs" style="left:105px;top:134px;width:280px;height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+        <span id="s5Time" style="font:500 66px var(--display);font-variant-numeric:tabular-nums;color:var(--text);letter-spacing:-.02em">60:00</span>
+        <span style="font:400 19px var(--sans);color:var(--muted)">remaining</span></div>
+      <div class="abs" id="s5Btns" style="left:36px;right:36px;bottom:34px;display:flex;gap:14px">
+        <div class="btn outline" style="flex:1"><svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>Renew</div>
+        <div class="btn outline" style="flex:1;color:var(--danger-fg)"><svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>Revoke</div>
+      </div>
+    </div>
+    <div class="caption" id="cap5">Dynamic credentials — <em>leased, renewable, revocable.</em></div>
+  </div>
+
+  <!-- 6 · agents -->
+  <div id="s6">
+    <div class="abs" id="s6Head" style="left:180px;top:212px;display:flex;align-items:center;gap:18px">
+      <span style="display:flex;align-items:center;justify-content:center;width:60px;height:60px;border-radius:14px;background:var(--ember-subtle);color:var(--ember-fg)"><svg class="icon" viewBox="0 0 24 24" style="width:32px;height:32px"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></span>
+      <span style="font:600 40px var(--display);letter-spacing:-.02em">deploy-bot</span>
+      <span class="role-agent">agent</span>
+      <span class="mono" style="font-size:21px;color:var(--muted);margin-left:8px">task 7e41c2d0</span>
+      <span style="position:relative;width:120px;height:34px;margin-left:4px"><span class="stat ok abs" id="s6Open" style="left:0;top:0"><i></i>open</span><span class="stat bad abs" id="s6Closed" style="left:0;top:0"><i></i>closed</span></span>
+    </div>
+    <div class="abs" id="s6Chain" style="left:180px;top:312px;width:880px;height:380px">
+      <svg class="abs" width="60" height="380" style="left:-2px;top:0;overflow:visible">
+        <path id="s6Link1" d="M36 104 L36 132" stroke="#2DC6B1" stroke-width="3" stroke-linecap="round" fill="none"/>
+        <path id="s6Link2" d="M36 236 L36 264" stroke="#2DC6B1" stroke-width="3" stroke-linecap="round" fill="none"/>
+      </svg>
+      <div class="intent" id="in0" style="top:0"><div class="top"><span class="idx">#1</span><span class="cap">kv.read</span><span class="path">secret/data/app/db</span><span class="sig"><svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M20 6 9 17l-5-5"/></svg>signed · ed25519</span></div>
+        <div class="chain">prev <span class="hash">0000…0000</span> head <span class="hash hot" id="h0">4a1f…9c2e</span></div></div>
+      <div class="intent" id="in1" style="top:132px"><div class="top"><span class="idx">#2</span><span class="cap">kv.read</span><span class="path">secret/data/app/api-key</span><span class="sig"><svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M20 6 9 17l-5-5"/></svg>signed · ed25519</span></div>
+        <div class="chain">prev <span class="hash hot" id="p1">4a1f…9c2e</span> head <span class="hash hot" id="h1">b73d…0e51</span></div></div>
+      <div class="intent" id="in2" style="top:264px"><div class="top"><span class="idx">#3</span><span class="cap">kv.read</span><span class="path">secret/data/app/tls</span><span class="sig"><svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M20 6 9 17l-5-5"/></svg>signed · ed25519</span></div>
+        <div class="chain">prev <span class="hash hot" id="p2">b73d…0e51</span> head <span class="hash hot" id="h2">e09c…7a44</span></div></div>
+    </div>
+    <div class="abs eyebrow" id="s6HoldLbl" style="left:1100px;top:312px">Held by this task</div>
+    <div class="abs" id="s6Holds" style="left:1100px;top:352px;width:640px;height:360px">
+      <div class="hold" id="hd0" style="top:0"><span class="kind">delegation</span><span class="what"><span class="tx">secret/data/app/*</span><s></s></span><span class="st"><span class="stat ok"><i></i>active</span><span class="stat bad"><i></i>revoked</span></span></div>
+      <div class="hold" id="hd1" style="top:88px"><span class="kind">lease</span><span class="what"><span class="tx">database/creds/app</span><s></s></span><span class="st"><span class="stat ok"><i></i>active</span><span class="stat bad"><i></i>revoked</span></span></div>
+      <div class="hold" id="hd2" style="top:176px"><span class="kind">lease</span><span class="what"><span class="tx">database/creds/migrate</span><s></s></span><span class="st"><span class="stat ok"><i></i>active</span><span class="stat bad"><i></i>revoked</span></span></div>
+      <div class="hold" id="hd3" style="top:264px"><span class="kind">agent token</span><span class="what"><span class="tx">epoch 7</span><s></s></span><span class="st"><span class="stat ok"><i></i>active</span><span class="stat bad"><i></i>revoked</span></span></div>
+    </div>
+    <div class="abs cmd" id="s6Cmd" style="left:180px;top:730px;width:1560px">
+      <span class="pr">owner ›</span><span id="s6CmdText"></span><span class="caret" id="s6Caret" style="height:30px;margin-left:-14px"></span>
+      <span class="kbd" id="s6Kbd" style="margin-left:auto"><svg class="icon" viewBox="0 0 24 24" style="width:24px;height:24px"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg></span>
+      <div class="abs" id="s6Sweep" style="left:0;top:0;bottom:0;width:100%;background:linear-gradient(90deg,transparent,rgba(45,198,177,.22) 40%,rgba(45,198,177,.22) 60%,transparent)"></div>
+    </div>
+    <div class="caption" id="cap6a">Every agent action is <em>signed.</em></div>
+    <div class="caption" id="cap6b">Revoked in <em>one shot.</em></div>
+  </div>
+
+  <!-- 7 · outro -->
+  <div class="abs" id="tagline" style="left:0;width:1920px;top:596px;text-align:center;font:500 42px var(--sans);color:var(--text-2);letter-spacing:-.005em;white-space:nowrap">
+    Self-hostable <span style="color:var(--arc)">·</span> Open source <span style="color:var(--arc)">·</span> Zero-knowledge</div>
+  <div class="abs" id="url" style="left:0;width:1920px;top:690px;display:flex;justify-content:center">
+    <span class="mono" style="display:inline-flex;align-items:center;height:72px;padding:0 30px;border-radius:999px;border:1px solid rgba(45,198,177,.35);
+      background:rgba(45,198,177,.08);font-size:34px;font-weight:500;color:var(--text);letter-spacing:-.01em">github.com/ethchor/<span style="color:var(--arc)">arc</span></span></div>
+
+  <!-- the logo: arc's honeycomb halftone (apps/arc-vault-web/public/arc-honeycomb.svg), one
+       SVG hexagon per cell so the halves can split, lock and travel; plus the wordmark -->
+  <svg class="layer" id="markLayer" width="1920" height="1080" viewBox="0 0 1920 1080" style="overflow:visible">
+    <defs><clipPath id="wmClip"><rect id="wmClipRect" x="0" y="0" width="1920" height="1080"/></clipPath></defs>
+    <g id="hc"></g>
+    <text id="wm" font-family="Space Grotesk" font-weight="600" fill="#E9ECF1" letter-spacing="-0.03em">arc</text>
+  </svg>
+
+  <div class="layer" id="grain"></div>
+  <div class="layer" id="vignette"></div>
+</div>
+
+<script>
+"use strict";
+// ---------- math ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const prog = (t, t0, d) => clamp((t - t0) / d);
+function bezier(x1, y1, x2, y2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const X = (t) => ((ax * t + bx) * t + cx) * t, Y = (t) => ((ay * t + by) * t + cy) * t;
+  return (p) => {
+    if (p <= 0) return 0;
+    if (p >= 1) return 1;
+    let lo = 0, hi = 1, t = p;
+    for (let i = 0; i < 48; i++) { const v = X(t); if (Math.abs(v - p) < 1e-7) break; if (v < p) lo = t; else hi = t; t = (lo + hi) / 2; }
+    return Y(t);
+  };
+}
+// the web app's motion tokens (globals.css)
+const E = {
+  expo: bezier(0.16, 1, 0.3, 1),       // --ease-out-expo
+  quart: bezier(0.23, 1, 0.32, 1),     // --ease-out-quart
+  back: bezier(0.34, 1.56, 0.64, 1),   // --ease-out-back
+  inOut: bezier(0.77, 0, 0.175, 1),    // --ease-in-out-quart
+  in: bezier(0.5, 0, 0.75, 0),         // ease-in-quart, exits only
+  lin: (p) => p,
+};
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+// ---------- dom helpers ----------
+const $ = (id) => document.getElementById(id);
+function vis(el, o) { el.style.opacity = o.toFixed(4); el.style.visibility = o < 0.003 ? "hidden" : "visible"; }
+/** Enter at `tin`, leave at `tout` (or never). Returns the style state for `apply`. */
+function io(t, tin, tout, o = {}) {
+  const pin = (o.ease || E.expo)(prog(t, tin, o.dIn ?? 0.5));
+  const pout = tout == null ? 0 : E.in(prog(t, tout, o.dOut ?? 0.22));
+  return {
+    p: pin, q: pout, o: pin * (1 - pout),
+    x: (o.dx ?? 0) * (1 - pin) + (o.outDx ?? 0) * pout,
+    y: (o.dy ?? 22) * (1 - pin) + (o.outDy ?? -14) * pout,
+    s: lerp(o.s0 ?? 1, 1, pin) * lerp(1, o.s1 ?? 1, pout),
+    b: (o.blur ?? 0) * (1 - pin) + (o.outBlur ?? 0) * pout,
+  };
+}
+function apply(el, a, base = "") {
+  vis(el, a.o);
+  el.style.transform = `${base} translate(${a.x.toFixed(2)}px, ${a.y.toFixed(2)}px) scale(${a.s.toFixed(4)})`;
+  el.style.filter = a.b > 0.05 ? `blur(${a.b.toFixed(2)}px)` : "none";
+}
+function hide(el) { vis(el, 0); }
+
+// ---------- the logo ----------
+// HONEY.cells = [x, y, r, opacity] per hexagon in the logo's 100×100 viewBox (pointy-top cells).
+// Left half = machine secrets (arc cyan), right half = human secrets (ember) — the design
+// system's two poles. The x = 50 column zips: its cells alternate between the halves.
+let HONEY = null, CELLS = [];
+const EMBER = [236, 155, 46], TEAL = [45, 198, 177], WHITE = [233, 236, 241];
+const mix = (a, b, p) => a.map((v, i) => lerp(v, b[i], p));
+const rgb = (c) => `rgb(${c.map((v) => Math.round(v)).join(",")})`;
+const GEO = { hook: { cx: 960, cy: 565, k: 4.8 }, reveal: null, header: null, outro: null };
+const WM = { reveal: null, header: null, outro: null }; // wordmark {x, y(baseline), size}
+const SEP_HOOK = 250, SEP_OUTRO = 150;
+const lerpGeo = (a, b, p) => ({ cx: lerp(a.cx, b.cx, p), cy: lerp(a.cy, b.cy, p), k: Math.exp(lerp(Math.log(a.k), Math.log(b.k), p)) });
+const bump = (x, w) => (x > 0 && x < w ? Math.sin((Math.PI * x) / w) : 0);
+
+function buildHoney() {
+  const g = $("hc");
+  let zip = 0;
+  const maxSeam = Math.max(...HONEY.cells.map((c) => Math.abs(c[0] - 50)));
+  const maxDist = Math.max(...HONEY.cells.map((c) => Math.hypot(c[0] - 50, c[1] - 50)));
+  const order = HONEY.cells.map((c, i) => i).sort((i, j) => HONEY.cells[i][1] - HONEY.cells[j][1]);
+  const side = new Array(HONEY.cells.length);
+  for (const i of order) { const x = HONEY.cells[i][0]; side[i] = Math.abs(x - 50) < 0.01 ? (zip++ % 2 ? 1 : -1) : Math.sign(x - 50); }
+  HONEY.cells.forEach(([x, y, r, o], i) => {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    el.setAttribute("d", "M0,-1L0.866025,-0.5L0.866025,0.5L0,1L-0.866025,0.5L-0.866025,-0.5Z");
+    g.appendChild(el);
+    const jit = rng(i * 7919 + 3)();
+    CELLS.push({ el, x, y, r, o, side: side[i], seam: Math.abs(x - 50) / maxSeam, dist: Math.hypot(x - 50, y - 50) / maxDist, jit });
+  });
+}
+
+/** Where every cell is, how big, what colour, at time t. */
+function renderHoney(t) {
+  const T = TL, H = T.hook, B = T.bridge, O = T.outro;
+  const flyStart = T.transitions[0] - 0.22, fadeOut = T.transitions[3] - 0.3;
+  let G, sep = 0, alpha = 1, glow = 0, phase;
+  if (t < T.reveal.drop) {
+    phase = "hook"; G = GEO.hook;
+    sep = SEP_HOOK * (1 - E.inOut(prog(t, B.arcStart, B.arcEnd - B.arcStart)));
+    glow = 0.8 * E.expo(prog(t, B.apex, 0.6));
+  } else if (t < fadeOut + 0.26) {
+    phase = "logo";
+    const pc = E.expo(prog(t, T.reveal.drop, 0.6)), f = E.inOut(prog(t, flyStart, 0.42));
+    G = lerpGeo(lerpGeo(GEO.hook, GEO.reveal, pc), GEO.header, f);
+    alpha = 1 - E.in(prog(t, fadeOut, 0.25));
+    glow = lerp(0.8, 1, pc) * (1 - f);
+  } else {
+    phase = "outro"; G = GEO.outro;
+    sep = SEP_OUTRO * (1 - E.inOut(prog(t, O.pops[2], 0.35)));
+    glow = E.expo(prog(t, O.pops[2] + 0.2, 0.8));
+  }
+  const gl = $("logoGlow");
+  gl.style.transform = `translate(${(G.cx - 500).toFixed(1)}px, ${(G.cy - 500).toFixed(1)}px) scale(${(G.k / 4.2 * 1.05).toFixed(4)})`;
+  vis(gl, glow * alpha);
+  if (alpha <= 0.002) { for (const c of CELLS) c.el.style.display = "none"; return; }
+  for (const c of CELLS) {
+    let pop = 1, col = TEAL, extra = 1, op = c.o * alpha;
+    if (phase === "hook") {
+      const t0 = (c.side < 0 ? H.nodeL : H.nodeR) + c.seam * 0.42 + c.jit * 0.05;
+      pop = E.back(prog(t, t0, 0.34));
+      // the lock at B.apex: warm cells cool into arc cyan in a wave from the seam; the seam flashes
+      const w = prog(t, B.apex + c.seam * 0.55, 0.32);
+      col = c.side > 0 ? mix(EMBER, TEAL, w) : TEAL;
+      const flash = bump(t - B.apex - c.seam * 0.25, 0.3) * (1 - c.seam);
+      col = mix(col, WHITE, 0.55 * flash);
+      extra = 1 + 0.18 * flash;
+    } else if (phase === "logo") {
+      extra = 1 + 0.32 * bump(t - T.reveal.drop - c.dist * 0.32, 0.34); // the drop, rippling outward
+    } else {
+      const t0 = (c.side < 0 ? O.pops[0] : O.pops[1]) + c.seam * 0.3 + c.jit * 0.04;
+      pop = E.back(prog(t, t0, 0.3));
+      const w = prog(t, O.pops[2] + 0.3 + c.seam * 0.4, 0.28);
+      col = c.side > 0 ? mix(EMBER, TEAL, w) : TEAL;
+      extra = 1 + 0.28 * bump(t - O.wordmark - c.dist * 0.3, 0.34);
+    }
+    if (pop <= 0.001) { c.el.style.display = "none"; continue; }
+    c.el.style.display = "";
+    const x = G.cx + (c.x - 50) * G.k + c.side * sep, y = G.cy + (c.y - 50) * G.k;
+    c.el.setAttribute("transform", `translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${(c.r * G.k * pop * extra).toFixed(3)})`);
+    c.el.setAttribute("fill", rgb(col));
+    c.el.setAttribute("opacity", Math.min(1, op).toFixed(3));
+  }
+}
+
+function wordmarkState(t) {
+  // The wordmark slides out from behind a clip edge just right of the logo, so it never
+  // crosses the mark on the way in; the clip is dropped for the flight to the header.
+  const T = TL, w = $("wm");
+  let s, o = 1, dx = 0, clipX = null;
+  if (t < T.reveal.drop) { vis(w, 0); return; }
+  if (t < T.transitions[3] - 0.04) {
+    const pin = E.expo(prog(t, T.reveal.drop + 0.16, 0.7));
+    const f = E.inOut(prog(t, T.transitions[0] - 0.22, 0.42));
+    s = { x: lerp(WM.reveal.x, WM.header.x, f), y: lerp(WM.reveal.y, WM.header.y, f), size: Math.exp(lerp(Math.log(WM.reveal.size), Math.log(WM.header.size), f)) };
+    o = Math.min(1, pin * 2.5) * (1 - E.in(prog(t, T.transitions[3] - 0.3, 0.25)));
+    dx = -0.6 * WM.reveal.w * (1 - pin);
+    if (f <= 0) clipX = WM.reveal.x - 10;
+  } else {
+    const pin = E.expo(prog(t, T.outro.wordmark, 0.7));
+    s = WM.outro; o = Math.min(1, pin * 2.5); dx = -0.6 * WM.outro.w * (1 - pin);
+    clipX = WM.outro.x - 10;
+  }
+  w.setAttribute("x", (s.x + dx).toFixed(2)); w.setAttribute("y", s.y.toFixed(2));
+  w.setAttribute("font-size", s.size.toFixed(2));
+  if (clipX != null) { $("wmClipRect").setAttribute("x", clipX.toFixed(2)); w.setAttribute("clip-path", "url(#wmClip)"); }
+  else w.removeAttribute("clip-path");
+  vis(w, o);
+}
+
+// ---------- scenes ----------
+const PW = "vN7#qe2!Lr9x";       // 12 characters = 12 key clicks in the soundtrack
+const CT = "7Hk2Xq9dLr0sAe5U";
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const PATH5 = "/v1/database/creds/app";
+const CMD6 = "await owner.closeTask(agent.id, task.taskId);";
+const caretOn = (t) => Math.floor(t * 2) % 2 === 0; // blinks on the beat (120 BPM)
+let PKT = null; // packet flight geometry, measured once
+
+function background(t) {
+  const T = TL.scenes;
+  const w = (a, b) => prog(t, a, 0.6) * (1 - prog(t, b - 0.3, 0.6));
+  vis($("meshEmber"), w(T.human, T.machine));
+  vis($("meshTeal"), w(T.machine, T.agents) + 0.6 * w(0, T.reveal));
+  vis($("meshApex"), w(T.agents, T.outro) + w(T.outro, 99));
+}
+
+function sceneHook(t) {
+  const H = TL.hook, B = TL.bridge;
+  const out = B.arcStart - 0.12;
+  apply($("hookHead"), io(t, H.headline, out, { dIn: 0.55, dy: 26, blur: 10, outDy: -18, outBlur: 8, dOut: 0.24 }));
+  const G = GEO.hook, yL = G.cy + (HONEY.bottom - 50) * G.k;
+  const xL = G.cx + (HONEY.midL - 50) * G.k - SEP_HOOK, xR = G.cx + (HONEY.midR - 50) * G.k + SEP_HOOK;
+  apply($("lblL"), io(t, H.nodeL + 0.12, out, { dy: 14, dIn: 0.5, outDx: -30, outDy: 0, dOut: 0.3 }), `translate(${xL}px, ${yL + 34}px) translate(-50%, 0)`);
+  apply($("lblR"), io(t, H.nodeR + 0.12, out, { dy: 14, dIn: 0.5, outDx: 30, outDy: 0, dOut: 0.3 }), `translate(${xR}px, ${yL + 34}px) translate(-50%, 0)`);
+  for (const [id, x, t0] of [["chipsL", xL, H.nodeL + 0.2], ["chipsR", xR, H.nodeR + 0.2]]) {
+    const el = $(id);
+    el.style.transform = `translate(${x}px, ${yL + 100}px) translate(-50%, 0)`;
+    vis(el, 1);
+    [...el.children].forEach((c, i) => apply(c, io(t, t0 + i * 0.06, out - 0.02 + i * 0.02, { dy: 16, dIn: 0.45, outDy: 10, dOut: 0.2 })));
+  }
+  apply($("bridgeHead"), io(t, B.headline, TL.reveal.drop - 0.2, { dIn: 0.55, dy: 26, blur: 10, outBlur: 8 }));
+}
+
+function sceneReveal(t) {
+  const R = TL.reveal, out = TL.transitions[0] - 0.28;
+  R.triad.forEach((t0, i) => apply($("tr" + i), io(t, t0, out, { dIn: 0.45, dy: 24, blur: 8, outBlur: 6, dOut: 0.2 })));
+  vis($("triad"), 1);
+}
+
+function header(t) {
+  const S = TL.scenes, out = TL.transitions[3] - 0.3;
+  apply($("hdrTile"), io(t, S.human + 0.06, out, { dIn: 0.45, dy: 0, s0: 0.6, ease: E.back, dOut: 0.25, outDy: 0 }));
+  apply($("hdrDivider"), io(t, S.human + 0.18, out, { dIn: 0.4, dy: 0, dOut: 0.25, outDy: 0 }));
+  apply($("chHuman"), io(t, S.human + 0.24, S.machine - 0.2, { dx: 16, dy: 0, dIn: 0.45, outDy: 0, outDx: -10 }));
+  apply($("chMachine"), io(t, S.machine + 0.02, S.agents - 0.2, { dx: 16, dy: 0, dIn: 0.45, outDy: 0, outDx: -10 }));
+  apply($("chAgents"), io(t, S.agents + 0.02, out, { dx: 16, dy: 0, dIn: 0.45, outDy: 0, outDx: -10, dOut: 0.25 }));
+}
+
+function sceneHuman(t) {
+  const H = TL.human, t0 = TL.scenes.human, out = TL.scenes.machine - 0.28;
+  const root = $("s4");
+  if (t < t0 - 0.1 || t > out + 0.4) { vis(root, 0); return; }
+  vis(root, 1);
+  const o = { dOut: 0.22, outDy: -16 };
+  apply($("s4Card"), io(t, t0 + 0.16, out, { ...o, dy: 34, dIn: 0.6 }));
+  apply($("s4Srv"), io(t, t0 + 0.26, out, { ...o, dy: 34, dIn: 0.6 }));
+  apply($("s4LblDev"), io(t, t0 + 0.28, out, { ...o, dy: 10 }));
+  apply($("s4LblSrv"), io(t, t0 + 0.36, out, { ...o, dy: 10 }));
+  apply($("s4BPill"), io(t, t0 + 0.5, out, { ...o, dy: 10 }), "translate(-50%, 0)");
+  // the boundary draws top → bottom
+  const bl = $("s4BLine"), bp = E.expo(prog(t, t0 + 0.22, 0.7)), bo = 1 - E.in(prog(t, out, 0.22));
+  bl.setAttribute("y2", (660 * bp).toFixed(1));
+  vis($("s4Boundary"), bo);
+
+  // typing → save → encrypt on device → ciphertext leaves
+  const txt = $("s4PwText"), caret = $("s4Caret"), lock = $("s4Lock");
+  let shown = "", caretVis = t >= t0 + 0.3 && t < H.save;
+  if (t >= H.typeStart && t < H.save) shown = PW.slice(0, Math.min(PW.length, Math.floor((t - H.typeStart) / 0.075) + 1));
+  if (t >= H.save && t < H.packetStart) {
+    const p = prog(t, H.save, H.packetStart - H.save), r = rng(Math.round(t * 30) * 977 + 11);
+    shown = "";
+    for (let i = 0; i < CT.length; i++) {
+      const settle = i / CT.length;
+      shown += p > settle + 0.35 ? CT[i] : (i < PW.length && p < settle * 0.6 ? PW[i] : B64[Math.floor(r() * 64)]);
+    }
+    txt.style.color = "var(--arc-subtle-fg)";
+  } else txt.style.color = "";
+  if (t >= H.packetStart) { shown = "••••••••••••"; txt.style.color = "#596474"; txt.style.letterSpacing = ".16em"; }
+  else txt.style.letterSpacing = "";
+  txt.textContent = shown;
+  vis(caret, caretVis && caretOn(t) ? 1 : 0);
+  const pl = E.back(prog(t, H.packetStart, 0.4));
+  vis(lock, pl > 0 ? 1 : 0); lock.style.transform = `scale(${pl.toFixed(3)})`;
+  $("s4Pw").style.borderColor = t >= H.save ? `rgba(45,198,177,${(0.55 * (1 - prog(t, H.packetStart + 0.2, 0.6)) + 0.2).toFixed(3)})` : "";
+  // Save press
+  const press = prog(t, H.save, 0.16);
+  $("s4Save").style.transform = `scale(${(1 - 0.06 * Math.sin(Math.PI * press)).toFixed(4)})`;
+  $("s4Save").style.filter = press > 0 && press < 1 ? `brightness(${(1 + 0.25 * Math.sin(Math.PI * press)).toFixed(3)})` : "none";
+  apply($("s4Trust"), io(t, H.save + 0.05, out, { ...o, dy: 0, dx: -12, dIn: 0.4 }));
+
+  // packet flight: an arc over the boundary, landing on the "ct" line
+  const pk = $("s4Packet");
+  const fp = prog(t, H.packetStart, H.packetEnd - H.packetStart), fe = E.inOut(fp);
+  if (t >= H.packetStart && t < H.packetEnd + 0.12) {
+    const { x0, y0, x1, y1, cx, cy } = PKT;
+    const x = (1 - fe) ** 2 * x0 + 2 * (1 - fe) * fe * cx + fe ** 2 * x1;
+    const y = (1 - fe) ** 2 * y0 + 2 * (1 - fe) * fe * cy + fe ** 2 * y1;
+    const land = prog(t, H.packetEnd, 0.12);
+    pk.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) scale(${lerp(1, 0.8, land).toFixed(3)})`;
+    vis(pk, Math.min(1, fp * 8) * (1 - land));
+  } else vis(pk, 0);
+  // crossing pulse where the packet meets the boundary
+  const ring = $("s4BRing");
+  const cross = PKT ? PKT.crossT : 0.5, cp = prog(t, H.packetStart + cross * (H.packetEnd - H.packetStart), 0.55);
+  if (cp > 0 && cp < 1) {
+    ring.setAttribute("cy", (PKT.crossY - 196).toFixed(1));
+    ring.setAttribute("r", (lerp(8, 64, E.expo(cp))).toFixed(1));
+    ring.style.opacity = (0.9 * (1 - cp)).toFixed(3);
+  } else ring.style.opacity = "0";
+  bl.setAttribute("stroke", cp > 0 && cp < 1 ? rgb(mix([58, 67, 84], TEAL, 1 - cp)) : "#3A4354");
+
+  // server: skeleton → envelope
+  vis($("s4Skel"), 1 - prog(t, H.packetEnd - 0.1, 0.15));
+  for (let i = 0; i < 7; i++) apply($("j" + i), io(t, H.packetEnd + i * 0.035, null, { dy: 8, dIn: 0.35 }));
+  vis($("s4Json"), 1);
+  const hl = prog(t, H.packetEnd, 0.9);
+  $("s4Ct").style.background = hl > 0 && hl < 1 ? `rgba(45,198,177,${(0.3 * (1 - hl)).toFixed(3)})` : "transparent";
+  apply($("s4Badge"), io(t, H.badge, null, { dy: 12, dIn: 0.45 }));
+  apply($("cap4"), io(t, H.caption, out, { dIn: 0.5, dy: 22, blur: 8, outBlur: 6 }));
+}
+
+function sceneMachine(t) {
+  const M = TL.machine, t0 = TL.scenes.machine, out = TL.scenes.agents - 0.28;
+  const root = $("s5");
+  if (t < t0 - 0.1 || t > out + 0.4) { vis(root, 0); return; }
+  vis(root, 1);
+  const o = { dOut: 0.22, outDy: -16 };
+  apply($("s5Term"), io(t, t0 + 0.06, out, { ...o, dy: 34, dIn: 0.6 }));
+  apply($("s5Lease"), io(t, t0 + 0.16, out, { ...o, dy: 34, dIn: 0.6 }));
+  const n = Math.round(PATH5.length * clamp((t - M.typeStart) / (M.typeEnd - M.typeStart)));
+  $("s5Path").textContent = PATH5.slice(0, t < M.typeStart ? 0 : Math.max(1, n));
+  vis($("s5Caret"), t < M.lines[0] && caretOn(t) ? 1 : 0);
+  apply($("s5Status"), io(t, M.lines[0] - 0.04, null, { dy: 8, dIn: 0.35 }));
+  M.lines.forEach((tl, i) => document.querySelectorAll(".m" + i).forEach((el) => apply(el, io(t, tl, null, { dy: 10, dIn: 0.4 }))));
+  // the lease ring: fills when issued, then ticks in real time
+  const C = 2 * Math.PI * 120, rem = 3600 - Math.max(0, t - M.ring);
+  const fill = E.expo(prog(t, M.ring, 0.9)) * (rem / 3600);
+  const ring = $("s5Ring");
+  ring.setAttribute("stroke-dasharray", `${C.toFixed(2)} ${C.toFixed(2)}`);
+  ring.setAttribute("stroke-dashoffset", (C * (1 - fill)).toFixed(2));
+  ring.style.opacity = fill > 0.002 ? "1" : "0";
+  const secs = Math.ceil(rem), mm = Math.floor(secs / 60), ss = secs % 60;
+  $("s5Time").textContent = t < M.ring ? "—:—" : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  apply($("s5Btns"), io(t, M.ring + 0.25, null, { dy: 12, dIn: 0.45 }));
+  apply($("cap5"), io(t, M.caption, out, { dIn: 0.5, dy: 22, blur: 8, outBlur: 6 }));
+}
+
+function sceneAgents(t) {
+  const A = TL.agents, t0 = TL.scenes.agents, out = TL.transitions[3] - 0.3;
+  const root = $("s6");
+  if (t < t0 - 0.1 || t > out + 0.4) { vis(root, 0); return; }
+  vis(root, 1);
+  const o = { dOut: 0.25, outDy: -16 };
+  apply($("s6Head"), io(t, t0 + 0.05, out, { ...o, dy: 20, dIn: 0.55 }));
+  // signed intents chain in on the beat; each head becomes the next prev
+  A.intents.forEach((ti, i) => apply($("in" + i), io(t, ti, out, { ...o, dx: -34, dy: 0, dIn: 0.5 })));
+  for (const [id, ti] of [["s6Link1", A.intents[1]], ["s6Link2", A.intents[2]]]) {
+    const p = E.expo(prog(t, ti + 0.05, 0.4)), el = $(id);
+    el.setAttribute("stroke-dasharray", "28 28"); el.setAttribute("stroke-dashoffset", (28 * (1 - p)).toFixed(2));
+    el.style.opacity = (p > 0 ? 1 : 0) * (1 - E.in(prog(t, out, 0.25)));
+  }
+  apply($("s6HoldLbl"), io(t, t0 + 0.15, out, { ...o, dy: 10 }));
+  for (let i = 0; i < 4; i++) {
+    const row = $("hd" + i);
+    apply(row, io(t, t0 + 0.22 + i * 0.06, out, { ...o, dx: 30, dy: 0, dIn: 0.5 }));
+    const tc = A.cascade[i + 1], f = prog(t, tc, 0.18);
+    const [ok, bad] = row.querySelectorAll(".stat");
+    vis(ok, 1 - f); vis(bad, f);
+    bad.style.transform = `scale(${lerp(1.25, 1, E.expo(f)).toFixed(3)})`;
+    const s = row.querySelector("s"), w = row.querySelector(".what");
+    s.style.width = `${(E.expo(prog(t, tc, 0.3)) * w.querySelector(".tx").offsetWidth).toFixed(1)}px`;
+    w.style.color = f > 0 ? "var(--muted)" : "";
+    const flash = prog(t, tc, 0.5);
+    row.style.borderColor = flash > 0 ? `rgba(242,100,100,${(0.9 * (1 - flash) + 0.3).toFixed(3)})` : "";
+    row.style.background = flash > 0 && flash < 1 ? `rgba(242,100,100,${(0.12 * (1 - flash)).toFixed(3)})` : "";
+  }
+  const fs = prog(t, A.cascade[0], 0.18);
+  vis($("s6Open"), 1 - fs); vis($("s6Closed"), fs);
+  $("s6Closed").style.transform = `scale(${lerp(1.25, 1, E.expo(fs)).toFixed(3)})`;
+  // the owner closes the task
+  apply($("s6Cmd"), io(t, A.command - 0.1, out, { ...o, dy: 14, dIn: 0.4 }));
+  const n = Math.round(CMD6.length * clamp((t - A.command) / 0.5));
+  $("s6CmdText").textContent = CMD6.slice(0, t < A.command ? 0 : Math.max(1, n));
+  vis($("s6Caret"), t < A.click && caretOn(t) ? 1 : 0);
+  const kp = prog(t, A.click, 0.2);
+  const kbd = $("s6Kbd");
+  kbd.style.transform = `translateY(${(3 * Math.sin(Math.PI * kp)).toFixed(2)}px)`;
+  kbd.style.background = kp > 0 ? `rgba(45,198,177,${(0.35 * (1 - prog(t, A.click, 0.6))).toFixed(3)})` : "";
+  kbd.style.color = kp > 0 && kp < 1 ? "var(--arc)" : "";
+  const sw = prog(t, A.click, 0.45);
+  const swe = $("s6Sweep");
+  vis(swe, sw > 0 && sw < 1 ? 1 - sw : 0);
+  swe.style.transform = `translateX(${lerp(-100, 100, E.quart(sw)).toFixed(1)}%)`;
+  apply($("cap6a"), io(t, A.caption1, A.click - 0.1, { dIn: 0.5, dy: 22, blur: 8, outBlur: 6, dOut: 0.18 }));
+  apply($("cap6b"), io(t, A.caption2, out, { dIn: 0.45, dy: 22, blur: 8, outBlur: 6, dOut: 0.25 }));
+}
+
+function sceneOutro(t) {
+  const O = TL.outro;
+  apply($("tagline"), io(t, O.tagline, null, { dIn: 0.6, dy: 18, blur: 8 }));
+  apply($("url"), io(t, O.url, null, { dIn: 0.55, dy: 16, blur: 6 }));
+}
+
+function render(t) {
+  background(t);
+  sceneHook(t);
+  sceneReveal(t);
+  header(t);
+  sceneHuman(t);
+  sceneMachine(t);
+  sceneAgents(t);
+  sceneOutro(t);
+  renderHoney(t);
+  wordmarkState(t);
+}
+
+// ---------- init ----------
+let TL = null;
+async function init() {
+  TL = window.__TIMELINE__ || (await (await fetch("timeline.json")).json());
+  const faces = ['500 40px "Space Grotesk"', '600 40px "Space Grotesk"', '700 40px "Space Grotesk"', '400 20px "IBM Plex Sans"',
+    '500 20px "IBM Plex Sans"', '600 20px "IBM Plex Sans"', '400 20px "Geist Mono"', '500 20px "Geist Mono"', '600 20px "Geist Mono"'];
+  await Promise.all(faces.map((f) => document.fonts.load(f, "arc Aa0•…—›")));
+  await document.fonts.ready;
+
+  HONEY = window.__HONEY__ || (await (await fetch("honeycomb.json")).json());
+  buildHoney();
+  const xs = HONEY.cells.map((c) => c[0]);
+  const left = HONEY.cells.filter((c) => c[0] < 50), right = HONEY.cells.filter((c) => c[0] > 50);
+  HONEY.midL = (Math.min(...left.map((c) => c[0])) + 50) / 2;
+  HONEY.midR = (Math.max(...right.map((c) => c[0])) + 50) / 2;
+  HONEY.bottom = Math.max(...HONEY.cells.map((c) => c[1] + c[2]));
+  HONEY.halfW = Math.max(...xs.map((x) => Math.abs(x - 50))) + 2.4; // visual half-width, viewBox units
+
+  // lockups (honeycomb + wordmark), measured with the real font; the mark's centre sits on the
+  // x-height centre of "arc", like the console nav rail
+  const wm = $("wm");
+  const cv = document.createElement("canvas").getContext("2d");
+  const xh = (size) => { cv.font = `600 ${size}px "Space Grotesk"`; return cv.measureText("x").actualBoundingBoxAscent; };
+  const widthAt = (size) => { wm.setAttribute("font-size", size); return wm.getComputedTextLength(); };
+  const lockup = (k, size, cy, gap) => {
+    const markW = 2 * HONEY.halfW * k, W = widthAt(size), x0 = 960 - (markW + gap + W) / 2;
+    return { g: { cx: x0 + markW / 2, cy, k }, wm: { x: x0 + markW + gap, y: cy + xh(size) / 2, size, w: W } };
+  };
+  const rv = lockup(2.75, 220, 410, 64), ou = lockup(3.2, 256, 380, 72);
+  GEO.reveal = rv.g; WM.reveal = rv.wm; GEO.outro = ou.g; WM.outro = ou.wm;
+  GEO.header = { cx: 138, cy: 106, k: 0.54 };
+  WM.header = { x: 96 + 84 + 24, y: 106 + xh(46) / 2, size: 46 };
+  const hw = widthAt(46);
+  const divX = WM.header.x + hw + 26;
+  $("hdrDivider").style.left = `${divX}px`;
+  for (const id of ["chHuman", "chMachine", "chAgents"]) $(id).style.left = `${divX + 26}px`;
+
+  // packet flight: from the password field to the "ct" value, arcing over the boundary
+  const r0 = $("s4Pw").getBoundingClientRect(), r1 = $("s4Ct").getBoundingClientRect();
+  const x0 = r0.right - 190, y0 = r0.top + r0.height / 2, x1 = r1.left + r1.width / 2, y1 = r1.top + r1.height / 2;
+  const cx = 960, cy = Math.min(y0, y1) - 330;
+  // where the quadratic crosses x = 960 (the boundary)
+  let crossT = 0.5; for (let i = 0; i < 40; i++) { const u = crossT; const x = (1 - u) ** 2 * x0 + 2 * (1 - u) * u * cx + u ** 2 * x1; crossT += (960 - x) / 2000; }
+  const eased = crossT, crossY = (1 - eased) ** 2 * y0 + 2 * (1 - eased) * eased * cy + eased ** 2 * y1;
+  // convert the bezier parameter back to time through the in-out easing
+  let tt = 0.5; for (let lo = 0, hi = 1, i = 0; i < 40; i++) { tt = (lo + hi) / 2; if (E.inOut(tt) < eased) lo = tt; else hi = tt; }
+  PKT = { x0, y0, x1, y1, cx, cy, crossT: tt, crossY };
+
+  render(0);
+  window.__ready = true;
+}
+window.__render = (t) => { render(t); return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); };
+window.__init = init();
+</script>
+</body>
+</html>

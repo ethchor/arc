@@ -1,0 +1,1 @@
+Secrets managers and password managers are two products. arc is one — infrastructure credentials and an end-to-end-encrypted vault under one identity, one policy, one audit trail, with every agent action signed and revocable in one shot. Self-hostable, zero-knowledge, open source: github.com/ethchor/arc
