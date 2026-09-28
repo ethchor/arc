@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Github, Lock } from "lucide-react";
+import { Github } from "lucide-react";
+import { HoneycombMark } from "@/components/brand/honeycomb-mark";
 import { DocsSidebar } from "./components/docs-sidebar";
 
 export const metadata = {
@@ -15,8 +16,10 @@ export default function DocsLayout({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 items-center justify-between">
           <Link href="/docs" className="flex items-center gap-2 font-semibold tracking-tight">
-            <Lock className="h-4 w-4 text-primary" />
-            arc <span className="text-muted-foreground">/ docs</span>
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/15 text-primary ring-1 ring-primary/25">
+              <HoneycombMark className="h-[18px] w-[18px]" />
+            </span>
+            <span className="font-display">arc</span> <span className="text-muted-foreground">/ docs</span>
           </Link>
           <div className="flex items-center gap-3 text-sm">
             <Link

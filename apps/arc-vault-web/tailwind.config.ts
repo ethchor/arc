@@ -15,6 +15,20 @@ const config: Config = {
         display: ["var(--font-display, var(--font-sans, ui-sans-serif))", "system-ui", "sans-serif"],
         mono: ["var(--font-geist-mono, ui-monospace)", "SFMono-Regular", "monospace"],
       },
+      // Type scale mapped to Apple's text styles (docs/18 §3.2). Sizes switch between the
+      // regular (pointer) and compact (touch) values via CSS vars in globals.css.
+      fontSize: {
+        "large-title": ["var(--text-large-title)", { lineHeight: "var(--leading-large-title)", fontWeight: "700" }],
+        "title-1": ["var(--text-title-1)", { lineHeight: "var(--leading-title-1)" }],
+        "title-2": ["var(--text-title-2)", { lineHeight: "var(--leading-title-2)" }],
+        "title-3": ["var(--text-title-3)", { lineHeight: "var(--leading-title-3)", fontWeight: "600" }],
+        headline: ["var(--text-headline)", { lineHeight: "var(--leading-headline)", fontWeight: "600" }],
+        body: ["var(--text-body)", { lineHeight: "var(--leading-body)" }],
+        callout: ["var(--text-callout)", { lineHeight: "var(--leading-callout)" }],
+        subhead: ["var(--text-subhead)", { lineHeight: "var(--leading-subhead)" }],
+        footnote: ["var(--text-footnote)", { lineHeight: "var(--leading-footnote)" }],
+        caption: ["var(--text-caption)", { lineHeight: "var(--leading-caption)" }],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

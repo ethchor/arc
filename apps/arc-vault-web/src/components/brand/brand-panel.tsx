@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import type { ComponentType, CSSProperties } from "react";
 import { Bot, ShieldCheck, Zap } from "lucide-react";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
 
@@ -27,7 +27,12 @@ const HONEYCOMB_MASK = {
 
 export function BrandPanel({ variant = "enroll" }: { variant?: "enroll" | "unlock" }) {
   return (
-    <aside className="arc-grid-bg relative hidden flex-col justify-center overflow-hidden bg-[#0C0F16] p-10 text-[#E9ECF1] md:flex lg:p-14">
+    <aside
+      className="arc-grid-bg relative hidden flex-col justify-center overflow-hidden bg-[#0C0F16] p-10 text-[#E9ECF1] md:flex lg:p-14"
+      // The panel is always dark, so its grid uses the dark hairline (#29303D) in every theme —
+      // otherwise the light theme's --border draws bright lines straight through the copy.
+      style={{ "--border": "219 20% 20%" } as CSSProperties}
+    >
       <div
         className="pointer-events-none absolute inset-0 opacity-90"
         style={{

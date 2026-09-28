@@ -54,19 +54,20 @@ const DialogContent = React.forwardRef<
         // enter-translate variables to exactly -50%, matching the resting
         // transform, so no slide effect remains (only zoom + fade). The earlier
         // `-0` value zeroed those vars and produced the visible corner-slide.
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200",
+        // Liquid Glass sheet (docs/18 §4.4): the strong fill over the blurred scrim; inset from the
+        // viewport edge on small screens with the DS 22px corner.
+        "glass glass-strong fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2*var(--glass-inset))] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-[var(--radius-2xl)] p-6 duration-200",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
         "data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
         "data-[state=open]:slide-in-from-left-[50%] data-[state=open]:slide-in-from-top-[50%]",
         "data-[state=closed]:slide-out-to-left-[50%] data-[state=closed]:slide-out-to-top-[50%]",
-        "sm:rounded-lg",
         className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+      <DialogPrimitive.Close className="absolute right-3.5 top-3.5 flex h-8 w-8 items-center justify-center rounded-full opacity-70 hover:bg-foreground/[0.07] ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
         <X className="h-4 w-4" />
         <span className="sr-only">Close</span>
       </DialogPrimitive.Close>

@@ -38,6 +38,7 @@ shipped code.
 | 15 | [`15-testing-review-and-operations.md`](15-testing-review-and-operations.md) | Crypto testing/review, KAT vectors, ops hardening, production checklist. |
 | 16 | [`16-roadmap-and-migration.md`](16-roadmap-and-migration.md) | Unified consumer + developer roadmap, v1→v2 migration. |
 | 17 | [`17-free-tier-deployment.md`](17-free-tier-deployment.md) | Running the whole stack production-like on free infrastructure. |
+| 18 | [`18-apple-hig-liquid-glass.md`](18-apple-hig-liquid-glass.md) | Apple HIG (2026) and Liquid Glass adoption plan for the web app: web implementation, per-component plan, phased rollout, and a disposition for every HIG page. |
 | — | [`production-hardening.md`](production-hardening.md) | **Operational** env-var contract + boot-time fail-closed gates for non-dev deploys. Pairs with §15.6 (crypto correctness). |
 | — | [`manual-testing/`](manual-testing/README.md) | Step-by-step QA playbook; per-feature checklist for release validation. |
 | — | [`launch-video/`](launch-video/README.md) | The 22-second launch film: storyboard, claims check, and the source to re-render it. |

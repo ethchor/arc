@@ -30,7 +30,7 @@ export function SettingsDialog({
   return (
     <Dialog>
       <TipTrigger tip={{ label: "Settings", hint: "Auto-lock timer, passkeys & account — stored on this device." }}>
-        <Button variant="outline" size="icon" aria-label="Settings">
+        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" aria-label="Settings">
           <Settings className="h-4 w-4" />
         </Button>
       </TipTrigger>

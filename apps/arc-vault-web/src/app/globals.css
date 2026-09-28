@@ -5,7 +5,7 @@
 /*
  * Design tokens
  *
- * We keep the existing shadcn HSL ramp so the swappable theme presets keep working,
+ * We keep the shadcn HSL ramp (the component slots consume hsl(var(--x))),
  * and layer motion + spacing + typography tokens on top. Every easing and duration
  * here is curated per Emil Kowalski's framework: ease-out for entering/exiting UI,
  * ease-in-out for on-screen movement, durations short enough that interaction never
@@ -122,89 +122,6 @@
     --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.40);
   }
 
-  /* --- theme presets: alternate accent families. Default (above) is violet. --- */
-
-  [data-theme="slate"] {
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-  }
-  [data-theme="slate"].dark {
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-  }
-
-  [data-theme="rose"] {
-    --primary: 346.8 77.2% 49.8%;
-    --primary-foreground: 355.7 100% 97.3%;
-    --ring: 346.8 77.2% 49.8%;
-  }
-  [data-theme="rose"].dark {
-    --primary: 346.8 77.2% 49.8%;
-    --primary-foreground: 355.7 100% 97.3%;
-    --ring: 346.8 77.2% 49.8%;
-  }
-
-  [data-theme="blue"] {
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --ring: 221.2 83.2% 53.3%;
-  }
-  [data-theme="blue"].dark {
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --ring: 224.3 76.3% 48%;
-  }
-
-  [data-theme="emerald"] {
-    --primary: 142.1 76.2% 36.3%;
-    --primary-foreground: 355.7 100% 97.3%;
-    --ring: 142.1 76.2% 36.3%;
-  }
-  [data-theme="emerald"].dark {
-    --primary: 142.1 70.6% 45.3%;
-    --primary-foreground: 144.9 80.4% 10%;
-    --ring: 142.4 71.8% 29.2%;
-  }
-
-  [data-theme="violet"] {
-    --primary: 263.4 70% 50%;
-    --primary-foreground: 210 20% 98%;
-    --ring: 263.4 70% 50%;
-  }
-  [data-theme="violet"].dark {
-    --primary: 263.4 70% 60%;
-    --primary-foreground: 210 20% 98%;
-    --ring: 263.4 70% 60%;
-  }
-
-  [data-theme="amber"] {
-    --primary: 24.6 95% 53.1%;
-    --primary-foreground: 60 9.1% 97.8%;
-    --ring: 24.6 95% 53.1%;
-  }
-  [data-theme="amber"].dark {
-    --primary: 20.5 90.2% 48.2%;
-    --primary-foreground: 60 9.1% 97.8%;
-    --ring: 20.5 90.2% 48.2%;
-  }
 }
 
 @layer base {
@@ -366,6 +283,165 @@
     --sec-masked: #59647480;
     --sec-zk: #57DBC7;
   }
+}
+
+/*
+ * Liquid Glass (docs/18 §2). Apple's rule: glass is the FUNCTIONAL layer only (sidebar, toolbar,
+ * tab bar, menus, popovers, sheets, toasts) and never content. On the web there is no system
+ * material, so these tokens approximate it: a translucent theme-aware fill, backdrop blur +
+ * saturation, a specular top rim and a hairline edge. `-strong` is for large surfaces (sidebar,
+ * sheets), which Apple renders more opaque to keep dense content legible.
+ */
+@layer base {
+  :root {
+    --glass-fill: rgb(255 255 255 / 0.56);
+    --glass-fill-strong: rgb(255 255 255 / 0.8);
+    --glass-rim: rgb(255 255 255 / 0.7);
+    --glass-edge: rgb(20 24 33 / 0.1);
+    --glass-shadow: 0 8px 32px rgb(20 24 33 / 0.12), 0 1px 3px rgb(20 24 33 / 0.06);
+    --glass-blur: 22px;
+    --glass-saturate: 170%;
+    --glass-dim: rgb(0 0 0 / 0.35); /* HIG: dim bright content under clear glass */
+    --glass-inset: 8px; /* gap between floating chrome and the viewport edge */
+
+    /* Type scale (docs/18 §3.2). Regular = pointer/desktop; compact values below. rem-based so
+       browser and OS text size scale it. */
+    --text-large-title: 1.625rem; --leading-large-title: 2rem;
+    --text-title-1: 1.375rem;     --leading-title-1: 1.625rem;
+    --text-title-2: 1.0625rem;    --leading-title-2: 1.375rem;
+    --text-title-3: 0.9375rem;    --leading-title-3: 1.25rem;
+    --text-headline: 0.875rem;    --leading-headline: 1.25rem;
+    --text-body: 0.875rem;        --leading-body: 1.25rem;
+    --text-callout: 0.8125rem;    --leading-callout: 1.125rem;
+    --text-subhead: 0.75rem;      --leading-subhead: 1rem;
+    --text-footnote: 0.6875rem;   --leading-footnote: 0.875rem;
+    --text-caption: 0.6875rem;    --leading-caption: 0.875rem;
+  }
+  .dark {
+    --glass-fill: rgb(20 24 33 / 0.58);
+    --glass-fill-strong: rgb(20 24 33 / 0.82);
+    --glass-rim: rgb(255 255 255 / 0.14);
+    --glass-edge: rgb(0 0 0 / 0.55);
+    --glass-shadow: 0 14px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.03);
+  }
+
+  /* Compact (touch) sizes follow the iOS text styles at the default Large size. */
+  @media (pointer: coarse) {
+    :root {
+      --text-large-title: 2.125rem; --leading-large-title: 2.5625rem;
+      --text-title-1: 1.75rem;      --leading-title-1: 2.125rem;
+      --text-title-2: 1.375rem;     --leading-title-2: 1.75rem;
+      --text-title-3: 1.25rem;      --leading-title-3: 1.5625rem;
+      --text-headline: 1.0625rem;   --leading-headline: 1.375rem;
+      --text-body: 1.0625rem;       --leading-body: 1.375rem;
+      --text-callout: 1rem;         --leading-callout: 1.3125rem;
+      --text-subhead: 0.9375rem;    --leading-subhead: 1.25rem;
+      --text-footnote: 0.8125rem;   --leading-footnote: 1.125rem;
+      --text-caption: 0.75rem;      --leading-caption: 1rem;
+    }
+  }
+
+  /* Increased contrast (Color / Dark Mode / Adopting Liquid Glass: every color needs an
+     increased-contrast variant). Stronger hairlines and secondary text in both appearances. */
+  @media (prefers-contrast: more) {
+    :root {
+      --border: 218 14% 62%;
+      --input: 218 14% 62%;
+      --muted-foreground: 216 16% 32%;
+      --content-secondary: #333C4A;
+      --content-muted: #4C5666;
+    }
+    .dark {
+      --border: 219 14% 46%;
+      --input: 219 14% 46%;
+      --muted-foreground: 218 18% 78%;
+      --content-secondary: #C9D0DA;
+      --content-muted: #AAB3C0;
+    }
+  }
+
+  /* iOS Safari Dynamic Type: -apple-system-body sets the root size from the person's text-size
+     setting, so every rem in the app follows it. Touch devices only (macOS has no Dynamic Type). */
+  @supports (font: -apple-system-body) {
+    @media (pointer: coarse) {
+      html {
+        font: -apple-system-body;
+        font-family: var(--font-sans, ui-sans-serif), system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+    }
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+}
+
+@layer components {
+  .glass {
+    background: var(--glass-fill);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid var(--glass-edge);
+    box-shadow: inset 0 1px 0 var(--glass-rim), var(--glass-shadow);
+  }
+  .glass-strong {
+    background: var(--glass-fill-strong);
+  }
+  /* The single primary action per view: the accent tints the glass BACKGROUND, never labels. */
+  .glass-prominent {
+    background: color-mix(in oklab, hsl(var(--primary)) 90%, transparent);
+    color: hsl(var(--primary-foreground));
+    border-color: color-mix(in oklab, hsl(var(--primary)) 60%, transparent);
+  }
+  /* Scroll edge effect: a soft blurred fade that keeps floating controls distinct from the
+     content scrolling beneath them. Not decoration — only under floating bars. */
+  .scroll-edge {
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    background: linear-gradient(to bottom, hsl(var(--background) / 0.72), hsl(var(--background) / 0));
+    -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+    mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  }
+}
+
+/* Glass fallbacks: no backdrop-filter support, Reduce Transparency, Increase Contrast, and the
+   in-app "Reduce transparency" switch (data-glass="off", which is also the rollout kill switch). */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--glass-fill-strong); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass, .scroll-edge { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .glass { background: hsl(var(--popover)); }
+  .scroll-edge { background: hsl(var(--background)); -webkit-mask-image: none; mask-image: none; }
+}
+html[data-glass="off"] .glass, html[data-glass="off"] .scroll-edge {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+html[data-glass="off"] .glass { background: hsl(var(--popover)); }
+html[data-glass="off"] .glass-prominent { background: hsl(var(--primary)); }
+html[data-glass="off"] .scroll-edge { background: hsl(var(--background)); -webkit-mask-image: none; mask-image: none; }
+/* Sonner toasts read their surface from --normal-bg (set to the strong glass fill on the
+   toaster); these add the blur and make them opaque wherever glass is off. */
+[data-sonner-toast].glass-toast {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+html[data-glass="off"] [data-sonner-toaster] { --normal-bg: hsl(var(--popover)) !important; }
+html[data-glass="off"] [data-sonner-toast].glass-toast { -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (prefers-reduced-transparency: reduce) {
+  [data-sonner-toaster] { --normal-bg: hsl(var(--popover)) !important; }
+  [data-sonner-toast].glass-toast { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  .glass {
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    background: hsl(var(--popover));
+    border-color: hsl(var(--foreground) / 0.45);
+    box-shadow: none;
+  }
+  .glass-prominent { background: hsl(var(--primary)); }
+  [data-sonner-toaster] { --normal-bg: hsl(var(--popover)) !important; }
+  [data-sonner-toast].glass-toast { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 /*

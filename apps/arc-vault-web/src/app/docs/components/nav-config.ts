@@ -42,6 +42,10 @@ export const docsNav: DocsNavSection[] = [
       { label: "API surface", href: "/docs/reference/api" },
     ],
   },
+  {
+    label: "Design",
+    items: [{ label: "Materials", href: "/docs/design/materials", badge: "glass" }],
+  },
 ];
 
 /** Flat list (for prev / next widgets). */

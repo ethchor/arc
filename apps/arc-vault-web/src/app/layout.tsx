@@ -6,6 +6,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { GLASS_BOOTSTRAP } from "@/lib/glass";
 import { cn } from "@/lib/utils";
 
 // arc design system type system:
@@ -72,6 +73,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       suppressHydrationWarning
       className={cn(ibmPlexSans.variable, spaceGrotesk.variable, GeistMono.variable)}
     >
+      <head>
+        {/* Before first paint: honor a saved "Reduce Transparency" choice (docs/18 §2.4). */}
+        <script dangerouslySetInnerHTML={{ __html: GLASS_BOOTSTRAP }} />
+      </head>
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {/* One provider at the root drives every tooltip. 200ms feels responsive without
