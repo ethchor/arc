@@ -137,12 +137,14 @@ export function VaultApp() {
     setActiveItem(null);
     setFolderFilter(null);
     const { items } = await getClient().pull(id, 0);
-    setItems(items.filter((i) => !i.deleted));
+    const live = items.filter((i) => !i.deleted);
+    setItems(live);
     try {
       setFolders(await getClient().listFolders(id));
     } catch {
       setFolders([]);
     }
+    return live;
   };
 
   const loadVaults = async () => {
@@ -327,9 +329,11 @@ export function VaultApp() {
       toast.success("Deleted");
     });
 
-  // Per-item "More actions". Move re-saves the item under a new folderId (an update, so it
+  // Per-item "More Actions". Move re-saves the item under a new folderId (an update, so it
   // keeps its id + history); Duplicate re-saves the decrypted data as a brand-new item.
-  const moveItem = (item: PulledItem, folderId: string | null) =>
+  // Moving is reversible, so its toast offers Undo rather than asking first (HIG: prefer
+  // undo to confirmation for actions people can take back). Undo is itself a move.
+  const moveItem = (item: PulledItem, folderId: string | null, isUndo = false) =>
     guard(async () => {
       if (!selected || item.data == null) return;
       const type = (item.data as { type?: string }).type;
@@ -339,9 +343,20 @@ export function VaultApp() {
         type,
         folderId,
       });
-      await openVault(selected);
+      const live = await openVault(selected);
       setActiveItem(item.id);
-      toast.success("Moved");
+      const from = item.folderId ?? null;
+      const folderName = (id: string | null) => folders.find((f) => f.id === id)?.name;
+      const moved = live.find((i) => i.id === item.id);
+      const message = folderId
+        ? `Moved to “${folderName(folderId) ?? "folder"}”`
+        : `Removed from “${folderName(from) ?? "folder"}”`;
+      toast.success(
+        message,
+        isUndo || !moved
+          ? undefined
+          : { action: { label: "Undo", onClick: () => void moveItem(moved, from, true) } },
+      );
     });
 
   const duplicateItem = (item: PulledItem) =>
@@ -672,7 +687,7 @@ export function VaultApp() {
                   )}
                   {canManage && (
                     <Button variant="outline" size="sm" onClick={rotateVaultKey} disabled={busy}>
-                      <RotateCw className="h-4 w-4" /> Rotate key
+                      <RotateCw className="h-4 w-4" /> Rotate Key
                     </Button>
                   )}
                 </>
@@ -719,8 +734,8 @@ export function VaultApp() {
           <DialogHeader>
             <DialogTitle>Delete this item?</DialogTitle>
             <DialogDescription>
-              This removes &quot;{activeTitle}&quot; from the vault. It is soft-deleted and
-              syncs to your other devices.
+              &ldquo;{activeTitle}&rdquo;, its version history and its attachments are erased
+              from the vault on every device. This can&apos;t be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

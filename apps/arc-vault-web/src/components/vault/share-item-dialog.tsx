@@ -5,6 +5,7 @@ import { Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -14,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
+import { useControllableOpen } from "@/lib/use-controllable-open";
 import type { IdentityLookup } from "@/components/vault/share-dialog";
 
 type Permission = "view" | "edit";
@@ -38,13 +40,18 @@ export function ShareItemDialog({
   onShare,
   trigger,
   tooltip,
+  open: openProp,
+  onOpenChange,
 }: {
   onLookup: (email: string) => Promise<IdentityLookup>;
   onShare: (userId: number, permission: Permission, expiresAtMs?: number) => Promise<void>;
   trigger: React.ReactNode;
   tooltip?: TipProps;
+  /** Controlled open state, for opening the dialog from elsewhere (a row's context menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useControllableOpen(openProp, onOpenChange);
   const [email, setEmail] = React.useState("");
   const [permission, setPermission] = React.useState<Permission>("view");
   const [expiryDays, setExpiryDays] = React.useState(0);
@@ -101,7 +108,7 @@ export function ShareItemDialog({
       <TipTrigger tip={tooltip}>{trigger}</TipTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Share this item</DialogTitle>
+          <DialogTitle>Share This Item</DialogTitle>
           <DialogDescription>
             Shares only this one item — the recipient never gets the vault key. The item key is
             wrapped to their identity in your browser; the server only relays ciphertext.
@@ -192,13 +199,16 @@ export function ShareItemDialog({
         </div>
 
         <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button onClick={share} disabled={busy || !found}>
             {busy && found ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" /> Sharing…
               </>
             ) : (
-              "Share item"
+              "Share Item"
             )}
           </Button>
         </DialogFooter>

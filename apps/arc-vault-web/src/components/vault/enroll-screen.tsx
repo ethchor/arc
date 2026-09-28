@@ -149,7 +149,7 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
                   <Button size="lg" type="submit" className="mt-1 w-full" disabled={busy || submitted || !password}>
                     {submitted ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin" /> Creating vault
+                        <Loader2 className="h-4 w-4 animate-spin" /> Creating Vault
                       </>
                     ) : (
                       <>
@@ -213,7 +213,7 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
                   </label>
 
                   <Button size="lg" className="w-full" disabled={!saved} onClick={() => setStep("done")}>
-                    Confirm &amp; finish <Check className="h-4 w-4" />
+                    Confirm &amp; Finish <Check className="h-4 w-4" />
                   </Button>
                 </div>
               ) : (
@@ -246,7 +246,7 @@ export function EnrollScreen({ busy, recoveryKey, onEnroll, onComplete, onBack }
                   <Button size="lg" className="mt-1 w-full" disabled={busy} onClick={onComplete}>
                     {busy ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin" /> Opening vault
+                        <Loader2 className="h-4 w-4 animate-spin" /> Opening Vault
                       </>
                     ) : (
                       <>

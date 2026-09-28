@@ -102,7 +102,7 @@ export function AccessView({
                             disabled={revoking === m.userId}
                             onClick={() => doRevoke(m.userId)}
                           >
-                            {revoking === m.userId ? "Revoking…" : "Confirm revoke"}
+                            {revoking === m.userId ? "Revoking…" : "Confirm Revoke"}
                           </Button>
                           <Button
                             size="sm"

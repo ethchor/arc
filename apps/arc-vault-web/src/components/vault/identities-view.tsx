@@ -107,7 +107,7 @@ export function IdentitiesView({ load, update }: IdentitiesViewProps) {
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h2 className="text-lg font-semibold">Non-human identities</h2>
+        <h2 className="text-lg font-semibold">Non-Human Identities</h2>
         <p className="text-sm text-muted-foreground">
           Agents and machine principals acting under your authority.
         </p>
@@ -237,11 +237,11 @@ function AgentRow({
               <Button size="sm" variant="outline" onClick={onToggleAutonomy} disabled={pending}>
                 {agent.autonomousAllowed ? (
                   <>
-                    <XCircle className="h-3.5 w-3.5" /> Disable autonomy
+                    <XCircle className="h-3.5 w-3.5" /> Disable Autonomy
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Enable autonomy
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Enable Autonomy
                   </>
                 )}
               </Button>

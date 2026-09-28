@@ -650,7 +650,8 @@ export class VaultService {
         item.wrappedItemKey = dto.wrappedItemKey;
         item.vaultKeyVersion = dto.vaultKeyVersion;
         item.type = dto.type ?? item.type;
-        item.folderId = dto.folderId ?? item.folderId;
+        // `null` is an explicit move out of the folder, so only an absent field keeps it.
+        item.folderId = dto.folderId === undefined ? item.folderId : dto.folderId;
         item.signature = dto.signature ?? null;
         item.version += 1;
         item.seq = vault.seqCounter;

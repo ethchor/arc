@@ -4,9 +4,12 @@ import * as React from "react";
 import {
   ChevronDown,
   Copy,
+  CopyPlus,
   ExternalLink,
   FileText,
   Folder,
+  FolderInput,
+  FolderOutput,
   FolderPlus,
   History,
   KeyRound,
@@ -21,10 +24,21 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { totpCode } from "@arc/crypto";
 import type { ItemVersion, PulledItem, VaultFolder, VaultSummary, VaultType } from "@arc/sdk";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +69,7 @@ import { TotpDialog, type TotpInput } from "@/components/vault/totp-dialog";
 import type { TotpData } from "@/lib/items";
 import { asLogin, asNote, asSecret, asTotp, itemSubtitle, itemTitle } from "@/lib/items";
 import { isWeakPassword } from "@/lib/security";
+import { copyText } from "@/lib/clipboard";
 import { relativeAgo } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
@@ -106,7 +121,7 @@ export interface VaultViewProps {
     granteeUserId: number,
     opts: { permission: "view" | "edit"; expiresAtMs?: number },
   ) => Promise<void>;
-  /** Move an item to a folder (per-item "More actions"). Omit to keep the menu disabled. */
+  /** Move an item to a folder (per-item "More Actions"). Omit to keep the menu disabled. */
   onMoveItem?: (item: PulledItem, folderId: string | null) => Promise<void>;
   /** Duplicate an item into the same folder. */
   onDuplicateItem?: (item: PulledItem) => Promise<void>;
@@ -187,19 +202,41 @@ function MasterDetail(props: VaultViewProps) {
   // container. The rail's `md:border-r` is the only divider.
   const containerRef = React.useRef<HTMLDivElement>(null);
   const foldWidth = useFoldAlignedWidth(containerRef);
+  // The open item dialog (Edit, Share or Version History). It lives here rather than in the
+  // detail pane so a row's context menu can open the same dialogs as the pane's buttons.
+  const [dialog, setDialog] = React.useState<{ id: string; kind: ItemDialogKind } | null>(null);
+  const dialogState: DialogState = (item, kind) => ({
+    open: dialog?.id === item.id && dialog.kind === kind,
+    onOpenChange: (open) => setDialog(open ? { id: item.id, kind } : null),
+  });
+  const openDialog = (item: PulledItem, kind: ItemDialogKind) => {
+    props.onSelectItem(item.id);
+    setDialog({ id: item.id, kind });
+  };
   return (
     <div ref={containerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--surface-base)] md:flex-row">
-      <ItemList {...props} foldWidth={foldWidth} />
-      <DetailPane {...props} />
+      <ItemList {...props} foldWidth={foldWidth} onOpenDialog={openDialog} />
+      <DetailPane {...props} dialogState={dialogState} />
     </div>
   );
 }
+
+type ItemDialogKind = "edit" | "share" | "history";
+type DialogState = (
+  item: PulledItem,
+  kind: ItemDialogKind,
+) => { open: boolean; onOpenChange: (open: boolean) => void };
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Left rail: vault switcher + search + folder chips + item list
 // ────────────────────────────────────────────────────────────────────────────────
 
-function ItemList(props: VaultViewProps & { foldWidth?: number }) {
+function ItemList(
+  props: VaultViewProps & {
+    foldWidth?: number;
+    onOpenDialog: (item: PulledItem, kind: ItemDialogKind) => void;
+  },
+) {
   const {
     vaults,
     selected,
@@ -244,7 +281,7 @@ function ItemList(props: VaultViewProps & { foldWidth?: number }) {
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder={items.length ? `Search ${items.length} items…` : "Search items…"}
+            placeholder={items.length ? `Search ${items.length} ${items.length === 1 ? "item" : "items"}…` : "Search items…"}
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             className="h-9 pl-8 text-sm"
@@ -277,20 +314,34 @@ function ItemList(props: VaultViewProps & { foldWidth?: number }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
         {filtered.length === 0 ? (
-          <p className="px-3 py-10 text-center text-sm text-muted-foreground">
-            {items.length === 0
-              ? "No items yet. Add a login, TOTP, note, or secret."
-              : "No matches."}
-          </p>
+          <ListEmpty
+            hasItems={items.length > 0}
+            query={query}
+            folderName={folders.find((f) => f.id === folderFilter)?.name}
+          />
         ) : (
           <ul className="space-y-0.5">
             {filtered.map((item) => (
               <li key={item.id}>
-                <ItemRow
+                <ItemContextMenu
                   item={item}
-                  active={activeItem === item.id}
-                  onSelect={() => onSelectItem(item.id)}
-                />
+                  folders={folders}
+                  onOpenDialog={props.onOpenDialog}
+                  canShare={Boolean(props.onShareItem)}
+                  canViewHistory={Boolean(props.onListVersions && props.onRestoreVersion)}
+                  onDuplicateItem={props.onDuplicateItem}
+                  onMoveItem={props.onMoveItem}
+                  onDelete={() => {
+                    onSelectItem(item.id);
+                    props.onRequestDelete();
+                  }}
+                >
+                  <ItemRow
+                    item={item}
+                    active={activeItem === item.id}
+                    onSelect={() => onSelectItem(item.id)}
+                  />
+                </ItemContextMenu>
               </li>
             ))}
           </ul>
@@ -342,7 +393,7 @@ function VaultSwitcher({
           align="start"
           className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[260px] overflow-hidden p-0"
         >
-          <DropdownMenuLabel>Open a vault</DropdownMenuLabel>
+          <DropdownMenuLabel>Open a Vault</DropdownMenuLabel>
           <div className="max-h-[40vh] overflow-y-auto px-1 pb-1">
             {vaults.map((v) => (
               <DropdownMenuItem
@@ -367,7 +418,7 @@ function VaultSwitcher({
               className="flex items-center gap-2 font-medium text-primary focus:text-primary"
             >
               <FolderPlus className="h-3.5 w-3.5" />
-              New vault
+              New Vault
             </DropdownMenuItem>
           </div>
         </DropdownMenuContent>
@@ -406,12 +457,12 @@ function FolderStrip({
         </FolderChip>
       ))}
       {folderFilter ? (
-        <IconTip label="Delete folder" hint="Removes this folder; its items move back to All." side="top">
+        <IconTip label="Delete Folder" hint="Removes this folder; its items move back to All." side="top">
           <button
             type="button"
             onClick={onDeleteFolder}
             className="ml-auto inline-flex h-6 items-center gap-0.5 rounded-full px-1.5 text-[11px] text-destructive transition-colors hover:bg-destructive/10"
-            aria-label="Delete folder"
+            aria-label="Delete Folder"
           >
             <X className="h-3 w-3" />
           </button>
@@ -501,59 +552,54 @@ function RailActions({
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveLogin(v, f)}
-        tooltip={{ label: "Add login", hint: "Website, username & password — weak passwords are flagged on this device." }}
-        trigger={iconBtn("Add login", <Shield className="h-4 w-4" />)}
+        tooltip={{ label: "Add Login", hint: "Website, username & password — weak passwords are flagged on this device." }}
+        trigger={iconBtn("Add Login", <Shield className="h-4 w-4" />)}
       />
       <TotpDialog
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveTotp(v, f)}
-        tooltip={{ label: "Add one-time code", hint: "Store a TOTP/2FA seed. Codes are computed locally and never synced." }}
-        trigger={iconBtn("Add one-time code", <KeyRound className="h-4 w-4" />)}
+        tooltip={{ label: "Add One-Time Code", hint: "Store a TOTP/2FA seed. Codes are computed locally and never synced." }}
+        trigger={iconBtn("Add One-Time Code", <KeyRound className="h-4 w-4" />)}
       />
       <NoteDialog
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveNote(v, f)}
-        tooltip={{ label: "Add secure note", hint: "Free-form encrypted text — recovery codes, license keys, anything." }}
-        trigger={iconBtn("Add secure note", <FileText className="h-4 w-4" />)}
+        tooltip={{ label: "Add Secure Note", hint: "Free-form encrypted text — recovery codes, license keys, anything." }}
+        trigger={iconBtn("Add Secure Note", <FileText className="h-4 w-4" />)}
       />
       <SecretDialog
         folders={folders}
         initialFolderId={initialFolderId}
         onSubmit={(v, f) => onSaveSecret(v, f)}
-        tooltip={{ label: "Add generic secret", hint: "Any key/value — API tokens, SSH keys, environment values." }}
-        trigger={iconBtn("Add generic secret", <KeySquare className="h-4 w-4" />)}
+        tooltip={{ label: "Add Generic Secret", hint: "Any key/value — API tokens, SSH keys, environment values." }}
+        trigger={iconBtn("Add Generic Secret", <KeySquare className="h-4 w-4" />)}
       />
       {/* Divider + push the organise/share actions to the right so the four "add" types
           read as one cluster and don't crowd the folder/share controls. */}
       <span className="ml-auto h-5 w-px shrink-0 bg-border/70" />
       <NewFolderDialog
         onCreate={onCreateFolder}
-        tooltip={{ label: "New folder", hint: "Group items in this vault. Folder names are encrypted too." }}
-        trigger={iconBtn("New folder", <FolderPlus className="h-4 w-4" />)}
+        tooltip={{ label: "New Folder", hint: "Group items in this vault. Folder names are encrypted too." }}
+        trigger={iconBtn("New Folder", <FolderPlus className="h-4 w-4" />)}
       />
       {canManage ? (
         <ShareDialog
           onLookup={onShareLookup}
           onShare={onShareGrant}
-          tooltip={{ label: "Share vault", hint: "Grant another arc user access via their public key — end-to-end encrypted." }}
-          trigger={iconBtn("Share vault", <UserPlus className="h-4 w-4" />)}
+          tooltip={{ label: "Share Vault", hint: "Grant another arc user access via their public key — end-to-end encrypted." }}
+          trigger={iconBtn("Share Vault", <UserPlus className="h-4 w-4" />)}
         />
       ) : null}
     </div>
   );
 }
 
-function ItemRow({
-  item,
-  active,
-  onSelect,
-}: {
-  item: PulledItem;
-  active: boolean;
-  onSelect: () => void;
-}) {
+const ItemRow = React.forwardRef<
+  HTMLButtonElement,
+  { item: PulledItem; active: boolean; onSelect: () => void } & React.ButtonHTMLAttributes<HTMLButtonElement>
+>(({ item, active, onSelect, className, ...rest }, ref) => {
   const totp = asTotp(item);
   const note = asNote(item);
   const secret = asSecret(item);
@@ -563,25 +609,33 @@ function ItemRow({
   const weak = login ? isWeakPassword(login.fields.password) : false;
   const typeIcon = totp ? <KeyRound className="h-4 w-4" /> : note ? <FileText className="h-4 w-4" /> : secret ? <KeySquare className="h-4 w-4" /> : null;
 
+  // Rows stay on the content layer (no glass). Touch screens get the taller Liquid Glass list
+  // metrics and the larger type from the type-scale tokens; `data-state=open` marks the row
+  // whose context menu is showing.
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onSelect}
       title={title}
+      aria-current={active ? "true" : undefined}
+      {...rest}
       className={cn(
-        "flex w-full items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-left",
-        "transition-colors [transition-duration:var(--dur-fast)]",
+        "flex w-full select-none items-center gap-3 rounded-[var(--radius-lg)] px-3 py-2 text-left [-webkit-touch-callout:none] [@media(pointer:coarse)]:py-2.5",
+        "transition-[background-color,box-shadow] [transition-duration:var(--dur-fast)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "data-[state=open]:ring-2 data-[state=open]:ring-primary/60",
         active
           ? "bg-[var(--ds-accent-subtle)] text-[var(--ds-accent-subtle-fg)]"
           : "hover:bg-[var(--surface-hover)]",
+        className,
       )}
     >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-border bg-[var(--surface-raised)] font-display text-[14px] font-semibold text-foreground/80">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-border bg-[var(--surface-raised)] font-display text-[14px] font-semibold text-foreground/80 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10">
         {typeIcon ?? title.slice(0, 1).toUpperCase()}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{title}</span>
-        <span className="block truncate text-[12px] text-muted-foreground">{sub}</span>
+        <span className="block truncate text-body font-medium">{title}</span>
+        <span className="block truncate text-subhead text-muted-foreground">{sub}</span>
       </span>
       {weak ? (
         <Badge variant="secondary" className="bg-[var(--danger-subtle)] text-[var(--danger-fg)]">
@@ -590,14 +644,172 @@ function ItemRow({
       ) : null}
     </button>
   );
+});
+ItemRow.displayName = "ItemRow";
+
+/** Seconds before a copied password, code or secret value is wiped from the clipboard. */
+const CLEAR_SECONDS = 20;
+
+function websiteHref(url: string): string {
+  return url.startsWith("http") ? url : `https://${url}`;
+}
+
+/**
+ * A vault row's context menu: right-click, long-press on touch screens, or the keyboard's
+ * context-menu key (HIG Context menus). Every command also exists in the detail pane.
+ * Commands that don't apply to the item are hidden rather than dimmed, and Delete comes
+ * last, set apart. Copying a password, code or secret value clears the clipboard after
+ * CLEAR_SECONDS, the same as the pane's copy buttons.
+ */
+function ItemContextMenu({
+  item,
+  folders,
+  canShare,
+  canViewHistory,
+  onOpenDialog,
+  onDuplicateItem,
+  onMoveItem,
+  onDelete,
+  children,
+}: {
+  item: PulledItem;
+  folders: VaultFolder[];
+  canShare: boolean;
+  canViewHistory: boolean;
+  onOpenDialog: (item: PulledItem, kind: ItemDialogKind) => void;
+  onDuplicateItem?: VaultViewProps["onDuplicateItem"];
+  onMoveItem?: VaultViewProps["onMoveItem"];
+  onDelete: () => void;
+  children: React.ReactNode;
+}) {
+  const login = asLogin(item);
+  const totp = asTotp(item);
+  const note = asNote(item);
+  const secret = asSecret(item);
+  const username = login?.fields.username;
+  const password = login?.fields.password;
+  const url = login?.fields.url;
+  const hasCopy = Boolean(username || password || url || totp || secret);
+  const currentFolder = item.folderId ?? null;
+  const moveTargets = folders.filter((f) => f.id !== currentFolder);
+
+  const copyCode = (t: TotpData) => {
+    try {
+      const { code } = totpCode(t.secret, { period: t.period, digits: t.digits, algorithm: t.algorithm });
+      void copyText(code, "Code", CLEAR_SECONDS);
+    } catch {
+      toast.error("This item's one-time code seed isn't valid");
+    }
+  };
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent className="w-56">
+        {username ? (
+          <ContextMenuItem onSelect={() => void copyText(username, "Username")}>
+            <Copy /> Copy Username
+          </ContextMenuItem>
+        ) : null}
+        {password ? (
+          <ContextMenuItem onSelect={() => void copyText(password, "Password", CLEAR_SECONDS)}>
+            <Copy /> Copy Password
+          </ContextMenuItem>
+        ) : null}
+        {totp ? (
+          <ContextMenuItem onSelect={() => copyCode(totp)}>
+            <Copy /> Copy Code
+          </ContextMenuItem>
+        ) : null}
+        {secret ? (
+          <>
+            <ContextMenuItem onSelect={() => void copyText(secret.key, "Key")}>
+              <Copy /> Copy Key
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => void copyText(secret.value, "Value", CLEAR_SECONDS)}>
+              <Copy /> Copy Value
+            </ContextMenuItem>
+          </>
+        ) : null}
+        {url ? (
+          <ContextMenuItem onSelect={() => window.open(websiteHref(url), "_blank", "noopener,noreferrer")}>
+            <ExternalLink /> Open Website
+          </ContextMenuItem>
+        ) : null}
+        {hasCopy ? <ContextMenuSeparator /> : null}
+
+        {login || totp || note || secret ? (
+          <ContextMenuItem onSelect={() => onOpenDialog(item, "edit")}>
+            <Pencil /> Edit…
+          </ContextMenuItem>
+        ) : null}
+        {canShare ? (
+          <ContextMenuItem onSelect={() => onOpenDialog(item, "share")}>
+            <Share2 /> Share…
+          </ContextMenuItem>
+        ) : null}
+        {canViewHistory ? (
+          <ContextMenuItem onSelect={() => onOpenDialog(item, "history")}>
+            <History /> Version History…
+          </ContextMenuItem>
+        ) : null}
+        {onDuplicateItem ? (
+          <ContextMenuItem onSelect={() => void onDuplicateItem(item)}>
+            <CopyPlus /> Duplicate
+          </ContextMenuItem>
+        ) : null}
+        {onMoveItem && folders.length > 0 ? (
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <FolderInput /> Move to Folder
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              {currentFolder ? (
+                <ContextMenuItem onSelect={() => void onMoveItem(item, null)}>
+                  <FolderOutput /> No Folder
+                </ContextMenuItem>
+              ) : null}
+              {moveTargets.map((f) => (
+                <ContextMenuItem key={f.id} onSelect={() => void onMoveItem(item, f.id)}>
+                  <Folder /> <span className="truncate">{f.name}</span>
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+        ) : null}
+
+        <ContextMenuSeparator />
+        <ContextMenuItem destructive onSelect={onDelete}>
+          <Trash2 /> Delete…
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+/** Why the list is empty and what to do next (HIG: empty states should help people move on). */
+function ListEmpty({ hasItems, query, folderName }: { hasItems: boolean; query: string; folderName?: string }) {
+  const [title, body] = !hasItems
+    ? ["No Items", "Add a login, one-time code, note or secret with the buttons above."]
+    : query.trim()
+      ? [`No Results for “${query.trim()}”`, "Check the spelling or try a new search."]
+      : folderName
+        ? [`No Items in “${folderName}”`, "Use Move to Folder in an item’s menu to add items here."]
+        : ["No Items", "Nothing here matches the current filter."];
+  return (
+    <div className="px-4 py-10 text-center">
+      <p className="break-words text-headline font-semibold">{title}</p>
+      <p className="mt-1 text-subhead text-muted-foreground">{body}</p>
+    </div>
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Right pane: item detail
 // ────────────────────────────────────────────────────────────────────────────────
 
-function DetailPane(props: VaultViewProps) {
-  const { active, folders, folderFilter, onSaveLogin, onSaveTotp, onSaveNote, onSaveSecret, onRequestDelete } = props;
+function DetailPane(props: VaultViewProps & { dialogState: DialogState }) {
+  const { active, folders, folderFilter, onSaveLogin, onSaveTotp, onSaveNote, onSaveSecret, onRequestDelete, dialogState } = props;
   if (!active) {
     return (
       <section className="flex min-h-0 flex-1 items-center justify-center bg-[var(--surface-sunken)] p-10 text-center">
@@ -606,9 +818,9 @@ function DetailPane(props: VaultViewProps) {
             <Lock className="h-5 w-5" />
           </span>
           <div className="space-y-1">
-            <h3 className="font-display text-base font-semibold">Pick an item</h3>
+            <h3 className="font-display text-base font-semibold">No Item Selected</h3>
             <p className="text-sm text-muted-foreground">
-              Select something on the left to see its fields. Decryption happens on this device.
+              Select an item to see its fields. Decryption happens on this device.
             </p>
           </div>
           <div className="flex justify-center">
@@ -630,6 +842,7 @@ function DetailPane(props: VaultViewProps) {
           onDuplicateItem={props.onDuplicateItem}
           onListVersions={props.onListVersions}
           onRestoreVersion={props.onRestoreVersion}
+          dialogState={dialogState}
         />
         <DetailFields item={active} />
         <DetailFooter
@@ -641,6 +854,7 @@ function DetailPane(props: VaultViewProps) {
           onSaveNote={onSaveNote}
           onSaveSecret={onSaveSecret}
           onRequestDelete={onRequestDelete}
+          dialogState={dialogState}
         />
       </div>
     </section>
@@ -656,6 +870,7 @@ function DetailHero({
   onDuplicateItem,
   onListVersions,
   onRestoreVersion,
+  dialogState,
 }: {
   item: PulledItem;
   onShareLookup?: VaultViewProps["onShareLookup"];
@@ -665,8 +880,9 @@ function DetailHero({
   onDuplicateItem?: VaultViewProps["onDuplicateItem"];
   onListVersions?: VaultViewProps["onListVersions"];
   onRestoreVersion?: VaultViewProps["onRestoreVersion"];
+  dialogState: DialogState;
 }) {
-  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const history = dialogState(item, "history");
   const totp = asTotp(item);
   const note = asNote(item);
   const secret = asSecret(item);
@@ -696,24 +912,25 @@ function DetailHero({
           hover on the button itself. */}
       {onShareLookup && onShareItem ? (
         <ShareItemDialog
+          {...dialogState(item, "share")}
           onLookup={onShareLookup}
           onShare={(userId, permission, expiresAtMs) =>
             onShareItem(item.id, userId, { permission, expiresAtMs })
           }
           tooltip={{
-            label: "Share item",
+            label: "Share Item",
             hint: "Share just this item with another user — they never get the vault key.",
           }}
           trigger={
-            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Share item">
+            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Share Item">
               <Share2 className="h-4 w-4" />
             </Button>
           }
         />
       ) : (
-        <IconTip label="Share item" hint="Coming soon — share a single item, not the whole vault.">
+        <IconTip label="Share Item" hint="Coming soon — share a single item, not the whole vault.">
           <span tabIndex={0} className="inline-flex">
-            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Share item" disabled>
+            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Share Item" disabled>
               <Share2 className="h-4 w-4" />
             </Button>
           </span>
@@ -722,14 +939,14 @@ function DetailHero({
       {onMoveItem && onDuplicateItem ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="More actions">
+            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="More Actions">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-[200px]">
             {onListVersions && onRestoreVersion ? (
-              <DropdownMenuItem onSelect={() => setHistoryOpen(true)}>
-                <History className="h-3.5 w-3.5" /> Version history
+              <DropdownMenuItem onSelect={() => history.onOpenChange(true)}>
+                <History className="h-3.5 w-3.5" /> Version History…
               </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem onSelect={() => onDuplicateItem(item)}>
@@ -738,13 +955,13 @@ function DetailHero({
             {folders && folders.length > 0 ? (
               <>
                 <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                  Move to folder
+                  Move to Folder
                 </DropdownMenuLabel>
                 <DropdownMenuItem
                   disabled={(item.folderId ?? null) === null}
                   onSelect={() => onMoveItem(item, null)}
                 >
-                  <Folder className="h-3.5 w-3.5 opacity-60" /> No folder
+                  <Folder className="h-3.5 w-3.5 opacity-60" /> No Folder
                 </DropdownMenuItem>
                 {folders.map((f) => (
                   <DropdownMenuItem
@@ -760,9 +977,9 @@ function DetailHero({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        <IconTip label="More actions" hint="Coming soon — move, duplicate, and item history.">
+        <IconTip label="More Actions" hint="Coming soon — move, duplicate, and item history.">
           <span tabIndex={0} className="inline-flex">
-            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="More actions" disabled>
+            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="More Actions" disabled>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </span>
@@ -771,8 +988,8 @@ function DetailHero({
       {onListVersions && onRestoreVersion ? (
         <ItemHistoryDialog
           item={item}
-          open={historyOpen}
-          onOpenChange={setHistoryOpen}
+          open={history.open}
+          onOpenChange={history.onOpenChange}
           onList={onListVersions}
           onRestore={onRestoreVersion}
         />
@@ -816,9 +1033,9 @@ function DetailFields({ item }: { item: PulledItem }) {
         {url ? (
           <Field label="Website">
             <ValueRow value={url}>
-              <IconTip label="Open website" hint="Opens this URL in a new tab." side="top">
+              <IconTip label="Open Website" hint="Opens this URL in a new tab." side="top">
                 <a
-                  href={url.startsWith("http") ? url : `https://${url}`}
+                  href={websiteHref(url)}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-muted-foreground hover:bg-[var(--surface-hover)] hover:text-foreground"
@@ -967,6 +1184,7 @@ function DetailFooter({
   onSaveNote,
   onSaveSecret,
   onRequestDelete,
+  dialogState,
 }: {
   item: PulledItem;
   folders: VaultFolder[];
@@ -976,11 +1194,13 @@ function DetailFooter({
   onSaveNote: VaultViewProps["onSaveNote"];
   onSaveSecret: VaultViewProps["onSaveSecret"];
   onRequestDelete: () => void;
+  dialogState: DialogState;
 }) {
   const login = asLogin(item);
   const totp = asTotp(item);
   const note = asNote(item);
   const secret = asSecret(item);
+  const edit = dialogState(item, "edit");
 
   const editTrigger = (
     <Button variant="secondary" size="sm">
@@ -1002,7 +1222,8 @@ function DetailFooter({
       </Button>
       {login ? (
         <ItemDialog
-          heading="Edit login"
+          heading="Edit Login"
+          {...edit}
           initial={{
             title: login.title,
             url: login.fields.url,
@@ -1018,6 +1239,7 @@ function DetailFooter({
       {totp ? (
         <TotpDialog
           heading="Edit TOTP"
+          {...edit}
           initial={{
             key: totp.key,
             secret: totp.secret,
@@ -1032,7 +1254,8 @@ function DetailFooter({
       ) : null}
       {note ? (
         <NoteDialog
-          heading="Edit note"
+          heading="Edit Note"
+          {...edit}
           initial={{ title: note.title, body: note.body }}
           folders={folders}
           initialFolderId={folderId}
@@ -1042,7 +1265,8 @@ function DetailFooter({
       ) : null}
       {secret ? (
         <SecretDialog
-          heading="Edit secret"
+          heading="Edit Secret"
+          {...edit}
           initial={{ key: secret.key, value: secret.value }}
           folders={folders}
           initialFolderId={folderId}
@@ -1120,7 +1344,7 @@ function EmptyVaultHero(props: VaultViewProps) {
             trigger={
               <TypeCardButton
                 icon={<KeyRound className="h-4 w-4" />}
-                title="One-time code"
+                title="One-Time Code"
                 description="TOTP / 2FA. Codes are computed on this device from the stored seed."
               />
             }
@@ -1132,7 +1356,7 @@ function EmptyVaultHero(props: VaultViewProps) {
             trigger={
               <TypeCardButton
                 icon={<FileText className="h-4 w-4" />}
-                title="Secure note"
+                title="Secure Note"
                 description="Free-form encrypted text — recovery hints, license keys, anything."
               />
             }
@@ -1144,7 +1368,7 @@ function EmptyVaultHero(props: VaultViewProps) {
             trigger={
               <TypeCardButton
                 icon={<KeySquare className="h-4 w-4" />}
-                title="Generic secret"
+                title="Generic Secret"
                 description="Any key/value pair — API tokens, SSH keys, environment values."
               />
             }

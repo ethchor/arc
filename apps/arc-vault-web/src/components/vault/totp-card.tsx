@@ -56,7 +56,7 @@ export function TotpCard({ secret, period, digits, algorithm, issuer, account }:
         {/* TotpRing derives its own wall-clock countdown; the displayed code stays the
             locally-generated `safe.code` so nothing about TOTP derivation changes. */}
         <TotpRing code={safe.code} period={periodSec} size={44} />
-        <CopyButton value={safe.code} label="Copy code" />
+        <CopyButton value={safe.code} label="Copy Code" />
       </div>
       {(issuer ?? account) && (
         <div className="text-xs text-muted-foreground">

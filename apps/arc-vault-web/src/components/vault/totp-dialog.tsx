@@ -5,6 +5,7 @@ import { Camera, Upload, X } from "lucide-react";
 import { parseOtpauthUri } from "@arc/crypto";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -15,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
+import { useControllableOpen } from "@/lib/use-controllable-open";
 import { decodeQrFromFile } from "@/lib/qr/decode";
 import { QrCameraScanner } from "@/components/vault/qr-camera-scanner";
 
@@ -50,6 +52,8 @@ function maybeApplyOtpauth(prev: TotpInput, pasted: string): TotpInput {
 export function TotpDialog({
   trigger,
   tooltip,
+  open: openProp,
+  onOpenChange,
   initial,
   heading = "Add TOTP",
   folders = [],
@@ -58,13 +62,16 @@ export function TotpDialog({
 }: {
   trigger: React.ReactNode;
   tooltip?: TipProps;
+  /** Controlled open state, for opening the dialog from elsewhere (a row's context menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   initial?: TotpInput;
   heading?: string;
   folders?: Array<{ id: string; name: string }>;
   initialFolderId?: string | null;
   onSubmit: (value: TotpInput, folderId: string | null) => Promise<void>;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useControllableOpen(openProp, onOpenChange);
   const [form, setForm] = React.useState<TotpInput>(initial ?? EMPTY);
   const [folderId, setFolderId] = React.useState<string | null>(initialFolderId);
   const [busy, setBusy] = React.useState(false);
@@ -181,11 +188,11 @@ export function TotpDialog({
               >
                 {scanning ? (
                   <>
-                    <X className="h-3.5 w-3.5" /> Stop camera
+                    <X className="h-3.5 w-3.5" /> Stop Scanning
                   </>
                 ) : (
                   <>
-                    <Camera className="h-3.5 w-3.5" /> Scan camera
+                    <Camera className="h-3.5 w-3.5" /> Scan QR Code
                   </>
                 )}
               </Button>
@@ -249,6 +256,9 @@ export function TotpDialog({
           )}
         </div>
         <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button onClick={submit} disabled={busy || !form.key || !form.secret}>
             Save
           </Button>

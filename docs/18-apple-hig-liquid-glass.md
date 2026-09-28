@@ -330,6 +330,10 @@ AppKit's optical tuning. It stays at or above the macOS minimum.
 - **Writing:** one capitalization rule set (§3.2), verb-first button and menu labels, an
   ellipsis when more input follows, empty states that always offer a next step, and error
   messages that say what happened and what to do.
+- **The capitalization rule is checked in CI.** `apps/arc-vault-web/scripts/check-copy.mjs`
+  (the web app's `test` task) fails on a button, menu item, menu label, dialog or card
+  title, tooltip title or sheet heading of up to eight words that isn't in title case.
+  Text that ends in a period or asks a question is treated as a sentence and skipped.
 
 ## 4. Component-by-component plan
 
@@ -466,6 +470,16 @@ highlighting persists in the list. It collapses to push navigation at compact wi
   touch swipe actions (Organization guidance: "match top menu actions to swipe actions").
   Every context action also exists in the main UI. Keyboard shortcuts appear in main
   menus, not in context menus.
+  - *Vault rows (Phase 4):* right-click, a 700 ms long-press on touch screens, or the
+    keyboard's context-menu key (Shift+F10) opens the item's menu. It holds the copy
+    commands for its type, then Open Website, then Edit…, Share…, Version History…,
+    Duplicate and a one-level Move to Folder submenu, and Delete… last. Commands that
+    don't apply are hidden. Copying a password, one-time code or secret value clears the
+    clipboard after 20 s, the same as the detail pane's copy buttons.
+  - *Swipe actions are deferred.* A horizontal swipe on a list row competes with the
+    browser's own edge-swipe back gesture in iOS Safari, and long-press already reaches
+    every row command on touch screens. Revisit if the PWA or desktop shell gets its own
+    gesture handling.
 - **On desktop, table columns are sortable and resizable.** Descriptive headers, with no
   truncation that hides meaning; expansion tooltips handle truncated values.
 
@@ -479,6 +493,8 @@ version and attachments server-side immediately (SEC-M3).
   for unexpected, irreversible data loss.
 - **Offer Undo toasts only for actions that really are reversible:** moving between
   folders, renaming, unsharing before the recipient syncs, and changing a role back.
+  Moving between folders has one as of Phase 4, which also fixed moving an item out of
+  its folder: the SDK used to drop `folderId: null`, and the server read null as "keep".
 - **Soft delete with a grace window is a product decision (D5).** It would enable an Undo
   toast, but it changes the erase guarantee, so it needs a security review first.
 
@@ -538,13 +554,19 @@ The June 2026 Generative AI page maps directly onto the agents and MCP console
 | **4 · Content polish** | List metrics, section headers, context menus ↔ swipe actions, inspector split view, reversible-action Undo toasts, empty states, writing pass | Design-principles review signed off per view; copy lint for capitalization |
 | **5 · Platform** | Tauri native window material and menu bar, PWA icon and shortcuts refresh, `theme-color`, optional Sign in with Apple (D6), optional web push for approvals | Desktop app verified on macOS 27 and Windows 11; icons verified on the iOS 27 Home Screen |
 
-Rollout switch: glass is on by default, and the in-app **Reduce transparency** setting
+Rollout switch: glass is on by default, and the in-app **Reduce Transparency** setting
 (`data-glass="off"` on `<html>`) turns every glass surface opaque. That setting is both
 the accessibility fallback and the kill switch while the phases land.
 
 **Decisions applied:** the owner asked for implementation to proceed without waiting,
 so the recommendations in §8 (D1–D6) are the working defaults and can be revisited in
 any phase review.
+
+**Progress:** Phases 0 and 1 landed in #171, Phase 2 in #172 and Phase 3 in #173. Phase 4
+lands in two parts. The first covers the writing pass with its CI copy check, vault-row
+context menus and list metrics, the Move Undo toast, list empty states, and Cancel
+buttons on form sheets. The second covers the list-plus-inspector split view for leases
+and audit, and the same row metrics on those tables and on devices.
 
 ## 6. Test matrix
 

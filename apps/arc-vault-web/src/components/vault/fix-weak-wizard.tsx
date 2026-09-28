@@ -89,7 +89,7 @@ export function FixWeakWizard({
                 <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--success-subtle)] text-[var(--success-fg)]">
                   <Check className="h-4 w-4" strokeWidth={2.5} />
                 </span>
-                All caught up
+                All Caught Up
               </DialogTitle>
               <DialogDescription>
                 Rotated {fixed} {fixed === 1 ? "password" : "passwords"}
@@ -104,7 +104,7 @@ export function FixWeakWizard({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Fix weak passwords</DialogTitle>
+              <DialogTitle>Fix Weak Passwords</DialogTitle>
               <DialogDescription>
                 Step {index + 1} of {total} — a strong, unique password is generated for each.
                 Encrypted on this device before it’s saved.
@@ -151,7 +151,7 @@ export function FixWeakWizard({
               </Button>
               <Button onClick={saveNext} disabled={busy || !password}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                {index + 1 < total ? "Save & next" : "Save & finish"}
+                {index + 1 < total ? "Save & Next" : "Save & Finish"}
               </Button>
             </DialogFooter>
           </>

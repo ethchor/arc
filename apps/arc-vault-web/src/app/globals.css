@@ -433,6 +433,22 @@ html[data-glass="off"] .scroll-edge { background: hsl(var(--background)); -webki
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
+/* The toast's action (Undo) is a tinted capsule on the glass rather than Sonner's inverted pill.
+   Four attribute/class selectors so it outranks Sonner's runtime-injected rule. */
+[data-sonner-toast].glass-toast [data-button][data-action] {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 9999px;
+  background: var(--ds-accent-subtle);
+  color: var(--ds-accent-subtle-fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+/* Compact screens: clear the floating tab bar (56px plus its inset above and below) and the
+   home indicator. */
+@media (max-width: 639px) {
+  :root { --toast-offset-bottom: calc(env(safe-area-inset-bottom) + 56px + var(--glass-inset) * 2); }
+}
 html[data-glass="off"] [data-sonner-toaster] { --normal-bg: hsl(var(--popover)) !important; }
 html[data-glass="off"] [data-sonner-toast].glass-toast { -webkit-backdrop-filter: none; backdrop-filter: none; }
 @media (prefers-reduced-transparency: reduce) {

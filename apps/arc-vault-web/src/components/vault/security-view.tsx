@@ -113,11 +113,11 @@ export function SecurityView({
             <div className="flex items-center gap-2">
               {fixableItems.length > 0 ? (
                 <IconTip
-                  label="Fix all"
+                  label="Fix All"
                   hint="Walk through every flagged login and rotate it to a strong, unique password."
                 >
                   <Button size="sm" onClick={() => setFixQueue(fixableItems)}>
-                    <ShieldCheck className="h-4 w-4" /> Fix all
+                    <ShieldCheck className="h-4 w-4" /> Fix All
                   </Button>
                 </IconTip>
               ) : null}
@@ -201,7 +201,7 @@ export function SecurityView({
           <CardContent className="p-0">
             <div className="flex items-center justify-between border-b px-5 py-3">
               <div>
-                <h2 className="font-display text-base font-semibold">Needs attention</h2>
+                <h2 className="font-display text-base font-semibold">Needs Attention</h2>
                 <p className="text-xs text-muted-foreground">
                   {flagged.length} {flagged.length === 1 ? "issue" : "issues"} across {flaggedItemCount}{" "}
                   {flaggedItemCount === 1 ? "login" : "logins"}
@@ -247,7 +247,7 @@ export function SecurityView({
                     <Badge variant="outline" className="hidden capitalize sm:inline-flex">
                       {f.kind}
                     </Badge>
-                    <IconTip label="Fix now" hint={`Rotate “${f.title}” to a strong, unique password.`} side="left">
+                    <IconTip label="Fix Now" hint={`Rotate “${f.title}” to a strong, unique password.`} side="left">
                       <Button
                         variant="secondary"
                         size="sm"
@@ -312,7 +312,7 @@ function BreachPanel({
           <ShieldAlert className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="font-display text-base font-semibold">Breach exposure</h2>
+          <h2 className="font-display text-base font-semibold">Breach Exposure</h2>
           {status === "done" ? (
             exposedCount > 0 ? (
               <p className="text-sm" style={{ color: "var(--danger-fg)" }}>
@@ -353,7 +353,7 @@ function BreachPanel({
             </>
           ) : (
             <>
-              <ShieldAlert className="h-4 w-4" /> Check for breaches
+              <ShieldAlert className="h-4 w-4" /> Check for Breaches
             </>
           )}
         </Button>

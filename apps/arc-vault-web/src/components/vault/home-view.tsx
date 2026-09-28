@@ -58,7 +58,7 @@ export function HomeView({
           description="Your account is protected by a key only you hold."
           trailing={
             <Button size="sm" onClick={onAddItem}>
-              <Plus className="h-4 w-4" /> Add item
+              <Plus className="h-4 w-4" /> Add Item
             </Button>
           }
         />
@@ -138,11 +138,11 @@ function RecentlyUsed({
       <CardContent className="p-0">
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div>
-            <h2 className="font-display text-base font-semibold">Recently used</h2>
+            <h2 className="font-display text-base font-semibold">Recently Used</h2>
             <p className="text-xs text-muted-foreground">{vault?.name ?? vault?.type ?? "Personal vault"}</p>
           </div>
           <Button variant="ghost" size="sm" onClick={onOpenAll}>
-            Open vault
+            Open Vault
           </Button>
         </div>
         {items.length === 0 ? (
@@ -226,7 +226,7 @@ function DevicesTeaser({
       <CardContent className="p-0">
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div>
-            <h2 className="font-display text-base font-semibold">Your devices</h2>
+            <h2 className="font-display text-base font-semibold">Your Devices</h2>
             <p className="text-xs text-muted-foreground">Every device that can unlock your vault</p>
           </div>
           <Button variant="ghost" size="sm" onClick={onManage}>
@@ -297,7 +297,7 @@ function AgentsTeaser({ onView }: { onView: () => void }) {
           <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/12 text-primary ring-1 ring-primary/20">
             <Bot className="h-4 w-4" />
           </span>
-          <h2 className="font-display text-base font-semibold">Governed agents</h2>
+          <h2 className="font-display text-base font-semibold">Governed Agents</h2>
         </div>
         <p className="text-sm leading-relaxed text-muted-foreground">
           arc brokers secrets to AI agents as audited, revocable tool calls — never your
@@ -305,7 +305,7 @@ function AgentsTeaser({ onView }: { onView: () => void }) {
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button size="sm" onClick={onView}>
-            <Bot className="h-4 w-4" /> View agents
+            <Bot className="h-4 w-4" /> View Agents
           </Button>
           <TrustIndicator kind="zk" />
         </div>

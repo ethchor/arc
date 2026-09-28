@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
+import { useControllableOpen } from "@/lib/use-controllable-open";
 
 export interface SecretInput {
   key: string;
@@ -29,21 +31,26 @@ const EMPTY: SecretInput = { key: "", value: "" };
 export function SecretDialog({
   trigger,
   tooltip,
+  open: openProp,
+  onOpenChange,
   initial,
-  heading = "Add secret",
+  heading = "Add Secret",
   folders = [],
   initialFolderId = null,
   onSubmit,
 }: {
   trigger: React.ReactNode;
   tooltip?: TipProps;
+  /** Controlled open state, for opening the dialog from elsewhere (a row's context menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   initial?: SecretInput;
   heading?: string;
   folders?: Array<{ id: string; name: string }>;
   initialFolderId?: string | null;
   onSubmit: (value: SecretInput, folderId: string | null) => Promise<void>;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useControllableOpen(openProp, onOpenChange);
   const [form, setForm] = React.useState<SecretInput>(initial ?? EMPTY);
   const [folderId, setFolderId] = React.useState<string | null>(initialFolderId);
   const [busy, setBusy] = React.useState(false);
@@ -128,6 +135,9 @@ export function SecretDialog({
           )}
         </div>
         <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button onClick={submit} disabled={busy || !form.key || !form.value}>
             Save
           </Button>

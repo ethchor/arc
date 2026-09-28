@@ -11,6 +11,9 @@ export function Toaster(props: ToasterProps) {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // On compact screens toasts float above the tab bar (--toast-offset-bottom, globals.css).
+      offset={{ bottom: "var(--toast-offset-bottom, 32px)" }}
+      mobileOffset={{ bottom: "var(--toast-offset-bottom, 16px)" }}
       // Toasts are glass capsules (docs/18 §4.4). Sonner reads its surface from these vars.
       style={
         {
@@ -25,7 +28,6 @@ export function Toaster(props: ToasterProps) {
           toast:
             "group toast glass-toast group-[.toaster]:text-foreground group-[.toaster]:shadow-[var(--glass-shadow)]",
           description: "group-[.toast]:text-muted-foreground",
-          actionButton: "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
           cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
         },
       }}

@@ -56,7 +56,7 @@ export function ToolsView() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader className="py-3">
-            <CardTitle className="text-sm">Password generator</CardTitle>
+            <CardTitle className="text-sm">Password Generator</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex flex-wrap gap-1">
@@ -88,7 +88,7 @@ export function ToolsView() {
 
         <Card>
           <CardHeader className="py-3">
-            <CardTitle className="text-sm">Random bytes</CardTitle>
+            <CardTitle className="text-sm">Random Bytes</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex flex-wrap gap-1">
@@ -107,14 +107,14 @@ export function ToolsView() {
                 variant={rndFmt === "hex" ? "secondary" : "ghost"}
                 onClick={() => setRndFmt("hex")}
               >
-                hex
+                Hex
               </Button>
               <Button
                 size="sm"
                 variant={rndFmt === "base64" ? "secondary" : "ghost"}
                 onClick={() => setRndFmt("base64")}
               >
-                base64
+                Base64
               </Button>
               <Button
                 size="sm"
@@ -131,7 +131,7 @@ export function ToolsView() {
 
         <Card className="md:col-span-2">
           <CardHeader className="py-3">
-            <CardTitle className="text-sm">SHA-256 hash</CardTitle>
+            <CardTitle className="text-sm">SHA-256 Hash</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid gap-1.5">

@@ -47,7 +47,7 @@ export function RecoverScreen({
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
             <LifeBuoy className="h-5 w-5 text-primary" />
           </div>
-          <CardTitle className="text-xl">Recover your vault</CardTitle>
+          <CardTitle className="text-xl">Recover Your Vault</CardTitle>
           <CardDescription>
             Enter your recovery key and choose a new master password. This restores access
             without changing your identity — all your vaults and shares stay intact. Your old
@@ -104,12 +104,12 @@ export function RecoverScreen({
               </>
             ) : (
               <>
-                <KeyRound className="h-4 w-4" /> Recover &amp; set new password
+                <KeyRound className="h-4 w-4" /> Recover &amp; Set New Password
               </>
             )}
           </Button>
           <Button variant="ghost" className="w-full" disabled={busy} onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" /> Back to unlock
+            <ArrowLeft className="h-4 w-4" /> Back to Unlock
           </Button>
         </CardFooter>
       </Card>

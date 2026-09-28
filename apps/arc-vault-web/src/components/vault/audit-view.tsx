@@ -153,7 +153,7 @@ export function AuditView({
             onClick={() => fetchPage(events.at(-1)?.ts)}
             disabled={busy}
           >
-            Load older
+            Load Older
           </Button>
         </div>
       )}

@@ -5,6 +5,7 @@ import { FolderPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -43,14 +44,14 @@ export function NewFolderDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <TipTrigger tip={tooltip}>
         {trigger ?? (
-          <Button variant="outline" size="sm" aria-label="New folder">
-            <FolderPlus className="h-4 w-4" /> New folder
+          <Button variant="outline" size="sm" aria-label="New Folder">
+            <FolderPlus className="h-4 w-4" /> New Folder
           </Button>
         )}
       </TipTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New folder</DialogTitle>
+          <DialogTitle>New Folder</DialogTitle>
           <DialogDescription>The folder name is encrypted under the vault key.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-1.5">
@@ -58,6 +59,9 @@ export function NewFolderDialog({
           <Input id="fname" placeholder="e.g. Banking" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button onClick={submit} disabled={busy || !name.trim()}>
             Create
           </Button>
