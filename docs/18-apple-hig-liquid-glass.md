@@ -516,6 +516,26 @@ version and attachments server-side immediately (SEC-M3).
 - **Web views:** support back and forward wherever the app navigates, and don't build
   browser chrome.
 
+**Status after Phase 5.**
+- **Shipped:**
+  - **Menu bar (macOS):** a native menu bar with the standard app, File, Edit, View, Window
+    and Help menus: Settings… ⌘,, Lock Vault ⌘L, Search… ⌘K, Hide/Show Sidebar ⌃⌘S (the
+    title follows the sidebar) and Full Screen. The Edit menu keeps ⌘C and ⌘V working in
+    text fields. Windows and Linux keep no menu bar, as before. Menu commands reach the
+    web app as the `arc://menu` event and run the same code as the toolbar controls.
+  - **Help window:** Help opens the docs in a separate window with no IPC access, so reading
+    them never navigates, and so locks, the vault window.
+  - **Window size:** the default window grows from a phone-sized 420×680 to 1200×800, with a
+    360×560 minimum.
+  - **Compile fixes:** the shell compiles again (it lacked `icons/icon.png`, and a
+    `Zeroizing<Vec<u8>>` was passed where a `Vec<u8>` was expected), and a new CI job
+    (`desktop`) runs `cargo check` on it.
+- **Not shipped, a product decision (D7):** the real system material. Tauri's window
+  effects need a transparent window, which on macOS needs `app.macOSPrivateApi`, and
+  that rules out the Mac App Store. The web layer would switch the sidebar to transparent
+  under a `data-native-material` flag once D7 is settled. It also needs checking on a Mac,
+  which this sandbox can't do.
+
 ### 4.9 Icons, app icon and PWA
 
 - **Keep Lucide,** with a consistent stroke of 1.75–2 px. Use the filled variant (or a
@@ -529,6 +549,17 @@ version and attachments server-side immediately (SEC-M3).
 - **`theme-color`** follows light and dark (`media` attribute) so browser chrome matches the
   content layer. Verify Safari 27's behavior, since tab-bar tinting has changed across
   releases.
+
+**Status after Phase 5.**
+- **Home Screen icon:** `apple-touch-icon.png` now renders from `public/icon-apple.svg`, a
+  full-bleed square, since the old rounded source left iOS nothing to mask cleanly.
+- **Shortcuts:** the manifest's shortcuts are Search, Generate Password and Lock, each with
+  its own glyph icon. A shortcut arrives as `?shortcut=…`, and the app runs it after
+  unlock, because a launch always starts locked; Lock needs nothing more.
+- **Orientation:** the installed app no longer locks to portrait.
+- **Desktop icons:** the shell's icons (PNG, `.icns`, `.ico`) come from
+  `src-tauri/icons/icon.svg` on the macOS icon template. `scripts/generate-icons.mjs`
+  renders every one of these files. `theme-color` already followed light and dark.
 
 ### 4.10 Agents: Generative AI guidance for Engine C
 
@@ -569,9 +600,12 @@ any phase review.
 **Progress:** Phases 0 and 1 landed in #171, Phase 2 in #172 and Phase 3 in #173. Phase 4
 landed in two parts. Part 1 (#174) covers the writing pass with its CI copy check,
 vault-row context menus and list metrics, the Move Undo toast, list empty states, and
-Cancel buttons on form sheets. Part 2 covers the list-plus-inspector split view for
+Cancel buttons on form sheets. Part 2 (#175) covers the list-plus-inspector split view for
 Leases and Audit Log, a context menu on lease rows, and the same touch row metrics on
-those lists and on Devices.
+those lists and on Devices. Phase 5 covers the platform work: the macOS menu bar and Help
+window, desktop icons and compile fixes with a CI check, and the PWA shortcuts, Home
+Screen icon and orientation. The real window material waits on D7, and Sign in with Apple
+and web push stay optional.
 
 ## 6. Test matrix
 
@@ -611,6 +645,8 @@ those lists and on Devices.
 | D4 | Compact tab sets per persona | Personal: Home, Vault, Security, Devices, Search. Operator: KV, Creds, Leases, Audit, Search. Everything else goes in the sidebar sheet. |
 | D5 | Undo for delete (grace window) vs. immediate erase | Keep immediate erase with confirmation. Revisit only with a security review. |
 | D6 | Sign in with Apple as an identity provider (through the OIDC plugin) | Optional in Phase 5. Passkeys remain the primary sign-in. |
+| D7 | Real system material in the desktop app (§4.8) | It needs `macOSPrivateApi`, which rules out the Mac App Store. Enable it only if arc ships outside the store, and verify on a Mac first. |
+| D8 | The desktop app's name: `arc-vault` (today's `productName`) or `arc` | The menu bar reads its name from `productName`, so the change is one line, but it also renames the app bundle and installers. Decide before the first public desktop release. |
 
 ---
 
