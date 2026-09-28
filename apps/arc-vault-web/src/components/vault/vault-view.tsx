@@ -154,14 +154,42 @@ export function VaultView(props: VaultViewProps) {
 // Master-detail (matches the kit's `.vault` layout: 340px list + 1fr detail)
 // ────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * On a device folded into two side-by-side viewport segments (iPhone Duo, foldables — HIG:
+ * "adapt your layout when the device folds"), return the list width that puts the divider on
+ * the fold. Uses the Viewport Segments API where the browser exposes it; otherwise undefined,
+ * and the regular 340px rail applies.
+ */
+function useFoldAlignedWidth(ref: React.RefObject<HTMLElement | null>): number | undefined {
+  const [width, setWidth] = React.useState<number | undefined>(undefined);
+  React.useEffect(() => {
+    const update = () => {
+      const segments = (window as Window & { viewport?: { segments?: DOMRect[] } }).viewport?.segments;
+      const el = ref.current;
+      const [first, second] = segments ?? [];
+      if (el && first && second && segments?.length === 2 && first.right <= second.left + 1) {
+        setWidth(Math.max(260, Math.round(first.right - el.getBoundingClientRect().left)));
+      } else {
+        setWidth(undefined);
+      }
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [ref]);
+  return width;
+}
+
 function MasterDetail(props: VaultViewProps) {
   // Full-bleed, full-height: no outer card border/rounding and no fixed min-height. Flex
   // (not grid) so the panes reliably stretch to the section height and scroll *internally*
   // via their own `min-h-0 overflow-y-auto` — a long item list never overflows the clipped
   // container. The rail's `md:border-r` is the only divider.
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const foldWidth = useFoldAlignedWidth(containerRef);
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--surface-base)] md:flex-row">
-      <ItemList {...props} />
+    <div ref={containerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--surface-base)] md:flex-row">
+      <ItemList {...props} foldWidth={foldWidth} />
       <DetailPane {...props} />
     </div>
   );
@@ -171,7 +199,7 @@ function MasterDetail(props: VaultViewProps) {
 // Left rail: vault switcher + search + folder chips + item list
 // ────────────────────────────────────────────────────────────────────────────────
 
-function ItemList(props: VaultViewProps) {
+function ItemList(props: VaultViewProps & { foldWidth?: number }) {
   const {
     vaults,
     selected,
@@ -200,7 +228,10 @@ function ItemList(props: VaultViewProps) {
   const addDisabled = !selected;
 
   return (
-    <aside className="flex min-h-0 flex-col border-b border-border bg-[var(--surface-base)] md:w-[340px] md:shrink-0 md:border-b-0 md:border-r">
+    <aside
+      className="flex min-h-0 flex-col border-b border-border bg-[var(--surface-base)] md:w-[340px] md:shrink-0 md:border-b-0 md:border-r"
+      style={props.foldWidth ? { width: props.foldWidth } : undefined}
+    >
       <div className="flex flex-col gap-2 border-b border-border/60 p-3">
         <VaultSwitcher
           vaults={vaults}
