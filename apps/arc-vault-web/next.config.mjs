@@ -12,7 +12,11 @@ const csp = [
   // third-party egress; everything else stays same-origin.
   "connect-src 'self' http://localhost:3001 https://api.pwnedpasswords.com",
   "style-src 'self' 'unsafe-inline'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  // 'wasm-unsafe-eval' lets the browser compile WebAssembly (hash-wasm's Argon2id, used to
+  // derive the master key on enroll + unlock) WITHOUT enabling JS eval(). Without it every
+  // production build refuses to compile the module and enrollment/unlock fail. 'unsafe-eval'
+  // stays dev-only (React Refresh).
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`,
   "img-src 'self' data:",
   "object-src 'none'",
   "base-uri 'self'",
