@@ -508,7 +508,8 @@ export function VaultApp() {
     if (!shortcut) return;
     pendingShortcut.current = shortcut;
     url.searchParams.delete("shortcut");
-    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    // Keep the entry's existing state: the Next.js router stores its own there.
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
   }, []);
 
   React.useEffect(() => {
