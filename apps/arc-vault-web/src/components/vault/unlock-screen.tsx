@@ -115,7 +115,7 @@ export function UnlockScreen({
                 </Field>
                 <Button size="lg" type="submit" className="mt-1 w-full" disabled={inFlight || !email}>
                   {spin("signin") ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-                  {spin("signin") ? "Signing in" : "Continue"}
+                  {spin("signin") ? "Signing In" : "Continue"}
                 </Button>
               </form>
             ) : (
@@ -161,11 +161,11 @@ export function UnlockScreen({
                     >
                       {spin("passkey") ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin" /> Waiting for passkey
+                          <Loader2 className="h-4 w-4 animate-spin" /> Waiting for Passkey
                         </>
                       ) : (
                         <>
-                          <Fingerprint className="h-4 w-4" /> Use a passkey
+                          <Fingerprint className="h-4 w-4" /> Use a Passkey
                         </>
                       )}
                     </Button>

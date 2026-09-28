@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -178,10 +179,10 @@ function ChromeShell({
         <div className="flex items-center gap-2">
           <MountSelector mount={mount} mounts={mounts} onSelect={onSelectMount} />
           {createDisabled || !getClient ? (
-            <IconTip label="Issue certificate" hint="Pick a PKI mount first." side="bottom">
+            <IconTip label="Issue Certificate" hint="Pick a PKI mount first." side="bottom">
               <span tabIndex={0} className="inline-flex">
                 <Button size="sm" variant="secondary" disabled>
-                  <Plus className="h-3.5 w-3.5" /> Issue certificate
+                  <Plus className="h-3.5 w-3.5" /> Issue Certificate
                 </Button>
               </span>
             </IconTip>
@@ -249,7 +250,7 @@ function MountSelector({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[220px]">
-        <DropdownMenuLabel>PKI mounts</DropdownMenuLabel>
+        <DropdownMenuLabel>PKI Mounts</DropdownMenuLabel>
         {pkis.length === 0 ? (
           <DropdownMenuItem disabled className="text-xs text-muted-foreground">
             No PKI mounts.
@@ -499,7 +500,7 @@ function CertsTab({ mount, getClient }: { mount: string; getClient: () => VaultC
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder={serials.length ? `Search ${serials.length} serials…` : "Search serials…"}
+            placeholder={serials.length ? `Search ${serials.length} ${serials.length === 1 ? "serial" : "serials"}…` : "Search serials…"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="h-9 pl-8 text-sm"
@@ -512,7 +513,7 @@ function CertsTab({ mount, getClient }: { mount: string; getClient: () => VaultC
       {filtered.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground">
           {serials.length === 0
-            ? "No certificates issued yet — try the Issue certificate button above."
+            ? "No certificates issued yet — try the Issue Certificate button above."
             : "No matches."}
         </p>
       ) : (
@@ -523,7 +524,7 @@ function CertsTab({ mount, getClient }: { mount: string; getClient: () => VaultC
             return (
               <li key={serial} className="flex items-center gap-3 px-3 py-2.5">
                 <KeyRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <IconTip label="Serial number" hint={serial} side="top">
+                <IconTip label="Serial Number" hint={serial} side="top">
                   <span className="min-w-0 flex-1 truncate font-mono text-[12px]">
                     {serial}
                   </span>
@@ -738,7 +739,7 @@ function IssueCertificateDialog({
     <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
       <DialogTrigger asChild>
         <Button size="sm">
-          <Plus className="h-3.5 w-3.5" /> Issue certificate
+          <Plus className="h-3.5 w-3.5" /> Issue Certificate
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
@@ -747,7 +748,7 @@ function IssueCertificateDialog({
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-[var(--success-fg)]" strokeWidth={2.5} />
-                Certificate issued
+                Certificate Issued
               </DialogTitle>
               <DialogDescription className="font-mono text-[12px]">
                 {issued.serialNumber}
@@ -774,7 +775,7 @@ function IssueCertificateDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Issue a certificate</DialogTitle>
+              <DialogTitle>Issue a Certificate</DialogTitle>
               <DialogDescription>
                 The engine generates a fresh keypair, signs a leaf cert under the chosen role,
                 and returns everything — including the private key — once.
@@ -854,6 +855,9 @@ function IssueCertificateDialog({
               </div>
             </div>
             <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="ghost">Cancel</Button>
+              </DialogClose>
               <Button onClick={submit} disabled={busy || !role || !commonName.trim()}>
                 Issue
               </Button>

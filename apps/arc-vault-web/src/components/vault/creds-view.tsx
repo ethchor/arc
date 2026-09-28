@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -290,7 +291,7 @@ function MountSelector({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[260px]">
-        <DropdownMenuLabel>Dynamic-secrets mounts</DropdownMenuLabel>
+        <DropdownMenuLabel>Dynamic-Secrets Mounts</DropdownMenuLabel>
         {dyn.length === 0 ? (
           <DropdownMenuItem disabled className="text-xs text-muted-foreground">
             No mounts.
@@ -358,7 +359,7 @@ function RolesPanel({
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder={roles.length ? `Search ${roles.length} roles…` : "Search roles…"}
+            placeholder={roles.length ? `Search ${roles.length} ${roles.length === 1 ? "role" : "roles"}…` : "Search roles…"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="h-9 pl-8 text-sm"
@@ -438,7 +439,7 @@ function IssueDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Zap className="h-4 w-4 text-primary" /> Credential minted
+                <Zap className="h-4 w-4 text-primary" /> Credential Minted
               </DialogTitle>
               <DialogDescription className="font-mono text-[12px]">
                 {role} · expires in {formatTtl(result.leaseDurationSeconds)}
@@ -482,8 +483,11 @@ function IssueDialog({
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="ghost">Cancel</Button>
+              </DialogClose>
               <Button onClick={submit} disabled={busy}>
-                <Zap className="h-3.5 w-3.5" /> {busy ? "Issuing…" : "Issue credential"}
+                <Zap className="h-3.5 w-3.5" /> {busy ? "Issuing…" : "Issue Credential"}
               </Button>
             </DialogFooter>
           </>
@@ -510,7 +514,7 @@ function LeasesPanel({
     <section className="flex min-h-0 flex-col rounded-[var(--radius-lg)] border border-border bg-[var(--surface-base)]">
       <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
         <div>
-          <h2 className="font-display text-base font-semibold">Active leases</h2>
+          <h2 className="font-display text-base font-semibold">Active Leases</h2>
           <p className="text-[11px] text-muted-foreground">
             Credentials you've minted in this session. Renew before expiry; revoke to clean up.
           </p>
@@ -589,7 +593,7 @@ function LeaseRow({
       <div className="flex items-center gap-1">
         {lease.data && lease.state === "active" ? <CredentialPeekButton lease={lease} /> : null}
         {lease.renewable && lease.state === "active" ? (
-          <IconTip label="Renew lease" hint="Ask the engine for another TTL window." side="left">
+          <IconTip label="Renew Lease" hint="Ask the engine for another TTL window." side="left">
             <Button variant="ghost" size="sm" onClick={() => onRenew(lease.leaseId)}>
               <RotateCcw className="h-3.5 w-3.5" /> Renew
             </Button>

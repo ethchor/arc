@@ -99,7 +99,7 @@ export function WorkflowsView({ vaultId, canManage, getClient }: Props) {
             </p>
           </div>
           <Button size="sm" onClick={() => setMode({ kind: "create" })}>
-            <Plus className="h-4 w-4" /> New workflow
+            <Plus className="h-4 w-4" /> New Workflow
           </Button>
         </div>
       </Reveal>
@@ -121,7 +121,7 @@ export function WorkflowsView({ vaultId, canManage, getClient }: Props) {
               </p>
             </div>
             <Button size="sm" onClick={() => setMode({ kind: "create" })}>
-              <Plus className="h-4 w-4" /> New workflow
+              <Plus className="h-4 w-4" /> New Workflow
             </Button>
           </CardContent>
         </Card>

@@ -452,10 +452,10 @@ function Header({
         {writable ? (
           <WriteSecretDialog onWrite={onWrite} />
         ) : (
-          <IconTip label="Write secret" hint="Pick a KV mount first." side="bottom">
+          <IconTip label="Write Secret" hint="Pick a KV mount first." side="bottom">
             <span tabIndex={0} className="inline-flex">
               <Button size="sm" variant="secondary" disabled>
-                <Plus className="h-3.5 w-3.5" /> Write secret
+                <Plus className="h-3.5 w-3.5" /> Write Secret
               </Button>
             </span>
           </IconTip>
@@ -491,7 +491,7 @@ function MountSelector({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[220px]">
-        <DropdownMenuLabel>KV mounts</DropdownMenuLabel>
+        <DropdownMenuLabel>KV Mounts</DropdownMenuLabel>
         {kvMounts.length === 0 ? (
           <DropdownMenuItem disabled className="text-xs text-muted-foreground">
             No KV mounts.
@@ -558,12 +558,12 @@ function WriteSecretDialog({
     <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
       <DialogTrigger asChild>
         <Button size="sm">
-          <Plus className="h-3.5 w-3.5" /> Write secret
+          <Plus className="h-3.5 w-3.5" /> Write Secret
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Write a KV secret</DialogTitle>
+          <DialogTitle>Write a KV Secret</DialogTitle>
           <DialogDescription>
             Creates a new path or bumps an existing one to the next version. The engine keeps
             previous versions per its <span className="font-mono">max_versions</span> setting.
@@ -622,12 +622,15 @@ function WriteSecretDialog({
                 size="sm"
                 onClick={() => setRows((rs) => [...rs, { k: "", v: "" }])}
               >
-                <Plus className="h-3 w-3" /> Add row
+                <Plus className="h-3 w-3" /> Add Row
               </Button>
             </div>
           </div>
         </div>
         <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button
             onClick={submit}
             disabled={busy || !path.trim() || rows.every((r) => !r.k.trim())}
@@ -671,7 +674,7 @@ function PathRail({
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder={data.length ? `Search ${data.length} paths…` : "Search paths…"}
+            placeholder={data.length ? `Search ${data.length} ${data.length === 1 ? "path" : "paths"}…` : "Search paths…"}
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             className="h-9 pl-8 text-sm"
@@ -1098,7 +1101,7 @@ function CopyJsonButton({ data }: { data: Record<string, string> }) {
   const json = React.useMemo(() => JSON.stringify(data, null, 2), [data]);
   return (
     <div className="flex justify-end">
-      <CopyButton value={json} label="Copy all as JSON" autoClearSeconds={20} />
+      <CopyButton value={json} label="Copy All as JSON" autoClearSeconds={20} />
     </div>
   );
 }
@@ -1241,7 +1244,7 @@ function VersionActions({
       <DropdownMenuContent align="end" className="min-w-[200px]">
         {version.destroyed ? (
           <DropdownMenuItem disabled>
-            <ShieldAlert className="h-3.5 w-3.5" /> Destroyed — no recovery
+            <ShieldAlert className="h-3.5 w-3.5" /> Destroyed — No Recovery
           </DropdownMenuItem>
         ) : version.deletedAt ? (
           <DropdownMenuItem onSelect={onUndelete}>
@@ -1249,7 +1252,7 @@ function VersionActions({
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem onSelect={onSoftDelete}>
-            <FileClock className="h-3.5 w-3.5" /> Soft-delete
+            <FileClock className="h-3.5 w-3.5" /> Soft-Delete
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
@@ -1258,7 +1261,7 @@ function VersionActions({
           disabled={version.destroyed}
           className="text-destructive focus:bg-destructive/10 focus:text-destructive"
         >
-          <Trash2 className="h-3.5 w-3.5" /> Destroy permanently
+          <Trash2 className="h-3.5 w-3.5" /> Destroy Permanently
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

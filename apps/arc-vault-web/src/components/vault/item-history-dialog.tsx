@@ -38,7 +38,7 @@ function previewVersion(data: ItemVersion["data"]): string {
 }
 
 /**
- * Item version history (per-item "More actions" → "Version history"). Lists the item's past
+ * Item version history (per-item "More Actions" → "Version History"). Lists the item's past
  * versions — each archived snapshot is decrypted on this device — and lets you restore one.
  *
  * Restore is a *forward* edit: the SDK writes the chosen version's payload back as a new
@@ -100,7 +100,7 @@ export function ItemHistoryDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <History className="h-4 w-4" /> Version history
+            <History className="h-4 w-4" /> Version History
           </DialogTitle>
           <DialogDescription>
             Previous versions of this item, newest first — each decrypted on your device.

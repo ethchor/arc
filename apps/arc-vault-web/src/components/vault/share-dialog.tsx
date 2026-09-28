@@ -5,6 +5,7 @@ import { Loader2, ShieldCheck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -108,14 +109,14 @@ export function ShareDialog({
     >
       <TipTrigger tip={tooltip}>
         {trigger ?? (
-          <Button variant="outline" size="sm" aria-label="Share vault">
+          <Button variant="outline" size="sm" aria-label="Share Vault">
             <UserPlus className="h-4 w-4" /> Share
           </Button>
         )}
       </TipTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Share this vault</DialogTitle>
+          <DialogTitle>Share This Vault</DialogTitle>
           <DialogDescription>
             The vault key is wrapped to the member&apos;s identity key in your browser — the
             server only relays ciphertext.
@@ -191,6 +192,9 @@ export function ShareDialog({
         </div>
 
         <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button onClick={share} disabled={busy || !found}>
             {busy && found ? (
               <>

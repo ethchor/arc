@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -241,10 +242,10 @@ function ChromeShell({
         <div className="flex items-center gap-2">
           <MountSelector mount={mount} mounts={mounts} onSelect={onSelectMount} />
           {createDisabled ? (
-            <IconTip label="New key" hint="Pick a transit mount first." side="bottom">
+            <IconTip label="New Key" hint="Pick a transit mount first." side="bottom">
               <span tabIndex={0} className="inline-flex">
                 <Button size="sm" variant="secondary" disabled>
-                  <Plus className="h-3.5 w-3.5" /> New key
+                  <Plus className="h-3.5 w-3.5" /> New Key
                 </Button>
               </span>
             </IconTip>
@@ -284,7 +285,7 @@ function MountSelector({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[220px]">
-        <DropdownMenuLabel>Transit mounts</DropdownMenuLabel>
+        <DropdownMenuLabel>Transit Mounts</DropdownMenuLabel>
         {transitMounts.length === 0 ? (
           <DropdownMenuItem disabled className="text-xs text-muted-foreground">
             No transit mounts.
@@ -345,7 +346,7 @@ function KeyRail({
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder={keys.length ? `Search ${keys.length} keys…` : "Search keys…"}
+            placeholder={keys.length ? `Search ${keys.length} ${keys.length === 1 ? "key" : "keys"}…` : "Search keys…"}
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             className="h-9 pl-8 text-sm"
@@ -718,12 +719,12 @@ function CreateKeyDialog({
     <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
       <DialogTrigger asChild>
         <Button size="sm">
-          <Plus className="h-3.5 w-3.5" /> New key
+          <Plus className="h-3.5 w-3.5" /> New Key
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create a transit key</DialogTitle>
+          <DialogTitle>Create a Transit Key</DialogTitle>
           <DialogDescription>
             Key material is generated inside the engine and never leaves it. Names are
             case-sensitive and form part of the ciphertext header — pick something stable.
@@ -779,6 +780,9 @@ function CreateKeyDialog({
           </label>
         </div>
         <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button onClick={submit} disabled={busy || !name.trim()}>
             Create
           </Button>

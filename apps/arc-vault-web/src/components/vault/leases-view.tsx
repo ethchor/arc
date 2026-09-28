@@ -312,7 +312,7 @@ function LeaseRow({
       </div>
       <div className="flex items-center gap-1">
         {lease.state === "active" && lease.renewable ? (
-          <IconTip label="Renew lease" hint="Ask the engine for another TTL window." side="left">
+          <IconTip label="Renew Lease" hint="Ask the engine for another TTL window." side="left">
             <Button variant="ghost" size="sm" disabled={pending} onClick={onRenew}>
               <RotateCcw className="h-3.5 w-3.5" /> Renew
             </Button>

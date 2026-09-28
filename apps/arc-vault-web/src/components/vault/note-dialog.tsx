@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
+import { useControllableOpen } from "@/lib/use-controllable-open";
 
 export interface NoteInput {
   title: string;
@@ -24,21 +26,26 @@ const EMPTY: NoteInput = { title: "", body: "" };
 export function NoteDialog({
   trigger,
   tooltip,
+  open: openProp,
+  onOpenChange,
   initial,
-  heading = "Add note",
+  heading = "Add Note",
   folders = [],
   initialFolderId = null,
   onSubmit,
 }: {
   trigger: React.ReactNode;
   tooltip?: TipProps;
+  /** Controlled open state, for opening the dialog from elsewhere (a row's context menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   initial?: NoteInput;
   heading?: string;
   folders?: Array<{ id: string; name: string }>;
   initialFolderId?: string | null;
   onSubmit: (value: NoteInput, folderId: string | null) => Promise<void>;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useControllableOpen(openProp, onOpenChange);
   const [form, setForm] = React.useState<NoteInput>(initial ?? EMPTY);
   const [folderId, setFolderId] = React.useState<string | null>(initialFolderId);
   const [busy, setBusy] = React.useState(false);
@@ -120,6 +127,9 @@ export function NoteDialog({
           )}
         </div>
         <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button onClick={submit} disabled={busy || !form.title}>
             Save
           </Button>

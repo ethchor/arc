@@ -44,14 +44,14 @@ export function DevicesDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <TipTrigger tip={{ label: "Pending devices", hint: "Approve or reject devices waiting to join your vault." }}>
+      <TipTrigger tip={{ label: "Pending Devices", hint: "Approve or reject devices waiting to join your vault." }}>
         <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" aria-label="Devices">
           <MonitorSmartphone className="h-4 w-4" />
         </Button>
       </TipTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Pending devices</DialogTitle>
+          <DialogTitle>Pending Devices</DialogTitle>
           <DialogDescription>
             Approve only after the code matches the one shown on the new device.
           </DialogDescription>

@@ -16,7 +16,7 @@ export function RecoveryKeyCard({
     <Card className="border-destructive/40 bg-destructive/5">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <KeyRound className="h-4 w-4" /> Save your recovery key
+          <KeyRound className="h-4 w-4" /> Save Your Recovery Key
         </CardTitle>
         <CardDescription>
           Shown once. Without it <strong>and</strong> your master password, your data is
@@ -29,7 +29,7 @@ export function RecoveryKeyCard({
         </pre>
         <RecoveryKeyActions recoveryKey={recoveryKey} />
         <Button variant="outline" size="sm" onClick={onDismiss}>
-          I&apos;ve saved it
+          I&apos;ve Saved It
         </Button>
       </CardContent>
     </Card>

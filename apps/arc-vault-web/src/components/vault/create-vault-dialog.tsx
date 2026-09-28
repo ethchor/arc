@@ -5,6 +5,7 @@ import { FolderPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -19,7 +20,7 @@ const TYPES = ["team", "personal"] as const;
 type VType = (typeof TYPES)[number];
 
 const DEFAULT_TIP: TipProps = {
-  label: "New vault",
+  label: "New Vault",
   hint: "Create a personal or shared team vault — keyed to your devices.",
 };
 
@@ -69,7 +70,7 @@ export function CreateVaultDialog({
       {!controlled ? (
         <TipTrigger tip={tooltip}>
           {trigger ?? (
-            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Create new vault">
+            <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="New Vault">
               <FolderPlus className="h-4 w-4" />
             </Button>
           )}
@@ -77,7 +78,7 @@ export function CreateVaultDialog({
       ) : null}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New vault</DialogTitle>
+          <DialogTitle>New Vault</DialogTitle>
           <DialogDescription>The name is encrypted under the vault key.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -103,6 +104,9 @@ export function CreateVaultDialog({
           </div>
         </div>
         <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button onClick={submit} disabled={busy || !name.trim()}>
             Create
           </Button>

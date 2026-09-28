@@ -27,7 +27,7 @@ export function DevicePendingView({
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
             <Smartphone className="h-5 w-5 text-primary" />
           </div>
-          <CardTitle className="text-xl">Approve this device</CardTitle>
+          <CardTitle className="text-xl">Approve This Device</CardTitle>
           <CardDescription>
             On a device that is already unlocked, open Devices, confirm this code matches, and
             approve. Your master password is never sent.
@@ -44,7 +44,7 @@ export function DevicePendingView({
         </CardContent>
         <CardFooter className="flex-col gap-2">
           <Button className="w-full" onClick={onCheck}>
-            <RefreshCw className="h-4 w-4" /> Check now
+            <RefreshCw className="h-4 w-4" /> Check Now
           </Button>
           <Button variant="ghost" className="w-full" onClick={onCancel}>
             Cancel

@@ -1723,7 +1723,8 @@ export class VaultClient {
       vaultKeyVersion: vk.keyVersion,
       ...(opts.baseVersion !== undefined ? { baseVersion: opts.baseVersion } : {}),
       ...(opts.type ? { type: opts.type } : {}),
-      ...(opts.folderId ? { folderId: opts.folderId } : {}),
+      // `folderId: null` moves the item out of its folder; leaving it out keeps the folder.
+      ...(opts.folderId !== undefined ? { folderId: opts.folderId } : {}),
     });
   }
 

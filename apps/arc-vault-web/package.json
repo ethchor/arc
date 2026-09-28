@@ -8,6 +8,7 @@
     "build:desktop": "NEXT_OUTPUT=export next build",
     "start": "next start -p 3002",
     "typecheck": "tsc --noEmit",
+    "test": "node scripts/check-copy.mjs",
     "icons:gen": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
@@ -15,6 +16,7 @@
     "@arc/sdk": "workspace:*",
     "@arc/types": "workspace:*",
     "@arc/workflows": "workspace:*",
+    "@radix-ui/react-context-menu": "~2.2.16",
     "@radix-ui/react-dialog": "^1.1.4",
     "@radix-ui/react-dropdown-menu": "^2.1.4",
     "@radix-ui/react-label": "^2.1.1",

@@ -166,7 +166,8 @@ export class UpsertItemDto {
   @IsInt() @Min(1) vaultKeyVersion!: number;
   @IsOptional() @IsInt() @Min(0) baseVersion?: number;
   @IsOptional() @IsString() type?: string;
-  @IsOptional() @IsUUID() folderId?: string;
+  /** A folder id moves the item there, `null` moves it out of its folder, absent keeps it. */
+  @IsOptional() @IsUUID() folderId?: string | null;
   @IsOptional() @IsObject() signature?: EnvelopeJson;
 }
 

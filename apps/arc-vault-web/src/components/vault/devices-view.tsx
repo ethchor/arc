@@ -118,7 +118,7 @@ export function DevicesView({ getClient }: { getClient: () => VaultClient }) {
             <CardContent className="p-0">
               <div className="flex items-center gap-2 border-b px-5 py-3">
                 <Shield className="h-4 w-4 text-primary" />
-                <h2 className="font-display text-base font-semibold">Waiting for approval</h2>
+                <h2 className="font-display text-base font-semibold">Waiting for Approval</h2>
                 <Badge variant="secondary" className="ml-1">{pending.length}</Badge>
                 <span className="ml-auto text-xs text-muted-foreground">
                   Approve only after the code matches the one shown on the new device.
@@ -151,13 +151,13 @@ export function DevicesView({ getClient }: { getClient: () => VaultClient }) {
           <CardContent className="p-0">
             <div className="flex items-center justify-between border-b px-5 py-3">
               <div>
-                <h2 className="font-display text-base font-semibold">Trusted devices</h2>
+                <h2 className="font-display text-base font-semibold">Trusted Devices</h2>
                 <p className="text-xs text-muted-foreground">
                   {devices === null ? "Loading…" : `${devices.length} total · ${trusted} trusted`}
                 </p>
               </div>
               <Button variant="outline" size="sm" disabled>
-                <Plus className="h-4 w-4" /> Approve new device
+                <Plus className="h-4 w-4" /> Approve New Device
               </Button>
             </div>
 

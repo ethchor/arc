@@ -5,6 +5,7 @@ import { ChevronDown, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -20,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TipTrigger, type TipProps } from "@/components/ui/tooltip";
+import { useControllableOpen } from "@/lib/use-controllable-open";
 import { generatePassword } from "@/lib/password";
 
 export interface LoginInput {
@@ -35,21 +37,26 @@ const LENGTHS = [16, 20, 24, 32];
 export function ItemDialog({
   trigger,
   tooltip,
+  open: openProp,
+  onOpenChange,
   initial,
-  heading = "Add login",
+  heading = "Add Login",
   folders = [],
   initialFolderId = null,
   onSubmit,
 }: {
   trigger: React.ReactNode;
   tooltip?: TipProps;
+  /** Controlled open state, for opening the dialog from elsewhere (a row's context menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   initial?: LoginInput;
   heading?: string;
   folders?: Array<{ id: string; name: string }>;
   initialFolderId?: string | null;
   onSubmit: (value: LoginInput, folderId: string | null) => Promise<void>;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useControllableOpen(openProp, onOpenChange);
   const [form, setForm] = React.useState<LoginInput>(initial ?? EMPTY);
   const [folderId, setFolderId] = React.useState<string | null>(initialFolderId);
   const [busy, setBusy] = React.useState(false);
@@ -120,7 +127,7 @@ export function ItemDialog({
                       key={len}
                       onClick={() => setForm((f) => ({ ...f, password: generatePassword({ length: len }) }))}
                     >
-                      {len} characters
+                      {len} Characters
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -155,6 +162,9 @@ export function ItemDialog({
           )}
         </div>
         <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button onClick={submit} disabled={busy || !form.title}>
             Save
           </Button>
