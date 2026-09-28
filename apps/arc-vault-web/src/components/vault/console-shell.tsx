@@ -33,6 +33,8 @@ import { SegmentedControl } from "@/components/arc/segmented-control";
 import { TrustIndicator } from "@/components/arc/trust-indicator";
 import { IconTip } from "@/components/ui/tooltip";
 import { CommandPalette, type CommandItem } from "@/components/vault/command-palette";
+import { CompactTabBar, type CompactTab } from "@/components/vault/compact-tab-bar";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 export type Persona = "person" | "operator";
@@ -135,11 +137,64 @@ const ALL_ITEMS: CommandItem[] = (Object.entries(NAV) as [Persona, NavEntry[]][]
 const LABELS = Object.fromEntries(ALL_ITEMS.map((i) => [i.id, i.label])) as Record<ConsoleSection, string>;
 
 /**
- * Persona-aware console chrome in the Liquid Glass layout (docs/18 §4.1). Functional layer:
- * a floating glass sidebar (brand lockup, persona switch, engine-labeled groups, status) and a
- * floating glass toolbar (title, search, actions) over a scroll-edge effect. Content layer: the
- * arc mesh and every view beneath them. Presentation only — every section still runs through
- * the same zero-knowledge client.
+ * Compact-width tab sets (docs/18 D4). Five or fewer destinations per persona (HIG Tab bars),
+ * single-word labels; every other section is one tap away in the "All sections" sheet.
+ */
+const COMPACT_TABS: Record<Persona, CompactTab<ConsoleSection>[]> = {
+  person: [
+    { id: "home", label: "Home", icon: Activity },
+    { id: "vault", label: "Vault", icon: Lock },
+    { id: "security", label: "Security", icon: ShieldCheck },
+    { id: "devices", label: "Devices", icon: Fingerprint },
+  ],
+  operator: [
+    { id: "kv", label: "KV", icon: GitBranch },
+    { id: "creds", label: "Creds", icon: KeyRound },
+    { id: "leases", label: "Leases", icon: Clock },
+    { id: "audit", label: "Audit", icon: FileClock },
+  ],
+};
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia(query);
+    const sync = () => setMatches(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [query]);
+  return matches;
+}
+
+/** Scroll-down minimizes, scroll-up (or reaching the top) restores — HIG tab bar behavior. */
+function useMinimizeOnScroll(enabled: boolean): boolean {
+  const [minimized, setMinimized] = React.useState(false);
+  React.useEffect(() => {
+    if (!enabled) {
+      setMinimized(false);
+      return;
+    }
+    let last = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (y < 24) setMinimized(false);
+      else if (y > last + 6) setMinimized(true);
+      else if (y < last - 6) setMinimized(false);
+      last = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [enabled]);
+  return minimized;
+}
+
+/**
+ * Persona-aware console chrome in the Liquid Glass layout (docs/18 §4.1–4.2). Functional layer:
+ * a floating glass sidebar (regular widths) or a floating glass tab bar plus an "All sections"
+ * sheet (compact widths), and a floating glass toolbar over a scroll-edge effect. Content
+ * layer: the arc mesh and every view beneath them. Presentation only — every section still
+ * runs through the same zero-knowledge client.
  */
 export function ConsoleShell({
   persona,
@@ -168,6 +223,9 @@ export function ConsoleShell({
 }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
+  const [sectionsOpen, setSectionsOpen] = React.useState(false);
+  const compact = useMediaQuery("(max-width: 639px)");
+  const minimized = useMinimizeOnScroll(compact);
 
   // HIG (Sidebars, macOS): collapse the sidebar automatically as the window narrows, and
   // restore it when there's room again. A manual toggle still wins until the next crossing.
@@ -177,6 +235,18 @@ export function ConsoleShell({
     sync();
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  // ⌃⌘S — the macOS-standard Show/Hide Sidebar shortcut.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.metaKey && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        setCollapsed((c) => !c);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const current = LABELS[section] ?? "";
@@ -202,94 +272,34 @@ export function ConsoleShell({
       <aside
         aria-label="Sidebar"
         className={cn(
-          "sticky top-0 h-[100dvh] shrink-0 py-[var(--glass-inset)] pl-[var(--glass-inset)] transition-[width] [transition-duration:var(--dur-base)] ease-out-quart",
+          "sticky top-0 hidden h-[100dvh] shrink-0 pb-[max(var(--glass-inset),env(safe-area-inset-bottom))] pl-[max(var(--glass-inset),env(safe-area-inset-left))] pt-[max(var(--glass-inset),env(safe-area-inset-top))] transition-[width] [transition-duration:var(--dur-base)] ease-out-quart sm:block",
           collapsed ? "w-[76px]" : "w-[256px]",
         )}
         style={{ zIndex: "var(--z-sticky)" as React.CSSProperties["zIndex"] }}
       >
         <div className="glass glass-strong flex h-full flex-col overflow-hidden rounded-[var(--radius-2xl)]">
           <div className={cn("flex h-14 shrink-0 items-center gap-2.5", collapsed ? "justify-center" : "px-4")}>
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-primary/15 text-primary ring-1 ring-primary/25">
-              <HoneycombMark className="h-[19px] w-[19px]" />
-            </span>
+            <BrandTile />
             {!collapsed ? <span className="font-display text-lg font-semibold tracking-tight">arc</span> : null}
           </div>
-
-          <div className={cn("shrink-0 pb-1", collapsed ? "flex justify-center" : "px-3")}>
-            {collapsed ? (
-              <IconTip
-                label={persona === "person" ? "Switch to Operator" : "Switch to Personal"}
-                hint="Personal is your vault; Operator is infrastructure, governance and agents."
-                side="right"
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 rounded-full"
-                  aria-label={persona === "person" ? "Switch to Operator" : "Switch to Personal"}
-                  onClick={() => switchPersona(persona === "person" ? "operator" : "person")}
-                >
-                  {persona === "person" ? <UserRound className="h-4 w-4" /> : <Server className="h-4 w-4" />}
-                </Button>
-              </IconTip>
-            ) : (
-              <SegmentedControl
-                aria-label="Persona"
-                size="sm"
-                fill
-                value={persona}
-                onChange={switchPersona}
-                options={[
-                  { value: "person", label: "Personal" },
-                  { value: "operator", label: "Operator" },
-                ]}
-              />
-            )}
-          </div>
-
-          <nav aria-label="Sections" className="flex-1 overflow-y-auto px-2.5 pb-2.5">
-            {NAV[persona].map((e, i) =>
-              "group" in e ? (
-                !collapsed ? (
-                  <div key={`g${i}`} className="px-2.5 pb-1 pt-4 text-footnote font-semibold text-muted-foreground">
-                    {e.group}
-                  </div>
-                ) : (
-                  <div key={`g${i}`} className="mx-2 my-2.5 border-t border-border/50" />
-                )
-              ) : (
-                <NavItem
-                  key={e.id}
-                  icon={e.icon}
-                  label={e.label}
-                  hint={e.hint}
-                  active={section === e.id}
-                  collapsed={collapsed}
-                  onClick={() => onSection(e.id)}
-                />
-              ),
-            )}
-          </nav>
-
-          <div className={cn("shrink-0 px-3.5 py-3", collapsed && "flex justify-center px-0")}>
-            <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-              <span className="relative inline-flex h-2 w-2">
-                <span className="absolute inset-0 rounded-full bg-emerald-500/60 motion-safe:animate-ping" />
-                <span className="relative h-2 w-2 rounded-full bg-emerald-500" />
-              </span>
-              {!collapsed ? statusLabel : null}
-            </div>
-            {!collapsed ? <TrustIndicator kind="zk" className="mt-2" /> : null}
-          </div>
+          <SidebarBody
+            collapsed={collapsed}
+            persona={persona}
+            section={section}
+            statusLabel={statusLabel}
+            onSection={onSection}
+            onPersona={switchPersona}
+          />
         </div>
       </aside>
 
       <div className="flex min-h-[100dvh] min-w-0 flex-1 flex-col">
         {/* Floating toolbar (HIG Toolbars): at most three glass groups — navigation + title on
             the leading edge, search and actions on the trailing edge — above a scroll-edge
-            effect instead of a solid bar. Icon-only items carry accessible names. */}
+            effect instead of a solid bar. Icon-only items carry accessible names. On compact
+            widths search moves to the tab bar. */}
         <header
-          className="sticky top-0 px-[var(--glass-inset)] pb-3 pt-[var(--glass-inset)]"
+          className="sticky top-0 pb-3 pl-[max(var(--glass-inset),env(safe-area-inset-left))] pr-[max(var(--glass-inset),env(safe-area-inset-right))] pt-[max(var(--glass-inset),env(safe-area-inset-top))]"
           style={{ zIndex: "var(--z-sticky)" as React.CSSProperties["zIndex"] }}
         >
           <div aria-hidden className="scroll-edge pointer-events-none absolute inset-x-0 -bottom-4 top-0" />
@@ -298,6 +308,7 @@ export function ConsoleShell({
               <IconTip
                 label={collapsed ? "Show Sidebar" : "Hide Sidebar"}
                 hint="Switch the sidebar between labels and icons."
+                shortcut="⌃⌘S"
               >
                 <Button
                   variant="ghost"
@@ -322,7 +333,7 @@ export function ConsoleShell({
               type="button"
               onClick={() => setPaletteOpen(true)}
               aria-label="Search secrets, paths and actions"
-              className="glass flex h-11 w-11 shrink-0 items-center justify-center gap-2.5 rounded-full text-sm text-muted-foreground transition-colors hover:text-foreground md:w-[min(340px,32vw)] md:justify-start md:px-4"
+              className="glass hidden h-11 w-11 shrink-0 items-center justify-center gap-2.5 rounded-full text-sm text-muted-foreground transition-colors hover:text-foreground sm:flex md:w-[min(340px,32vw)] md:justify-start md:px-4"
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden flex-1 truncate text-left md:inline">Search secrets, paths, actions…</span>
@@ -347,8 +358,11 @@ export function ConsoleShell({
           className={cn(
             "flex-1",
             // Flush sections fill the viewport below the toolbar (flex column, no page gutter);
-            // every other section keeps the padded, density-aware rhythm.
-            flush ? "flex min-h-0 flex-col" : "px-4 pb-6 pt-2 data-[density=compact]:pb-4 lg:px-6",
+            // every other section keeps the padded, density-aware rhythm. On compact widths the
+            // floating tab bar needs clearance at the bottom.
+            flush
+              ? "flex min-h-0 flex-col max-sm:pb-[calc(env(safe-area-inset-bottom)+5.5rem)]"
+              : "px-4 pb-6 pt-2 data-[density=compact]:pb-4 max-sm:pb-[calc(env(safe-area-inset-bottom)+6.5rem)] lg:px-6",
           )}
           data-density={density}
         >
@@ -386,6 +400,40 @@ export function ConsoleShell({
         </main>
       </div>
 
+      {compact ? (
+        <CompactTabBar
+          tabs={COMPACT_TABS[persona]}
+          current={section}
+          onSelect={onSection}
+          onShowAll={() => setSectionsOpen(true)}
+          onSearch={() => setPaletteOpen(true)}
+          minimized={minimized}
+        />
+      ) : null}
+
+      {/* The adaptable sidebar on compact widths: every section, the persona switch and status,
+          presented as a sheet from the tab bar's leading button. */}
+      <Dialog open={sectionsOpen} onOpenChange={setSectionsOpen}>
+        <DialogContent className="max-h-[80dvh] gap-0 overflow-y-auto p-0 pb-2 sm:max-w-sm">
+          <div className="flex items-center gap-2.5 px-5 pb-1 pt-5">
+            <BrandTile />
+            <DialogTitle className="font-display text-lg font-semibold tracking-tight">All Sections</DialogTitle>
+          </div>
+          <DialogDescription className="sr-only">Every section of the console, and the persona switch.</DialogDescription>
+          <SidebarBody
+            collapsed={false}
+            persona={persona}
+            section={section}
+            statusLabel={statusLabel}
+            onSection={(s) => {
+              onSection(s);
+              setSectionsOpen(false);
+            }}
+            onPersona={(p) => switchPersona(p)}
+          />
+        </DialogContent>
+      </Dialog>
+
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
@@ -393,6 +441,102 @@ export function ConsoleShell({
         onSelect={selectFromPalette}
       />
     </div>
+  );
+}
+
+function BrandTile() {
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-primary/15 text-primary ring-1 ring-primary/25">
+      <HoneycombMark className="h-[19px] w-[19px]" />
+    </span>
+  );
+}
+
+/** Persona switch, engine-labeled groups and status — shared by the sidebar and the compact sheet. */
+function SidebarBody({
+  collapsed,
+  persona,
+  section,
+  statusLabel,
+  onSection,
+  onPersona,
+}: {
+  collapsed: boolean;
+  persona: Persona;
+  section: ConsoleSection;
+  statusLabel: string;
+  onSection: (s: ConsoleSection) => void;
+  onPersona: (p: Persona) => void;
+}) {
+  return (
+    <>
+      <div className={cn("shrink-0 pb-1", collapsed ? "flex justify-center" : "px-3")}>
+        {collapsed ? (
+          <IconTip
+            label={persona === "person" ? "Switch to Operator" : "Switch to Personal"}
+            hint="Personal is your vault; Operator is infrastructure, governance and agents."
+            side="right"
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full"
+              aria-label={persona === "person" ? "Switch to Operator" : "Switch to Personal"}
+              onClick={() => onPersona(persona === "person" ? "operator" : "person")}
+            >
+              {persona === "person" ? <UserRound className="h-4 w-4" /> : <Server className="h-4 w-4" />}
+            </Button>
+          </IconTip>
+        ) : (
+          <SegmentedControl
+            aria-label="Persona"
+            size="sm"
+            fill
+            value={persona}
+            onChange={onPersona}
+            options={[
+              { value: "person", label: "Personal" },
+              { value: "operator", label: "Operator" },
+            ]}
+          />
+        )}
+      </div>
+
+      <nav aria-label="Sections" className="flex-1 overflow-y-auto px-2.5 pb-2.5">
+        {NAV[persona].map((e, i) =>
+          "group" in e ? (
+            !collapsed ? (
+              <div key={`g${i}`} className="px-2.5 pb-1 pt-4 text-footnote font-semibold text-muted-foreground">
+                {e.group}
+              </div>
+            ) : (
+              <div key={`g${i}`} className="mx-2 my-2.5 border-t border-border/50" />
+            )
+          ) : (
+            <NavItem
+              key={e.id}
+              icon={e.icon}
+              label={e.label}
+              hint={e.hint}
+              active={section === e.id}
+              collapsed={collapsed}
+              onClick={() => onSection(e.id)}
+            />
+          ),
+        )}
+      </nav>
+
+      <div className={cn("shrink-0 px-3.5 py-3", collapsed && "flex justify-center px-0")}>
+        <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+          <span className="relative inline-flex h-2 w-2">
+            <span className="absolute inset-0 rounded-full bg-emerald-500/60 motion-safe:animate-ping" />
+            <span className="relative h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+          {!collapsed ? statusLabel : null}
+        </div>
+        {!collapsed ? <TrustIndicator kind="zk" className="mt-2" /> : null}
+      </div>
+    </>
   );
 }
 

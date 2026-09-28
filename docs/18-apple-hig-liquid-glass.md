@@ -318,8 +318,8 @@ AppKit's optical tuning. It stays at or above the macOS minimum.
 
 ### 3.3 Layout, Dark Mode, RTL and writing
 
-- **Size classes become container queries.** *Compact* is under 600 px of container width
-  and *regular* is 600 px or more. Layout decisions use the available width, never the
+- **Size classes become container queries.** *Compact* is under 640 px (Tailwind's `sm`)
+  and *regular* is 640 px or more. Layout decisions use the available width, never the
   device type (Layout: "determine layout based on size classes, not device type").
 - **Safe areas:** `viewport-fit=cover` plus `env(safe-area-inset-*)` on the floating
   chrome. Content extends beneath the bars.
@@ -372,7 +372,7 @@ highlighting persists in the list. It collapses to push navigation at compact wi
 
 ### 4.2 Responsive navigation: tab bar, adaptable sidebar, iPhone Duo
 
-- **Compact widths (under 600 px) get a floating glass tab bar** at the bottom, inset from
+- **Compact widths (under 640 px) get a floating glass tab bar** at the bottom, inset from
   the edges and above the home indicator via safe-area insets. It has five tabs or fewer
   per persona (decision D4 proposes "Personal: Home · Vault · Security · Devices · Search"
   and "Operator: KV · Creds · Leases · Audit · Search"). A leading button in the tab bar
