@@ -1,0 +1,105 @@
+{
+  "fps": 30,
+  "duration": 22.0,
+  "bpm": 120,
+  "chords": [
+    "Am",
+    "F",
+    "C",
+    "G",
+    "Am",
+    "F",
+    "C",
+    "G",
+    "Am",
+    "F",
+    "C"
+  ],
+  "scenes": {
+    "hook": 0.0,
+    "bridge": 2.0,
+    "reveal": 4.0,
+    "human": 6.0,
+    "machine": 10.0,
+    "agents": 14.0,
+    "outro": 18.0
+  },
+  "hook": {
+    "nodeL": 0.1,
+    "nodeR": 0.6,
+    "headline": 0.15
+  },
+  "bridge": {
+    "arcStart": 2.1,
+    "arcEnd": 3.0,
+    "apex": 3.0,
+    "headline": 2.3
+  },
+  "reveal": {
+    "drop": 4.0,
+    "triad": [
+      4.25,
+      4.5,
+      4.75
+    ]
+  },
+  "human": {
+    "typeStart": 6.45,
+    "typeEnd": 7.35,
+    "save": 7.37,
+    "packetStart": 7.48,
+    "packetEnd": 8.0,
+    "caption": 7.6,
+    "badge": 8.3
+  },
+  "machine": {
+    "typeStart": 10.3,
+    "typeEnd": 11.0,
+    "lines": [
+      11.1,
+      11.25,
+      11.4,
+      11.55,
+      11.7
+    ],
+    "caption": 11.8,
+    "ring": 11.3
+  },
+  "agents": {
+    "intents": [
+      14.3,
+      14.8,
+      15.3
+    ],
+    "caption1": 14.2,
+    "command": 15.35,
+    "click": 16.0,
+    "cascade": [
+      16.05,
+      16.15,
+      16.25,
+      16.35,
+      16.45
+    ],
+    "caption2": 16.1
+  },
+  "outro": {
+    "pops": [
+      18.25,
+      18.5,
+      18.75
+    ],
+    "arcStart": 18.75,
+    "arcEnd": 19.25,
+    "wordmark": 19.25,
+    "finalChord": 20.0,
+    "tagline": 20.0,
+    "url": 20.5
+  },
+  "transitions": [
+    6.0,
+    10.0,
+    14.0,
+    18.0
+  ]
+}
